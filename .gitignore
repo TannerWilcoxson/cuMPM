@@ -1,0 +1,28 @@
+# CMake build output
+build/
+
+# Compiled Python extension binaries
+_cuMPM.cpython*
+_cuMPM*.so
+_cuMPM*.pyd
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Simulation outputs and figures
+drude_ito_results.png
+alpha_eff.csv
+alpha_eff.png
+dev_testing/drude_ito_results.png
+dev_testing/alpha_eff.csv
+dev_testing/alpha_eff.png
+
+# Python packaging builds
+dist/
+*.egg-info/
+.pyproject-build-system/
+.eggs/
+

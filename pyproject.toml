@@ -1,0 +1,17 @@
+[build-system]
+requires = ["scikit-build-core>=0.5.0", "pybind11>=2.10"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "cuMPM"
+version = "0.1.0"
+description = "CUDA-accelerated Dipole Solver for Many-Particle Method (MPM)"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+]
+
+[tool.scikit-build]
+cmake.version = ">=3.18"
+wheel.packages = ["src/cuMPM"]
