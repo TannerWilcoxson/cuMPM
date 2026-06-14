@@ -1151,6 +1151,7 @@ void Electric_Field::realSpacePrecalcs() {
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
     } else {
+
         d_perp = nullptr;
         d_para = nullptr;
     }
@@ -1568,9 +1569,9 @@ __global__ void fftshift_3d_kernel(
     int y = (idx / N2) % N1;
     int z = idx % N2;
 
-    int xs = (x + (N0 + 1) / 2) % N0;
-    int ys = (y + (N1 + 1) / 2) % N1;
-    int zs = (z + (N2 + 1) / 2) % N2;
+    int xs = (x + N0 / 2) % N0;
+    int ys = (y + N1 / 2) % N1;
+    int zs = (z + N2 / 2) % N2;
 
     size_t shifted_idx = (static_cast<size_t>(xs) * N1 * N2 +
                           static_cast<size_t>(ys) * N2 +
@@ -1595,9 +1596,9 @@ __global__ void ifftshift_3d_kernel(
     int y = (idx / N2) % N1;
     int z = idx % N2;
 
-    int xs = (x + N0 / 2) % N0;
-    int ys = (y + N1 / 2) % N1;
-    int zs = (z + N2 / 2) % N2;
+    int xs = (x + (N0 + 1) / 2) % N0;
+    int ys = (y + (N1 + 1) / 2) % N1;
+    int zs = (z + (N2 + 1) / 2) % N2;
 
     size_t shifted_idx = (static_cast<size_t>(xs) * N1 * N2 +
                           static_cast<size_t>(ys) * N2 +
