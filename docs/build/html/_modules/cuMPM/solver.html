@@ -1,0 +1,252 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cuMPM.solver &mdash; cuMPM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            cuMPM
+              <img src="../../_static/cumpm_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Usage Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">cuMPM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">cuMPM.solver</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for cuMPM.solver</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cuMPM</span>
+
+<div class="viewcode-block" id="dipole_solver">
+<a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">dipole_solver</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Python wrapper for the CUDA-accelerated C++ Dipole_Solver class.</span>
+
+<span class="sd">    This class computes the self-consistent induced dipoles of a system of particles </span>
+<span class="sd">    subject to an external electric field under periodic boundary conditions. It leverages </span>
+<span class="sd">    a GPU-resident restarted complex GMRES or BiCGSTAB solver and uses 3D Ewald summation </span>
+<span class="sd">    to evaluate the dipole-dipole interactions efficiently.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">box</span><span class="p">,</span> <span class="n">eps_p</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">eps_m</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">xi</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">quiet</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">guess_type</span><span class="o">=</span><span class="s2">&quot;derivative&quot;</span><span class="p">,</span> <span class="n">solver_type</span><span class="o">=</span><span class="s2">&quot;gmres&quot;</span><span class="p">,</span> <span class="n">field_type</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the dipole solver with system and solver parameters.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        box : array_like</span>
+<span class="sd">            The dimensions of the periodic boundary box [L_x, L_y, L_z] in nanometers.</span>
+<span class="sd">        eps_p : complex, array_like or nested lists</span>
+<span class="sd">            The complex relative permittivity (dielectric constant) of the particles.</span>
+<span class="sd">        radius : float or array_like, optional</span>
+<span class="sd">            The radii of the particles in nanometers. Defaults to 1.0.</span>
+<span class="sd">        eps_m : float, optional</span>
+<span class="sd">            The relative permittivity of the surrounding medium. Defaults to 1.0.</span>
+<span class="sd">        xi : float, optional</span>
+<span class="sd">            The Ewald splitting parameter. Defaults to 0.5.</span>
+<span class="sd">        tol : float, optional</span>
+<span class="sd">            The numerical solver tolerance for relative error convergence. Defaults to 1e-3.</span>
+<span class="sd">        quiet : bool, optional</span>
+<span class="sd">            If True, suppresses solver debug output. Defaults to False.</span>
+<span class="sd">        guess_type : str, optional</span>
+<span class="sd">            Initial guess type: &quot;zero&quot;, &quot;static&quot;, or &quot;derivative&quot;. Defaults to &quot;derivative&quot;.</span>
+<span class="sd">        solver_type : str, optional</span>
+<span class="sd">            Krylov solver type: &quot;gmres&quot; or &quot;bicgstab&quot;. Defaults to &quot;gmres&quot;.</span>
+<span class="sd">        field_type : str, optional</span>
+<span class="sd">            Field grid type: &quot;auto&quot;, &quot;monodisperse&quot;, or &quot;polydisperse&quot;. Defaults to &quot;auto&quot;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">field_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;monodisperse&quot;</span><span class="p">,</span> <span class="s2">&quot;polydisperse&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;field_type must be &#39;auto&#39;, &#39;monodisperse&#39;, or &#39;polydisperse&#39;, got </span><span class="si">{</span><span class="n">field_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Convert box to a list of 3 floats</span>
+        <span class="n">box_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">box</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">box_list</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;box must have length 3&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Convert radius to a list of floats</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iterable</span><span class="p">(</span><span class="n">radius</span><span class="p">):</span>
+            <span class="n">radius_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">radius</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">radius_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">radius</span><span class="p">)]</span>
+
+        <span class="c1"># Convert eps_p based on dimension</span>
+        <span class="n">eps_p_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">eps_p</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># Scalar</span>
+            <span class="n">eps_p_scalar</span> <span class="o">=</span> <span class="nb">complex</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Dipole_Solver</span><span class="p">(</span>
+                <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_scalar</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="c1"># 1D array</span>
+            <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">eps_p_scalar</span> <span class="o">=</span> <span class="nb">complex</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Dipole_Solver</span><span class="p">(</span>
+                    <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_scalar</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">eps_p_1d</span> <span class="o">=</span> <span class="p">[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">eps_p_arr</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Dipole_Solver</span><span class="p">(</span>
+                    <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_1d</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="c1"># 2D array</span>
+            <span class="n">eps_p_2d</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">eps_p_arr</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Dipole_Solver</span><span class="p">(</span>
+                <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_2d</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;eps_p must be a scalar, 1D array, or 2D array&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="dipole_solver.compute">
+<a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver.compute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">positions</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Calculate the dipoles for the positions given.</span>
+<span class="sd">        </span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        positions : array_like</span>
+<span class="sd">            An array of shape (num_particles, 3) or (num_frames, num_particles, 3)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">positions</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">positions</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">positions</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="n">positions</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">3</span> <span class="ow">or</span> <span class="n">positions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;positions must be of shape (num_particles, 3) or (num_frames, num_particles, 3)&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">num_frames</span> <span class="o">=</span> <span class="n">positions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">frame_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_frames</span><span class="p">):</span>
+            <span class="n">x_part</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">y_part</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">z_part</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[</span><span class="n">frame_idx</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">x_part</span><span class="p">,</span> <span class="n">y_part</span><span class="p">,</span> <span class="n">z_part</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="dipole_solver.get_eff_polarizability">
+<a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver.get_eff_polarizability">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_eff_polarizability</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the effective polarizability by averaging all particle dipoles over all frames.</span>
+<span class="sd">        </span>
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        alpha_eff : numpy.ndarray</span>
+<span class="sd">            Average polarizability with shape (num_wavelengths, 3, 3) (squeezed)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_eff_polarizability</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="dipole_solver.get_dipoles">
+<a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver.get_dipoles">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_dipoles</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the dipoles calculated for all frames.</span>
+<span class="sd">        </span>
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        p : numpy.ndarray</span>
+<span class="sd">            Dipoles of each particle with shape (num_frames, num_wavelengths, num_particles, 3, 3) (squeezed)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_dipoles</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="dipole_solver.get_cap_dip">
+<a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver.get_cap_dip">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_cap_dip</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Deprecated. Use get_dipoles and get_eff_polarizability instead.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_eff_polarizability</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_dipoles</span><span class="p">()</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Tanner.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

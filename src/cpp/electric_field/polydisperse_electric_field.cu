@@ -48,54 +48,7 @@ __device__ static double interpolate_table_gpu_polydisperse(
     return y_table[idx * num_cols + col] * (1.0 - t) + y_table[(idx + 1) * num_cols + col] * t;
 }
 
-__global__ void compute_neighbor_list_kernel_polydisperse(
-    const double* __restrict__ x_part,
-    const double* __restrict__ y_part,
-    const double* __restrict__ z_part,
-    const double* __restrict__ x_field,
-    const double* __restrict__ y_field,
-    const double* __restrict__ z_field,
-    int* __restrict__ neighbor_list,
-    int* __restrict__ neighbor_counts,
-    size_t num_particles,
-    size_t num_field_points,
-    double box_x,
-    double box_y,
-    double box_z,
-    double cutoff,
-    int max_neighbors,
-    bool calc_inter_dipole)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= num_particles) return;
 
-    double xi = x_part[i];
-    double yi = y_part[i];
-    double zi = z_part[i];
-    double cutoff_sq = cutoff * cutoff;
-
-    int count = 0;
-    for (int j = 0; j < num_field_points; ++j) {
-        if (calc_inter_dipole && (i == j)) continue;
-
-        double dx = xi - x_field[j];
-        double dy = yi - y_field[j];
-        double dz = zi - z_field[j];
-
-        if (box_x > 0.0) dx -= box_x * round(dx / box_x);
-        if (box_y > 0.0) dy -= box_y * round(dy / box_y);
-        if (box_z > 0.0) dz -= box_z * round(dz / box_z);
-
-        double dist_sq = dx * dx + dy * dy + dz * dz;
-        if (dist_sq <= cutoff_sq) {
-            if (count < max_neighbors) {
-                neighbor_list[i * max_neighbors + count] = j;
-            }
-            count++;
-        }
-    }
-    neighbor_counts[i] = count;
-}
 
 __global__ void spread_precalcs_kernel_polydisperse(
     const double* __restrict__ x_part,
@@ -292,6 +245,7 @@ __global__ void real_space_precalcs_kernel_polydisperse(
     if (i >= num_particles) return;
 
     int count = neighbor_counts[i];
+    if (count > max_neighbors) count = max_neighbors;
     int start_idx = particle_offsets[i];
 
     double xi = x_part[i];
@@ -490,6 +444,7 @@ __global__ void real_space_neighbor_kernel_polydisperse(
     if (i >= num_particles) return;
 
     int count = neighbor_counts[i];
+    if (count > max_neighbors) count = max_neighbors;
     int start_idx = particle_offsets[i];
 
     double xi = x_part[i];
@@ -805,7 +760,8 @@ Polydisperse_Electric_Field::Polydisperse_Electric_Field(
       xi(xi), calc_inter_dipole(calc_inter_dipole),
       h_radii(particle_radii),
       particles_updated(false), field_points_updated(false),
-      dipoles_updated(false)
+      dipoles_updated(false),
+      neighbor_list(std::make_unique<NeighborList>())
 {
     num_particles = h_radii.size();
 
@@ -883,8 +839,6 @@ Polydisperse_Electric_Field::~Polydisperse_Electric_Field() {
     if (d_radius_idx) cudaFree(d_radius_idx);
     if (d_col_ind) cudaFree(d_col_ind);
     if (d_self_perp_uniq) cudaFree(d_self_perp_uniq);
-    if (d_neighbor_list) cudaFree(d_neighbor_list);
-    if (d_neighbor_counts) cudaFree(d_neighbor_counts);
     if (d_r_table) cudaFree(d_r_table);
     if (d_field_dip_1) cudaFree(d_field_dip_1);
     if (d_field_dip_2) cudaFree(d_field_dip_2);
@@ -902,39 +856,20 @@ Polydisperse_Electric_Field::~Polydisperse_Electric_Field() {
     if (d_contract_idxs) cudaFree(d_contract_idxs);
     if (d_perp) cudaFree(d_perp);
     if (d_para) cudaFree(d_para);
-    if (d_particle_offsets) cudaFree(d_particle_offsets);
     if (d_fE_grid) cudaFree(d_fE_grid);
     if (d_fEs_grid) cudaFree(d_fEs_grid);
     if (fft_plan) cufftDestroy((cufftHandle)fft_plan);
 }
 
 void Polydisperse_Electric_Field::computeNeighborList(int max_neighbors_per_particle) {
-    if (d_neighbor_list == nullptr || max_neighbors_per_particle != max_neighbors) {
-        if (d_neighbor_list != nullptr) {
-            CUDA_CHECK(cudaFree(d_neighbor_list));
-        }
-        max_neighbors = max_neighbors_per_particle;
-        CUDA_CHECK(cudaMalloc(&d_neighbor_list, num_particles * max_neighbors * sizeof(int)));
-    }
-    if (d_neighbor_counts == nullptr) {
-        CUDA_CHECK(cudaMalloc(&d_neighbor_counts, num_particles * sizeof(int)));
-    }
-    CUDA_CHECK(cudaMemset(d_neighbor_counts, 0, num_particles * sizeof(int)));
-
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (num_particles + threadsPerBlock - 1) / threadsPerBlock;
-
-    compute_neighbor_list_kernel_polydisperse<<<blocksPerGrid, threadsPerBlock>>>(
+    neighbor_list->build(
         d_x_part, d_y_part, d_z_part,
         d_x_field, d_y_field, d_z_field,
-        d_neighbor_list, d_neighbor_counts,
         num_particles, num_field_points,
         box_x, box_y, box_z,
-        rc, max_neighbors,
-        calc_inter_dipole
+        rc, calc_inter_dipole,
+        max_neighbors_per_particle
     );
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void Polydisperse_Electric_Field::computeRealSpaceTables() {
@@ -1309,24 +1244,9 @@ void Polydisperse_Electric_Field::contractPrecalcs() {
 }
 
 void Polydisperse_Electric_Field::realSpacePrecalcs() {
-    if (d_neighbor_list == nullptr) {
-        computeNeighborList(128);
-    }
+    computeNeighborList(128);
 
-    std::vector<int> host_counts(num_particles);
-    CUDA_CHECK(cudaMemcpy(host_counts.data(), d_neighbor_counts, num_particles * sizeof(int), cudaMemcpyDeviceToHost));
-
-    std::vector<int> host_offsets(num_particles);
-    int total = 0;
-    for (size_t i = 0; i < num_particles; ++i) {
-        host_offsets[i] = total;
-        total += host_counts[i];
-    }
-    num_pairs = total;
-
-    if (d_particle_offsets) CUDA_CHECK(cudaFree(d_particle_offsets));
-    CUDA_CHECK(cudaMalloc(&d_particle_offsets, num_particles * sizeof(int)));
-    CUDA_CHECK(cudaMemcpy(d_particle_offsets, host_offsets.data(), num_particles * sizeof(int), cudaMemcpyHostToDevice));
+    size_t num_pairs = neighbor_list->get_num_pairs();
 
     if (d_perp) CUDA_CHECK(cudaFree(d_perp));
     if (d_para) CUDA_CHECK(cudaFree(d_para));
@@ -1342,12 +1262,12 @@ void Polydisperse_Electric_Field::realSpacePrecalcs() {
             d_x_part, d_y_part, d_z_part,
             d_x_field, d_y_field, d_z_field,
             d_radius_idx, d_col_ind, num_unique_radii,
-            d_neighbor_list, d_neighbor_counts, d_particle_offsets,
+            neighbor_list->get_list(), neighbor_list->get_counts(), neighbor_list->get_offsets(),
             d_r_table, d_field_dip_1, d_field_dip_2,
             table_size,
             d_perp, d_para,
             num_particles,
-            max_neighbors,
+            neighbor_list->get_max_neighbors(),
             box_x, box_y, box_z,
             rc
         );
@@ -1438,6 +1358,7 @@ void Polydisperse_Electric_Field::realSpace(double* d_E_point) {
         CUDA_CHECK(cudaDeviceSynchronize());
     }
 
+    size_t num_pairs = neighbor_list ? neighbor_list->get_num_pairs() : 0;
     if (num_pairs > 0) {
         int threadsPerBlock = 256;
         int blocksPerGrid = (num_particles + threadsPerBlock - 1) / threadsPerBlock;
@@ -1446,11 +1367,11 @@ void Polydisperse_Electric_Field::realSpace(double* d_E_point) {
             d_x_part, d_y_part, d_z_part,
             d_x_field, d_y_field, d_z_field,
             d_dipoles,
-            d_neighbor_list, d_neighbor_counts, d_particle_offsets,
+            neighbor_list->get_list(), neighbor_list->get_counts(), neighbor_list->get_offsets(),
             d_perp, d_para,
             d_E_point,
             num_particles,
-            max_neighbors,
+            neighbor_list->get_max_neighbors(),
             box_x, box_y, box_z,
             rc
         );

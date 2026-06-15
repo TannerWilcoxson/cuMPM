@@ -1,5 +1,5 @@
 # CMake build output
-build/
+/build/
 
 # Compiled Python extension binaries
 _cuMPM.cpython*
@@ -32,4 +32,8 @@ dist/
 # Local testing and example outputs
 dev_testing/
 mixed_eps_polarizability.png
+
+# Benchmarking outputs
+benchmarks/*.png
+benchmarks/*.nsys-rep
 

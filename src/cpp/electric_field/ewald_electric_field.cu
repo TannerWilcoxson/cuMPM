@@ -31,8 +31,8 @@ Ewald_Electric_Field::Ewald_Electric_Field(double box_x, double box_y, double bo
       d_self_coef_r(nullptr), d_self_coef_i(nullptr),
       d_spread_coef(nullptr), d_spread_idxs(nullptr), num_spread(0),
       d_E_point(nullptr), d_particle_index(nullptr), d_contract_coef(nullptr), d_contract_idxs(nullptr), num_contract(0),
-      d_self_perp(nullptr), d_perp(nullptr), d_para(nullptr), d_particle_offsets(nullptr), num_pairs(0),
-      self_coef(0.0) {
+      d_self_perp(nullptr), d_perp(nullptr), d_para(nullptr),
+      self_coef(0.0), neighbor_list(std::make_unique<NeighborList>()) {
 
     const double PI_CONST = 3.14159265358979323846;
     self_coef = -4.0 * std::pow(xi, 3.0) / (3.0 * std::sqrt(PI_CONST));
@@ -119,10 +119,6 @@ Ewald_Electric_Field::~Ewald_Electric_Field() {
         cudaFree(d_para);
         d_para = nullptr;
     }
-    if (d_particle_offsets) {
-        cudaFree(d_particle_offsets);
-        d_particle_offsets = nullptr;
-    }
     if (!calc_inter_dipole) {
         if (d_x_field) {
             cudaFree(d_x_field);
@@ -136,14 +132,6 @@ Ewald_Electric_Field::~Ewald_Electric_Field() {
             cudaFree(d_z_field);
             d_z_field = nullptr;
         }
-    }
-    if (d_neighbor_list) {
-        cudaFree(d_neighbor_list);
-        d_neighbor_list = nullptr;
-    }
-    if (d_neighbor_counts) {
-        cudaFree(d_neighbor_counts);
-        d_neighbor_counts = nullptr;
     }
     if (d_r_table) {
         cudaFree(d_r_table);
@@ -188,111 +176,19 @@ Ewald_Electric_Field::~Ewald_Electric_Field() {
     }
 }
 
-// CUDA kernel to compute neighbor list under periodic boundary conditions
-__global__ void compute_neighbor_list_kernel(
-    const double* __restrict__ x_part,
-    const double* __restrict__ y_part,
-    const double* __restrict__ z_part,
-    const double* __restrict__ x_field,
-    const double* __restrict__ y_field,
-    const double* __restrict__ z_field,
-    int* __restrict__ neighbor_list,
-    int* __restrict__ neighbor_counts,
-    size_t num_particles,
-    size_t num_field_points,
-    double box_x,
-    double box_y,
-    double box_z,
-    double cutoff,
-    int max_neighbors,
-    bool calc_inter_dipole) 
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= num_particles) return;
-
-    double xi = x_part[i];
-    double yi = y_part[i];
-    double zi = z_part[i];
-    double cutoff_sq = cutoff * cutoff;
-
-    int count = 0;
-    for (int j = 0; j < num_field_points; ++j) {
-        if (calc_inter_dipole && (i == j)) continue;
-
-        double dx = xi - x_field[j];
-        double dy = yi - y_field[j];
-        double dz = zi - z_field[j];
-
-        // Apply periodic boundary conditions (minimum image convention)
-        if (box_x > 0.0) dx -= box_x * round(dx / box_x);
-        if (box_y > 0.0) dy -= box_y * round(dy / box_y);
-        if (box_z > 0.0) dz -= box_z * round(dz / box_z);
-
-        double dist_sq = dx * dx + dy * dy + dz * dz;
-        if (dist_sq <= cutoff_sq) {
-            if (count < max_neighbors) {
-                neighbor_list[i * max_neighbors + count] = j;
-            }
-            count++;
-        }
-    }
-    neighbor_counts[i] = count;
-}
-
 void Ewald_Electric_Field::computeNeighborList(int max_neighbors_per_particle) {
-    if (num_particles == 0) return;
-
-    // Check if we need to allocate or reallocate memory
-    if (d_neighbor_list == nullptr || max_neighbors_per_particle != max_neighbors) {
-        if (d_neighbor_list != nullptr) {
-            CUDA_CHECK(cudaFree(d_neighbor_list));
-        }
-        max_neighbors = max_neighbors_per_particle;
-        CUDA_CHECK(cudaMalloc(&d_neighbor_list, num_particles * max_neighbors * sizeof(int)));
-    }
-
-    if (d_neighbor_counts == nullptr) {
-        CUDA_CHECK(cudaMalloc(&d_neighbor_counts, num_particles * sizeof(int)));
-    }
-
-    // Initialize counts to 0
-    CUDA_CHECK(cudaMemset(d_neighbor_counts, 0, num_particles * sizeof(int)));
-
-    // Launch configuration
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (num_particles + threadsPerBlock - 1) / threadsPerBlock;
-
-    compute_neighbor_list_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+    neighbor_list->build(
         d_x_part, d_y_part, d_z_part,
         d_x_field, d_y_field, d_z_field,
-        d_neighbor_list, d_neighbor_counts,
-        num_particles,
-        num_field_points,
+        num_particles, num_field_points,
         box_x, box_y, box_z,
-        rc,
-        max_neighbors,
-        calc_inter_dipole
+        rc, calc_inter_dipole,
+        max_neighbors_per_particle
     );
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void Ewald_Electric_Field::getNeighborListHost(std::vector<int>& host_list, std::vector<int>& host_counts) const {
-    if (num_particles == 0) {
-        host_list.clear();
-        host_counts.clear();
-        return;
-    }
-
-    if (d_neighbor_list == nullptr || d_neighbor_counts == nullptr) {
-        throw std::runtime_error("Neighbor list has not been calculated on the GPU yet.");
-    }
-
-    host_list.resize(num_particles * max_neighbors);
-    host_counts.resize(num_particles);
-
-    CUDA_CHECK(cudaMemcpy(host_list.data(), d_neighbor_list, num_particles * max_neighbors * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_counts.data(), d_neighbor_counts, num_particles * sizeof(int), cudaMemcpyDeviceToHost));
+    neighbor_list->get_host(host_list, host_counts);
 }
 
 void Ewald_Electric_Field::computeRealSpaceTables() {
@@ -992,6 +888,7 @@ __global__ void real_space_precalcs_kernel(
     if (i >= num_particles) return;
 
     int count = neighbor_counts[i];
+    if (count > max_neighbors) count = max_neighbors;
     int start_idx = particle_offsets[i];
 
     double xi = x_part[i];
@@ -1100,24 +997,9 @@ void Ewald_Electric_Field::contractPrecalcs() {
 }
 
 void Ewald_Electric_Field::realSpacePrecalcs() {
-    if (d_neighbor_list == nullptr) {
-        computeNeighborList(128);
-    }
+    computeNeighborList(128);
 
-    std::vector<int> host_counts(num_particles);
-    CUDA_CHECK(cudaMemcpy(host_counts.data(), d_neighbor_counts, num_particles * sizeof(int), cudaMemcpyDeviceToHost));
-
-    std::vector<int> host_offsets(num_particles);
-    int total = 0;
-    for (size_t i = 0; i < num_particles; ++i) {
-        host_offsets[i] = total;
-        total += host_counts[i];
-    }
-    num_pairs = total;
-
-    if (d_particle_offsets) CUDA_CHECK(cudaFree(d_particle_offsets));
-    CUDA_CHECK(cudaMalloc(&d_particle_offsets, num_particles * sizeof(int)));
-    CUDA_CHECK(cudaMemcpy(d_particle_offsets, host_offsets.data(), num_particles * sizeof(int), cudaMemcpyHostToDevice));
+    size_t num_pairs = neighbor_list->get_num_pairs();
 
     if (d_self_perp) CUDA_CHECK(cudaFree(d_self_perp));
     if (d_perp) CUDA_CHECK(cudaFree(d_perp));
@@ -1136,19 +1018,18 @@ void Ewald_Electric_Field::realSpacePrecalcs() {
         real_space_precalcs_kernel<<<blocksPerGrid, threadsPerBlock>>>(
             d_x_part, d_y_part, d_z_part,
             d_x_field, d_y_field, d_z_field,
-            d_neighbor_list, d_neighbor_counts, d_particle_offsets,
+            neighbor_list->get_list(), neighbor_list->get_counts(), neighbor_list->get_offsets(),
             d_r_table, d_field_dip_1, d_field_dip_2,
             table_size,
             d_perp, d_para,
             num_particles,
-            max_neighbors,
+            neighbor_list->get_max_neighbors(),
             box_x, box_y, box_z,
             rc
         );
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
     } else {
-
         d_perp = nullptr;
         d_para = nullptr;
     }
@@ -1196,6 +1077,7 @@ void Ewald_Electric_Field::getRealSpacePrecalcsHost(double& host_self_perp,
 
     CUDA_CHECK(cudaMemcpy(&host_self_perp, d_self_perp, sizeof(double), cudaMemcpyDeviceToHost));
 
+    size_t num_pairs = neighbor_list ? neighbor_list->get_num_pairs() : 0;
     host_perp.resize(num_pairs);
     host_para.resize(num_pairs);
 
@@ -1381,6 +1263,7 @@ __global__ void real_space_neighbor_kernel(
     if (i >= num_particles) return;
 
     int count = neighbor_counts[i];
+    if (count > max_neighbors) count = max_neighbors;
     int start_idx = particle_offsets[i];
 
     double xi = x_part[i];
@@ -1526,8 +1409,9 @@ void Ewald_Electric_Field::realSpace(double* d_E_point) {
         CUDA_CHECK(cudaDeviceSynchronize());
     }
 
+    size_t num_pairs = neighbor_list ? neighbor_list->get_num_pairs() : 0;
     if (num_pairs > 0) {
-        if (d_perp == nullptr || d_para == nullptr || d_particle_offsets == nullptr) {
+        if (d_perp == nullptr || d_para == nullptr || neighbor_list->get_offsets() == nullptr) {
             throw std::runtime_error("realSpace: perp/para precalcs are not allocated.");
         }
 
@@ -1538,11 +1422,11 @@ void Ewald_Electric_Field::realSpace(double* d_E_point) {
             d_x_part, d_y_part, d_z_part,
             d_x_field, d_y_field, d_z_field,
             d_dipoles,
-            d_neighbor_list, d_neighbor_counts, d_particle_offsets,
+            neighbor_list->get_list(), neighbor_list->get_counts(), neighbor_list->get_offsets(),
             d_perp, d_para,
             d_E_point,
             num_particles,
-            max_neighbors,
+            neighbor_list->get_max_neighbors(),
             box_x, box_y, box_z,
             rc
         );

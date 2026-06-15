@@ -68,6 +68,7 @@ The Sphinx HTML documentation is precompiled and included directly in this repos
 * **`docs/`**: Sphinx documentation configuration, source files, and precompiled HTML files (`docs/build/html/`).
 * **`tests/`**: Modular test suite verified by `pytest`.
 * **`examples/`**: Case study and executable demo setups (e.g. Drude-ITO lattice modeling and 3D polydisperse NaCl lattices).
+* **`benchmarks/`**: Scripts to compare solver runtimes and verify scaling on GPU.
 * **`environment.yml`**: Portable environment setup file for Conda/Mamba.
 * **`CMakeLists.txt`**: C++ CMake compilation pipeline configurations.
 * **`pyproject.toml`**: Package metadata, setup tools, optional-dependencies, and environment configurations.

@@ -5,6 +5,8 @@
 #include <vector>
 #include <cstddef>
 #include <string>
+#include <memory>
+#include "neighbor_list.h"
 
 class Polydisperse_Electric_Field : public Electric_Field {
 private:
@@ -43,10 +45,8 @@ private:
     double eta_scalar = 0.0;
     int P_support = 0;
 
-    // Neighbor list device pointers
-    int* d_neighbor_list = nullptr;
-    int* d_neighbor_counts = nullptr;
-    int max_neighbors = 0;
+    // Neighbor list manager
+    std::unique_ptr<NeighborList> neighbor_list;
 
     // Device pointers for real space tables
     double* d_r_table = nullptr;
@@ -88,8 +88,6 @@ private:
     // GPU device pointers for real space precalcs
     double* d_perp = nullptr;
     double* d_para = nullptr;
-    int* d_particle_offsets = nullptr;
-    size_t num_pairs = 0;
 
     // Grid and FFT members
     double* d_fE_grid = nullptr;  // Scalar grid of size grid_voxels (complex, Z2Z format)
@@ -152,7 +150,7 @@ public:
 
     double* getDevPerp() const { return d_perp; }
     double* getDevPara() const { return d_para; }
-    size_t getNumPairs() const { return num_pairs; }
+    size_t getNumPairs() const { return neighbor_list ? neighbor_list->get_num_pairs() : 0; }
 
     const int* getNumGrid() const { return num_grid; }
     const double* getGridSpacing() const { return grid_spacing; }
@@ -161,9 +159,9 @@ public:
     double getEta() const { return eta_scalar; }
     int getP() const { return P_support; }
 
-    int* getDevNeighborList() const { return d_neighbor_list; }
-    int* getDevNeighborCounts() const { return d_neighbor_counts; }
-    int getMaxNeighbors() const { return max_neighbors; }
+    int* getDevNeighborList() const { return neighbor_list ? neighbor_list->get_list() : nullptr; }
+    int* getDevNeighborCounts() const { return neighbor_list ? neighbor_list->get_counts() : nullptr; }
+    int getMaxNeighbors() const { return neighbor_list ? neighbor_list->get_max_neighbors() : 0; }
 
     double* getDevRTable() const { return d_r_table; }
     double* getDevFieldDip1() const { return d_field_dip_1; }

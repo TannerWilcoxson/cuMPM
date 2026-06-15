@@ -1,0 +1,245 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cuMPM.near_field &mdash; cuMPM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            cuMPM
+              <img src="../../_static/cumpm_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Usage Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">cuMPM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">cuMPM.near_field</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for cuMPM.near_field</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cuMPM</span>
+
+<div class="viewcode-block" id="Near_Field">
+<a class="viewcode-back" href="../../api.html#cuMPM.Near_Field">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Near_Field</span><span class="p">:</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Evaluate the local electric field intensity at arbitrary spatial coordinates.</span>
+
+<span class="sd">    This class computes the total local electric field intensity (defined as </span>
+<span class="sd">    :math:`\lvert -\mathbf{E}_{\text{ind}} + \mathbf{E}_0 \rvert^2`) at a set of target field points </span>
+<span class="sd">    due to a collection of complex point dipoles under periodic boundary conditions. </span>
+<span class="sd">    It supports both monodisperse and polydisperse systems.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">box</span><span class="p">,</span> <span class="n">E0</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">dip</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dip_pos</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">field_points</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">xi</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">errortol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">field_type</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the Near Field calculator.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        box : array_like</span>
+<span class="sd">            The dimensions of the periodic boundary box [L_x, L_y, L_z] in nanometers.</span>
+<span class="sd">        E0 : array_like</span>
+<span class="sd">            The complex incident electric field vector [E_x, E_y, E_z].</span>
+<span class="sd">        radius : float or array_like, optional</span>
+<span class="sd">            The radii of the particles in nanometers. Defaults to 1.0.</span>
+<span class="sd">        dip : array_like, optional</span>
+<span class="sd">            The complex dipoles of each particle, shape (num_particles, 3).</span>
+<span class="sd">        dip_pos : array_like, optional</span>
+<span class="sd">            The spatial positions of the dipoles, shape (num_particles, 3).</span>
+<span class="sd">        field_points : array_like, optional</span>
+<span class="sd">            The target spatial coordinates for field evaluation, shape (num_field_points, 3).</span>
+<span class="sd">        xi : float, optional</span>
+<span class="sd">            The Ewald splitting parameter. Defaults to 0.5.</span>
+<span class="sd">        errortol : float, optional</span>
+<span class="sd">            The real space cutoff error tolerance. Defaults to 1e-3.</span>
+<span class="sd">        field_type : str, optional</span>
+<span class="sd">            Field grid type: &quot;auto&quot;, &quot;monodisperse&quot;, or &quot;polydisperse&quot;. Defaults to &quot;auto&quot;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">box</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">box</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">E0</span> <span class="o">=</span> <span class="p">[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">E0</span><span class="p">]</span>
+        
+        <span class="c1"># Convert radius to list</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iterable</span><span class="p">(</span><span class="n">radius</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">radius_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">radius</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">radius_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">radius</span><span class="p">)]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">xi</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errortol</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">errortol</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">field_type</span> <span class="o">=</span> <span class="n">field_type</span>
+
+        <span class="c1"># Instantiate C++ class</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_near_field</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Near_Field</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">box</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">E0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">radius_list</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">xi</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">errortol</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">field_type</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">dip</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">set_dipoles</span><span class="p">(</span><span class="n">dip</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dip_pos</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">set_dipole_positions</span><span class="p">(</span><span class="n">dip_pos</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">field_points</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">set_field_points</span><span class="p">(</span><span class="n">field_points</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Near_Field.set_dipoles">
+<a class="viewcode-back" href="../../api.html#cuMPM.Near_Field.set_dipoles">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_dipoles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dip</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Set the complex dipoles of the particles.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        dip : array_like</span>
+<span class="sd">            Array of complex dipole vectors, shape (num_particles, 3).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">dip</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;dipoles can&#39;t be set to None&quot;</span><span class="p">)</span>
+        <span class="n">dip_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">dip</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">complex</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dip_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">dip_flat</span> <span class="o">=</span> <span class="n">dip_arr</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dip_flat</span> <span class="o">=</span> <span class="p">[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">dip_arr</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_near_field</span><span class="o">.</span><span class="n">set_dipoles</span><span class="p">(</span><span class="n">dip_flat</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Near_Field.set_dipole_positions">
+<a class="viewcode-back" href="../../api.html#cuMPM.Near_Field.set_dipole_positions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_dipole_positions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dip_pos</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Set the spatial coordinates of the dipoles.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        dip_pos : array_like</span>
+<span class="sd">            Array of spatial coordinates [x, y, z] for each dipole, shape (num_particles, 3).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">dip_pos</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;dipole positions can&#39;t be set to None&quot;</span><span class="p">)</span>
+        <span class="n">dip_pos_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">dip_pos</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">dip_pos_arr</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">dip_pos_arr</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">dip_pos_arr</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_near_field</span><span class="o">.</span><span class="n">set_dipole_positions</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Near_Field.set_field_points">
+<a class="viewcode-back" href="../../api.html#cuMPM.Near_Field.set_field_points">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_field_points</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_points</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Set the target spatial coordinates at which to calculate the electric field.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        field_points : array_like</span>
+<span class="sd">            Array of coordinates [x, y, z] where the field is evaluated, shape (num_field_points, 3).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">field_points</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;field points can&#39;t be set to None&quot;</span><span class="p">)</span>
+        <span class="n">field_points_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">field_points</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">field_points_arr</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">field_points_arr</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">field_points_arr</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_near_field</span><span class="o">.</span><span class="n">set_field_points</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Near_Field.calculate">
+<a class="viewcode-back" href="../../api.html#cuMPM.Near_Field.calculate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Evaluate the local electric field intensity at the pre-configured field points.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        intensity : numpy.ndarray</span>
+<span class="sd">            A 1D array of shape (num_field_points,) representing the total field </span>
+<span class="sd">            intensity ``|-E_ind + E0|^2`` at each evaluation coordinate.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">intensity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_near_field</span><span class="o">.</span><span class="n">calculate</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">intensity</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Tanner.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
