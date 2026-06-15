@@ -12,6 +12,15 @@ dependencies = [
     "numpy",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+doc = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+
 [tool.scikit-build]
 cmake.version = ">=3.18"
 wheel.packages = ["src/cuMPM"]

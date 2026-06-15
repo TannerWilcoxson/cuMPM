@@ -51,6 +51,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       double,
                       double,
                       bool,
+                      const std::string&,
+                      const std::string&,
                       const std::string&>(),
              py::arg("box"),
              py::arg("eps_p"),
@@ -59,7 +61,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("xi") = 0.5,
              py::arg("tol") = 1e-3,
              py::arg("quiet") = false,
-             py::arg("guess_type") = "derivative")
+             py::arg("guess_type") = "derivative",
+             py::arg("solver_type") = "gmres",
+             py::arg("field_type") = "auto")
         .def(py::init<const std::vector<double>&,
                       const std::vector<std::complex<double>>&,
                       const std::vector<double>&,
@@ -67,6 +71,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       double,
                       double,
                       bool,
+                      const std::string&,
+                      const std::string&,
                       const std::string&>(),
              py::arg("box"),
              py::arg("eps_p_1d"),
@@ -75,7 +81,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("xi") = 0.5,
              py::arg("tol") = 1e-3,
              py::arg("quiet") = false,
-             py::arg("guess_type") = "derivative")
+             py::arg("guess_type") = "derivative",
+             py::arg("solver_type") = "gmres",
+             py::arg("field_type") = "auto")
         .def(py::init<const std::vector<double>&,
                       std::complex<double>,
                       const std::vector<double>&,
@@ -83,6 +91,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       double,
                       double,
                       bool,
+                      const std::string&,
+                      const std::string&,
                       const std::string&>(),
              py::arg("box"),
              py::arg("eps_p_scalar"),
@@ -91,7 +101,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("xi") = 0.5,
              py::arg("tol") = 1e-3,
              py::arg("quiet") = false,
-             py::arg("guess_type") = "derivative")
+             py::arg("guess_type") = "derivative",
+             py::arg("solver_type") = "gmres",
+             py::arg("field_type") = "auto")
         .def("compute", &Dipole_Solver::compute,
              py::arg("x_part"),
              py::arg("y_part"),
@@ -101,4 +113,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
         .def("get_num_frames", &Dipole_Solver::get_num_frames)
         .def("get_num_particles", &Dipole_Solver::get_num_particles)
         .def("get_num_wavevectors", &Dipole_Solver::get_num_wavevectors);
+
+    // Forward declaration of register helper
+    void register_near_field(py::module_& m);
+    register_near_field(m);
 }

@@ -1,10 +1,11 @@
-#ifndef ELECTRIC_FIELD_H
-#define ELECTRIC_FIELD_H
+#ifndef EWALD_ELECTRIC_FIELD_H
+#define EWALD_ELECTRIC_FIELD_H
 
+#include "electric_field.h"
 #include <vector>
 #include <cstddef>
 
-class Electric_Field {
+class Ewald_Electric_Field : public Electric_Field {
 private:
     double* d_x_part = nullptr; // GPU device pointer for particle X-coordinates
     double* d_y_part = nullptr; // GPU device pointer for particle Y-coordinates
@@ -91,17 +92,17 @@ private:
 
 public:
     // Constructor: Allocates Ewald precalculations, tables, and FFT plans
-    Electric_Field(double box_x, double box_y, double box_z,
-                   double errortol,
-                   double xi,
-                   bool calc_inter_dipole);
+    Ewald_Electric_Field(double box_x, double box_y, double box_z,
+                         double errortol,
+                         double xi,
+                         bool calc_inter_dipole);
 
     // Destructor: Frees GPU memory
-    ~Electric_Field();
+    ~Ewald_Electric_Field();
 
     // Disable copy constructor and copy assignment operator to prevent double-free
-    Electric_Field(const Electric_Field&) = delete;
-    Electric_Field& operator=(const Electric_Field&) = delete;
+    Ewald_Electric_Field(const Ewald_Electric_Field&) = delete;
+    Ewald_Electric_Field& operator=(const Ewald_Electric_Field&) = delete;
 
     // Getters
     double* getDevXPart() const { return d_x_part; }
@@ -128,7 +129,7 @@ public:
     void clearParticlesUpdated() { particles_updated = false; }
     void clearFieldPointsUpdated() { field_points_updated = false; }
 
-    double* getDevDipoles() const { return d_dipoles; }
+    double* getDevDipoles() const override { return d_dipoles; }
     double* getDevSelfCoefReal() const { return d_self_coef_r; }
     double* getDevSelfCoefImag() const { return d_self_coef_i; }
     bool getDipolesUpdated() const { return dipoles_updated; }
@@ -138,7 +139,7 @@ public:
     int* getDevSpreadIdxs() const { return d_spread_idxs; }
     size_t getNumSpread() const { return num_spread; }
 
-    double* getDevEPoint() const { return d_E_point; }
+    double* getDevEPoint() const override { return d_E_point; }
     int* getDevParticleIndex() const { return d_particle_index; }
     double* getDevContractCoef() const { return d_contract_coef; }
     int* getDevContractIdxs() const { return d_contract_idxs; }
@@ -152,6 +153,8 @@ public:
     const int* getNumGrid() const { return num_grid; }
     const double* getGridSpacing() const { return grid_spacing; }
     const double* getSpectralSplit() const { return spectral_split; }
+    double* getDevFEGrid() const { return d_fE_grid; }
+    double* getDevFEsGrid() const { return d_fEs_grid; }
 
     int* getDevNeighborList() const { return d_neighbor_list; }
     int* getDevNeighborCounts() const { return d_neighbor_counts; }
@@ -195,7 +198,7 @@ public:
     // Update coordinate methods
     void updateParticleCoordinates(const std::vector<double>& x_part,
                                    const std::vector<double>& y_part,
-                                   const std::vector<double>& z_part);
+                                   const std::vector<double>& z_part) override;
 
     void updateFieldCoordinates(const std::vector<double>& x_field,
                                  const std::vector<double>& y_field,
@@ -218,7 +221,7 @@ public:
                                std::vector<double>& host_dip_yr, std::vector<double>& host_dip_yi,
                                std::vector<double>& host_dip_zr, std::vector<double>& host_dip_zi) const;
 
-    void setSelfCoef(const std::vector<double>& self_coef_r, const std::vector<double>& self_coef_i);
+    void setSelfCoef(const std::vector<double>& self_coef_r, const std::vector<double>& self_coef_i) override;
     void setSelfCoef(double val_r, double val_i = 0.0);
 
     // New precalculation methods
@@ -246,7 +249,7 @@ public:
     void realSpace(double* d_E_point);
 
     // Public method to run Ewald calculation pipeline
-    void calculate();
+    void calculate() override;
 };
 
-#endif // ELECTRIC_FIELD_H
+#endif // EWALD_ELECTRIC_FIELD_H

@@ -26,3 +26,10 @@ dist/
 .pyproject-build-system/
 .eggs/
 
+# Pytest cache
+.pytest_cache/
+
+# Local testing and example outputs
+dev_testing/
+mixed_eps_polarizability.png
+

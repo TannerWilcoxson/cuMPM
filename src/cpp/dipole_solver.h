@@ -5,7 +5,8 @@
 #include <complex>
 #include <string>
 #include <memory>
-#include "electric_field.h"
+#include "electric_field/electric_field.h"
+#include "numerical_solver/numerical_solver.h"
 
 using Complex = std::complex<double>;
 
@@ -19,6 +20,8 @@ private:
     double tol;
     bool quiet;
     std::string guess_type;
+    std::string solver_type;
+    std::string field_type;
 
     size_t num_particles = 0;
     size_t num_wavevectors = 0;
@@ -28,14 +31,7 @@ private:
     double vol_frac = 0.0;
 
     std::unique_ptr<Electric_Field> EF;
-
-    // GPU buffers for the resident solver
-    double* d_x = nullptr;
-    double* d_b = nullptr;
-    double* d_r = nullptr;
-    double* d_w = nullptr;
-    double* d_V = nullptr; // Krylov basis vectors [restart + 1]
-    double* d_reduce_buf = nullptr; // shared helper buffer for reductions (norm, dot)
+    std::unique_ptr<Numerical_Solver> solver;
 
     // Results storage
     // avg_dips: average polarizability tensor over all frames for each wavelength
@@ -63,9 +59,7 @@ private:
     std::vector<Complex> calc_previous_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx) const;
     std::vector<Complex> calc_derivative_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx) const;
 
-    // GMRES and system solve (GPU resident)
-    void allocate_gpu_buffers();
-    void free_gpu_buffers();
+    // System solve (delegates to Numerical_Solver)
     std::vector<Complex> compute_spectrum(const std::vector<Complex>& initial_guess);
     void compute_tensor(const std::vector<Complex>& dip_guess, 
                         std::vector<Complex>& frame_cap, 
@@ -74,6 +68,10 @@ private:
                                          const std::vector<Complex>& dip_guess);
 
 public:
+    void set_numerical_solver(std::unique_ptr<Numerical_Solver> new_solver) {
+        solver = std::move(new_solver);
+    }
+
     // Constructors
     // 1. Full 2D eps_p
     Dipole_Solver(const std::vector<double>& box,
@@ -83,7 +81,9 @@ public:
                   double xi = 0.5,
                   double tol = 1e-3,
                   bool quiet = false,
-                  const std::string& guess_type = "derivative");
+                  const std::string& guess_type = "derivative",
+                  const std::string& solver_type = "gmres",
+                  const std::string& field_type = "auto");
 
     // 2. 1D eps_p (wavelength-dependent, same for all particles)
     Dipole_Solver(const std::vector<double>& box,
@@ -93,7 +93,9 @@ public:
                   double xi = 0.5,
                   double tol = 1e-3,
                   bool quiet = false,
-                  const std::string& guess_type = "derivative");
+                  const std::string& guess_type = "derivative",
+                  const std::string& solver_type = "gmres",
+                  const std::string& field_type = "auto");
 
     // 3. Scalar eps_p (single wavelength, same for all particles)
     Dipole_Solver(const std::vector<double>& box,
@@ -103,7 +105,9 @@ public:
                   double xi = 0.5,
                   double tol = 1e-3,
                   bool quiet = false,
-                  const std::string& guess_type = "derivative");
+                  const std::string& guess_type = "derivative",
+                  const std::string& solver_type = "gmres",
+                  const std::string& field_type = "auto");
 
     ~Dipole_Solver();
 

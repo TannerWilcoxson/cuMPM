@@ -18,16 +18,28 @@ To install and compile cuMPM, you need:
 
 ## Installation
 
-You can install the package directly using `pip`. 
+### Conda/Mamba Environment Installation (Recommended)
+You can set up a complete development environment (including all compilation, testing, and documentation tools) using Mamba or Conda with the provided `environment.yml` file:
 
-Navigate to the project root directory and run:
+```bash
+# Create the environment
+mamba env create -f environment.yml
 
-### Standard Installation
+# Activate the environment
+mamba activate cuMPM
+
+# Install the package in editable development mode
+pip install -e .
+```
+
+### Standard Installation (Pip Only)
+You can also install the package directly using `pip`. Navigate to the project root directory and run:
+
 ```bash
 pip install .
 ```
 
-### Editable Installation (for development)
+### Editable Installation (Pip Only)
 ```bash
 pip install -e .
 ```

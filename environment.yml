@@ -1,0 +1,17 @@
+name: cuMPM
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - pip
+  - numpy
+  - scipy
+  - matplotlib
+  - cmake>=3.18
+  - pybind11
+  - scikit-build-core
+  # Testing
+  - pytest
+  # Documentation
+  - sphinx
+  - sphinx-rtd-theme

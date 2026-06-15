@@ -13,13 +13,13 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src/
 option(BUILD_TESTING_EXECS "Build standalone test executables" OFF)
 
 if(BUILD_TESTING_EXECS)
-    add_executable(cuMPM_reader dev_testing/main.cpp src/cpp/electric_field.cu)
+    add_executable(cuMPM_reader dev_testing/main.cpp src/cpp/electric_field/ewald_electric_field.cu)
     target_link_libraries(cuMPM_reader PRIVATE CUDA::cufft)
 
-    add_executable(minimal_use_case dev_testing/minimal_use_case.cpp src/cpp/electric_field.cu)
+    add_executable(minimal_use_case dev_testing/minimal_use_case.cpp src/cpp/electric_field/ewald_electric_field.cu)
     target_link_libraries(minimal_use_case PRIVATE CUDA::cufft)
 
-    add_executable(test_dipole_solver dev_testing/test_dipole_solver.cpp src/cpp/dipole_solver.cu src/cpp/electric_field.cu)
+    add_executable(test_dipole_solver dev_testing/test_dipole_solver.cpp src/cpp/dipole_solver.cu src/cpp/electric_field/ewald_electric_field.cu src/cpp/electric_field/polydisperse_electric_field.cu src/cpp/numerical_solver/numerical_solver.cu src/cpp/numerical_solver/gmres_solver.cu src/cpp/numerical_solver/bicgstab_solver.cu)
     target_link_libraries(test_dipole_solver PRIVATE CUDA::cufft)
 endif()
 
@@ -47,7 +47,17 @@ if(NOT pybind11_FOUND)
 endif()
 
 # Build the python extension module _cuMPM
-pybind11_add_module(_cuMPM MODULE src/cpp/dipole_solver_bindings.cpp src/cpp/dipole_solver.cu src/cpp/electric_field.cu)
+pybind11_add_module(_cuMPM MODULE
+    src/cpp/dipole_solver_bindings.cpp
+    src/cpp/near_field_bindings.cpp
+    src/cpp/near_field.cu
+    src/cpp/dipole_solver.cu
+    src/cpp/electric_field/ewald_electric_field.cu
+    src/cpp/electric_field/polydisperse_electric_field.cu
+    src/cpp/numerical_solver/numerical_solver.cu
+    src/cpp/numerical_solver/gmres_solver.cu
+    src/cpp/numerical_solver/bicgstab_solver.cu
+)
 target_link_libraries(_cuMPM PRIVATE CUDA::cufft)
 
 # Install the module target to the package folder (relocatable)

@@ -85,5 +85,4 @@ axes[1].legend(frameon=True, shadow=True)
 
 plt.suptitle(f"Mixed-Dielectric Square Lattice Polarizability ({num_particles} Particles)", fontsize=14, fontweight='bold')
 plt.tight_layout()
-plt.savefig("mixed_eps_polarizability.png", dpi=300)
 print("Saved polarizability plot to mixed_eps_polarizability.png")
