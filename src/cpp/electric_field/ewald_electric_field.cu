@@ -1173,35 +1173,50 @@ __global__ void scale_kernel(
 __global__ void contract_kernel(
     const double* __restrict__ Es_grid,
     const int* __restrict__ contract_idxs,
-    const int* __restrict__ particle_index,
     const double* __restrict__ contract_coef,
     double* __restrict__ E_point,
-    size_t num_contract,
+    size_t num_field_points,
+    size_t num_offsets,
     int num_grid_y,
     int num_grid_z)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_contract) return;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= num_field_points) return;
 
-    int p = particle_index[idx];
+    double E_x_r = 0.0, E_x_i = 0.0;
+    double E_y_r = 0.0, E_y_i = 0.0;
+    double E_z_r = 0.0, E_z_i = 0.0;
 
-    int gx = contract_idxs[idx * 3 + 0];
-    int gy = contract_idxs[idx * 3 + 1];
-    int gz = contract_idxs[idx * 3 + 2];
+    size_t base_idx = i * num_offsets;
 
-    size_t v = static_cast<size_t>(gx) * num_grid_y * num_grid_z +
-               static_cast<size_t>(gy) * num_grid_z +
-               static_cast<size_t>(gz);
+    for (size_t o = 0; o < num_offsets; ++o) {
+        size_t idx = base_idx + o;
+        int gx = contract_idxs[idx * 3 + 0];
+        int gy = contract_idxs[idx * 3 + 1];
+        int gz = contract_idxs[idx * 3 + 2];
 
-    double coef = contract_coef[idx];
+        size_t v = static_cast<size_t>(gx) * num_grid_y * num_grid_z +
+                   static_cast<size_t>(gy) * num_grid_z +
+                   static_cast<size_t>(gz);
 
-    for (int c = 0; c < 3; ++c) {
-        double grid_r = Es_grid[(v * 3 + c) * 2 + 0];
-        double grid_i = Es_grid[(v * 3 + c) * 2 + 1];
+        double coef = contract_coef[idx];
 
-        atomicAdd(&E_point[(p * 3 + c) * 2 + 0], coef * grid_r);
-        atomicAdd(&E_point[(p * 3 + c) * 2 + 1], coef * grid_i);
+        E_x_r += coef * Es_grid[(v * 3 + 0) * 2 + 0];
+        E_x_i += coef * Es_grid[(v * 3 + 0) * 2 + 1];
+
+        E_y_r += coef * Es_grid[(v * 3 + 1) * 2 + 0];
+        E_y_i += coef * Es_grid[(v * 3 + 1) * 2 + 1];
+
+        E_z_r += coef * Es_grid[(v * 3 + 2) * 2 + 0];
+        E_z_i += coef * Es_grid[(v * 3 + 2) * 2 + 1];
     }
+
+    E_point[(i * 3 + 0) * 2 + 0] = E_x_r;
+    E_point[(i * 3 + 0) * 2 + 1] = E_x_i;
+    E_point[(i * 3 + 1) * 2 + 0] = E_y_r;
+    E_point[(i * 3 + 1) * 2 + 1] = E_y_i;
+    E_point[(i * 3 + 2) * 2 + 0] = E_z_r;
+    E_point[(i * 3 + 2) * 2 + 1] = E_z_i;
 }
 
 __global__ void real_space_self_kernel(
@@ -1370,15 +1385,15 @@ void Ewald_Electric_Field::contract(double* d_E_point, const double* d_Es_grid) 
     }
 
     int threadsPerBlock = 256;
-    int blocksPerGrid = (num_contract + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid = (num_field_points + threadsPerBlock - 1) / threadsPerBlock;
 
     contract_kernel<<<blocksPerGrid, threadsPerBlock>>>(
         d_Es_grid,
         d_contract_idxs,
-        d_particle_index,
         d_contract_coef,
         d_E_point,
-        num_contract,
+        num_field_points,
+        num_offsets,
         num_grid[1],
         num_grid[2]
     );

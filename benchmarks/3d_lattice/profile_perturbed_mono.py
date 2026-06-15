@@ -24,7 +24,7 @@ def make_perturbed_cubic_grid(Nx, Ny, Nz, spacing):
 spacing = 1.2
 radius = 0.5
 eps_m = 2.13
-omega = np.linspace(1000, 7000, 2) # 2 wavenumbers for profiling efficiency
+omega = np.linspace(1000, 7000, 2) # 2 wavenumbers for profiling
 
 # Two eps_p configurations with eps_inf = 4 for both
 eps_p1 = drude_dielectric(omega, gamma=681, omega_p=12313, eps_inf=4)
@@ -33,7 +33,7 @@ eps_p2 = drude_dielectric(omega, gamma=400, omega_p=8000, eps_inf=4)
 Nx, Ny, Nz = 80, 80, 40
 N = Nx * Ny * Nz  # 256,000 particles
 
-print(f"Setting up 3D perturbed lattice MONODISPERSE profile with {N} particles (2 wavenumbers)...")
+print(f"Setting up 3D perturbed lattice MONODISPERSE profile with {N} particles (2 wavenumbers, 10 loops)...")
 
 # Generate perturbed coordinates
 pos = make_perturbed_cubic_grid(Nx, Ny, Nz, spacing)
@@ -78,24 +78,30 @@ print(f"\nRunning solver execution for profiling...")
 print("-" * 50)
 
 # --- GMRES Profile ---
-print("Running GMRES Solver...")
+print("Running GMRES Solver (10x)...")
 solver_gmres = cuMPM.dipole_solver(
     box=box, eps_p=eps_p_mixed, radius=radius, eps_m=eps_m, tol=1e-3, quiet=True, solver_type="gmres", field_type="monodisperse"
 )
 t0 = time.time()
-solver_gmres.compute(pos)
+for run in range(10):
+    t_start = time.time()
+    solver_gmres.compute(pos)
+    print(f"  GMRES run {run+1}/10: {time.time() - t_start:.4f} seconds")
 t_gmres = time.time() - t0
-print(f"GMRES execution time: {t_gmres:.4f} seconds")
+print(f"GMRES execution time (10 runs): {t_gmres:.4f} seconds (average: {t_gmres/10.0:.4f}s)")
 
 # --- BiCGSTAB Profile ---
-print("Running BiCGSTAB Solver...")
+print("Running BiCGSTAB Solver (10x)...")
 solver_bicg = cuMPM.dipole_solver(
     box=box, eps_p=eps_p_mixed, radius=radius, eps_m=eps_m, tol=1e-3, quiet=True, solver_type="bicgstab", field_type="monodisperse"
 )
 t0 = time.time()
-solver_bicg.compute(pos)
+for run in range(10):
+    t_start = time.time()
+    solver_bicg.compute(pos)
+    print(f"  BiCGSTAB run {run+1}/10: {time.time() - t_start:.4f} seconds")
 t_bicg = time.time() - t0
-print(f"BiCGSTAB execution time: {t_bicg:.4f} seconds")
+print(f"BiCGSTAB execution time (10 runs): {t_bicg:.4f} seconds (average: {t_bicg/10.0:.4f}s)")
 
 print("-" * 50)
-print(f"GMRES: {t_gmres:.4f}s | BiCGSTAB: {t_bicg:.4f}s")
+print(f"GMRES: {t_gmres:.4f}s total | BiCGSTAB: {t_bicg:.4f}s total")

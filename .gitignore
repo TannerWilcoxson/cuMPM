@@ -34,6 +34,6 @@ dev_testing/
 mixed_eps_polarizability.png
 
 # Benchmarking outputs
-benchmarks/*.png
-benchmarks/*.nsys-rep
+benchmarks/**/*.png
+benchmarks/**/*.nsys-rep
 

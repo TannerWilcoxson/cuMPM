@@ -340,45 +340,57 @@ __global__ void contract_kernel_polydisperse(
     const double* __restrict__ fE_grid,
     const double* __restrict__ contract_coef,
     const int* __restrict__ contract_idxs,
-    const int* __restrict__ particle_index,
     double* __restrict__ E_point,
-    size_t num_contract,
+    size_t num_field_points,
     size_t num_offsets,
     int num_grid_x,
     int num_grid_y,
     int num_grid_z,
     double prod_h)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_contract) return;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= num_field_points) return;
 
-    int p = particle_index[idx];
+    double E_x_r = 0.0, E_x_i = 0.0;
+    double E_y_r = 0.0, E_y_i = 0.0;
+    double E_z_r = 0.0, E_z_i = 0.0;
 
-    int gx = contract_idxs[idx * 3 + 0];
-    int gy = contract_idxs[idx * 3 + 1];
-    int gz = contract_idxs[idx * 3 + 2];
+    size_t base_idx = i * num_offsets;
 
-    size_t grid_linear_idx = static_cast<size_t>(gx) * num_grid_y * num_grid_z +
-                              static_cast<size_t>(gy) * num_grid_z +
-                              static_cast<size_t>(gz);
+    for (size_t o = 0; o < num_offsets; ++o) {
+        size_t idx = base_idx + o;
+        int gx = contract_idxs[idx * 3 + 0];
+        int gy = contract_idxs[idx * 3 + 1];
+        int gz = contract_idxs[idx * 3 + 2];
 
-    double grid_r = fE_grid[grid_linear_idx * 2 + 0];
-    double grid_i = fE_grid[grid_linear_idx * 2 + 1];
+        size_t grid_linear_idx = static_cast<size_t>(gx) * num_grid_y * num_grid_z +
+                                  static_cast<size_t>(gy) * num_grid_z +
+                                  static_cast<size_t>(gz);
 
-    double cx = contract_coef[idx * 3 + 0];
-    double cy = contract_coef[idx * 3 + 1];
-    double cz = contract_coef[idx * 3 + 2];
+        double grid_r = fE_grid[grid_linear_idx * 2 + 0];
+        double grid_i = fE_grid[grid_linear_idx * 2 + 1];
+
+        double cx = contract_coef[idx * 3 + 0];
+        double cy = contract_coef[idx * 3 + 1];
+        double cz = contract_coef[idx * 3 + 2];
+
+        E_x_r += cx * grid_r;
+        E_x_i += cx * grid_i;
+
+        E_y_r += cy * grid_r;
+        E_y_i += cy * grid_i;
+
+        E_z_r += cz * grid_r;
+        E_z_i += cz * grid_i;
+    }
 
     double scale = prod_h;
-
-    atomicAdd(&E_point[(p * 3 + 0) * 2 + 0], scale * cx * grid_r);
-    atomicAdd(&E_point[(p * 3 + 0) * 2 + 1], scale * cx * grid_i);
-
-    atomicAdd(&E_point[(p * 3 + 1) * 2 + 0], scale * cy * grid_r);
-    atomicAdd(&E_point[(p * 3 + 1) * 2 + 1], scale * cy * grid_i);
-
-    atomicAdd(&E_point[(p * 3 + 2) * 2 + 0], scale * cz * grid_r);
-    atomicAdd(&E_point[(p * 3 + 2) * 2 + 1], scale * cz * grid_i);
+    E_point[(i * 3 + 0) * 2 + 0] = scale * E_x_r;
+    E_point[(i * 3 + 0) * 2 + 1] = scale * E_x_i;
+    E_point[(i * 3 + 1) * 2 + 0] = scale * E_y_r;
+    E_point[(i * 3 + 1) * 2 + 1] = scale * E_y_i;
+    E_point[(i * 3 + 2) * 2 + 0] = scale * E_z_r;
+    E_point[(i * 3 + 2) * 2 + 1] = scale * E_z_i;
 }
 
 __global__ void real_space_self_kernel_polydisperse(
@@ -1325,15 +1337,15 @@ void Polydisperse_Electric_Field::contract(double* d_E_point, const double* d_Es
     }
 
     int threadsPerBlock = 256;
-    int blocksPerGrid = (num_contract + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid = (num_field_points + threadsPerBlock - 1) / threadsPerBlock;
 
     double prod_h = grid_spacing[0] * grid_spacing[1] * grid_spacing[2];
 
     contract_kernel_polydisperse<<<blocksPerGrid, threadsPerBlock>>>(
         d_Es_grid,
-        d_contract_coef, d_contract_idxs, d_particle_index,
+        d_contract_coef, d_contract_idxs,
         d_E_point,
-        num_contract, num_offsets,
+        num_field_points, num_offsets,
         num_grid[0], num_grid[1], num_grid[2],
         prod_h
     );
