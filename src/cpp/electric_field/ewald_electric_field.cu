@@ -776,9 +776,7 @@ __global__ void spread_precalcs_kernel(
     int geiy = ((giy + oy) % num_grid_y + num_grid_y) % num_grid_y;
     int geiz = ((giz + oz) % num_grid_z + num_grid_z) % num_grid_z;
 
-    spread_idxs[idx * 3 + 0] = geix;
-    spread_idxs[idx * 3 + 1] = geiy;
-    spread_idxs[idx * 3 + 2] = geiz;
+    spread_idxs[idx] = ((gix + ox + 256) << 20) | ((giy + oy + 256) << 10) | (giz + oz + 256);
 
     double gdx = dx + oxyz_x;
     double gdy = dy + oxyz_y;
@@ -844,11 +842,9 @@ __global__ void contract_precalcs_kernel(
     int geiy = ((giy + oy) % num_grid_y + num_grid_y) % num_grid_y;
     int geiz = ((giz + oz) % num_grid_z + num_grid_z) % num_grid_z;
 
-    contract_idxs[idx * 3 + 0] = geix;
-    contract_idxs[idx * 3 + 1] = geiy;
-    contract_idxs[idx * 3 + 2] = geiz;
-
-    particle_index[idx] = i;
+    int transposed_idx = o * num_field_points + i;
+    contract_idxs[transposed_idx] = geix * num_grid_y * num_grid_z + geiy * num_grid_z + geiz;
+    particle_index[transposed_idx] = i;
 
     double gdx = dx + oxyz_x;
     double gdy = dy + oxyz_y;
@@ -858,7 +854,7 @@ __global__ void contract_precalcs_kernel(
                      (gdy * gdy / spectral_split_y) +
                      (gdz * gdz / spectral_split_z);
 
-    contract_coef[idx] = const_factor * exp(-2.0 * xi * xi * div_eta);
+    contract_coef[transposed_idx] = const_factor * exp(-2.0 * xi * xi * div_eta);
 }
 
 __global__ void real_space_precalcs_kernel(
@@ -924,7 +920,7 @@ void Ewald_Electric_Field::spreadPrecalcs() {
 
     num_spread = num_particles * num_offsets;
     size_t size_coef_bytes = num_spread * sizeof(double);
-    size_t size_idxs_bytes = num_spread * 3 * sizeof(int);
+    size_t size_idxs_bytes = num_spread * sizeof(int);
 
     if (d_spread_coef) CUDA_CHECK(cudaFree(d_spread_coef));
     if (d_spread_idxs) CUDA_CHECK(cudaFree(d_spread_idxs));
@@ -958,7 +954,7 @@ void Ewald_Electric_Field::contractPrecalcs() {
 
     num_contract = num_field_points * num_offsets;
     size_t size_coef_bytes = num_contract * sizeof(double);
-    size_t size_idxs_bytes = num_contract * 3 * sizeof(int);
+    size_t size_idxs_bytes = num_contract * sizeof(int);
     size_t size_part_idx_bytes = num_contract * sizeof(int);
     size_t size_epoint_bytes = num_field_points * 3 * 2 * sizeof(double);
 
@@ -1042,10 +1038,10 @@ void Ewald_Electric_Field::getSpreadPrecalcsHost(std::vector<double>& host_sprea
     }
 
     host_spread_coef.resize(num_spread);
-    host_spread_idxs.resize(num_spread * 3);
+    host_spread_idxs.resize(num_spread);
 
     CUDA_CHECK(cudaMemcpy(host_spread_coef.data(), d_spread_coef, num_spread * sizeof(double), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_spread_idxs.data(), d_spread_idxs, num_spread * 3 * sizeof(int), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(host_spread_idxs.data(), d_spread_idxs, num_spread * sizeof(int), cudaMemcpyDeviceToHost));
 }
 
 void Ewald_Electric_Field::getContractPrecalcsHost(std::vector<double>& host_E_point,
@@ -1060,12 +1056,12 @@ void Ewald_Electric_Field::getContractPrecalcsHost(std::vector<double>& host_E_p
     host_E_point.resize(num_field_points * 3 * 2);
     host_particle_index.resize(num_contract);
     host_contract_coef.resize(num_contract);
-    host_contract_idxs.resize(num_contract * 3);
+    host_contract_idxs.resize(num_contract);
 
     CUDA_CHECK(cudaMemcpy(host_E_point.data(), d_E_point, num_field_points * 3 * 2 * sizeof(double), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(host_particle_index.data(), d_particle_index, num_contract * sizeof(int), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(host_contract_coef.data(), d_contract_coef, num_contract * sizeof(double), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_contract_idxs.data(), d_contract_idxs, num_contract * 3 * sizeof(int), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(host_contract_idxs.data(), d_contract_idxs, num_contract * sizeof(int), cudaMemcpyDeviceToHost));
 }
 
 void Ewald_Electric_Field::getRealSpacePrecalcsHost(double& host_self_perp,
@@ -1101,34 +1097,135 @@ __global__ void spread_kernel(
     int num_grid_y,
     int num_grid_z)
 {
+    __shared__ int block_min_gx, block_max_gx;
+    __shared__ int block_min_gy, block_max_gy;
+    __shared__ int block_min_gz, block_max_gz;
+
+    if (threadIdx.x == 0) {
+        block_min_gx = 999999; block_max_gx = -999999;
+        block_min_gy = 999999; block_max_gy = -999999;
+        block_min_gz = 999999; block_max_gz = -999999;
+    }
+    __syncthreads();
+
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_spread) return;
+    bool active = (idx < num_spread);
 
-    int i = idx / num_offsets;
+    int gx = 0, gy = 0, gz = 0;
+    double coef = 0.0;
+    double dx_r = 0.0, dx_i = 0.0;
+    double dy_r = 0.0, dy_i = 0.0;
+    double dz_r = 0.0, dz_i = 0.0;
 
-    double dx_r = d_dipoles[(i * 3 + 0) * 2 + 0];
-    double dx_i = d_dipoles[(i * 3 + 0) * 2 + 1];
-    double dy_r = d_dipoles[(i * 3 + 1) * 2 + 0];
-    double dy_i = d_dipoles[(i * 3 + 1) * 2 + 1];
-    double dz_r = d_dipoles[(i * 3 + 2) * 2 + 0];
-    double dz_i = d_dipoles[(i * 3 + 2) * 2 + 1];
+    if (active) {
+        int i = idx / num_offsets;
 
-    double coef = spread_coef[idx];
+        const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
+        double2 dip_x = d_dipoles_d2[i * 3 + 0];
+        double2 dip_y = d_dipoles_d2[i * 3 + 1];
+        double2 dip_z = d_dipoles_d2[i * 3 + 2];
 
-    int gx = spread_idxs[idx * 3 + 0];
-    int gy = spread_idxs[idx * 3 + 1];
-    int gz = spread_idxs[idx * 3 + 2];
+        dx_r = dip_x.x;
+        dx_i = dip_x.y;
+        dy_r = dip_y.x;
+        dy_i = dip_y.y;
+        dz_r = dip_z.x;
+        dz_i = dip_z.y;
 
-    size_t grid_linear_idx = (static_cast<size_t>(gx) * num_grid_y * num_grid_z +
-                              static_cast<size_t>(gy) * num_grid_z +
-                              static_cast<size_t>(gz)) * 3;
+        coef = spread_coef[idx];
 
-    atomicAdd(&fE_grid[(grid_linear_idx + 0) * 2 + 0], coef * dx_r);
-    atomicAdd(&fE_grid[(grid_linear_idx + 0) * 2 + 1], coef * dx_i);
-    atomicAdd(&fE_grid[(grid_linear_idx + 1) * 2 + 0], coef * dy_r);
-    atomicAdd(&fE_grid[(grid_linear_idx + 1) * 2 + 1], coef * dy_i);
-    atomicAdd(&fE_grid[(grid_linear_idx + 2) * 2 + 0], coef * dz_r);
-    atomicAdd(&fE_grid[(grid_linear_idx + 2) * 2 + 1], coef * dz_i);
+        uint32_t packed = spread_idxs[idx];
+        gx = static_cast<int>(packed >> 20) - 256;
+        gy = static_cast<int>((packed >> 10) & 0x3FF) - 256;
+        gz = static_cast<int>(packed & 0x3FF) - 256;
+
+        atomicMin(&block_min_gx, gx);
+        atomicMax(&block_max_gx, gx);
+        atomicMin(&block_min_gy, gy);
+        atomicMax(&block_max_gy, gy);
+        atomicMin(&block_min_gz, gz);
+        atomicMax(&block_max_gz, gz);
+    }
+    __syncthreads();
+
+    int dim_x = block_max_gx - block_min_gx + 1;
+    int dim_y = block_max_gy - block_min_gy + 1;
+    int dim_z = block_max_gz - block_min_gz + 1;
+    int local_grid_size = dim_x * dim_y * dim_z;
+
+    extern __shared__ double s_grid[];
+
+    bool use_shared = (local_grid_size > 0 && local_grid_size <= 512);
+
+    if (use_shared) {
+        // Initialize shared memory
+        for (int offset = threadIdx.x; offset < local_grid_size * 6; offset += blockDim.x) {
+            s_grid[offset] = 0.0;
+        }
+        __syncthreads();
+
+        if (active) {
+            int local_x = gx - block_min_gx;
+            int local_y = gy - block_min_gy;
+            int local_z = gz - block_min_gz;
+            int local_idx = local_x * dim_y * dim_z + local_y * dim_z + local_z;
+
+            atomicAdd(&s_grid[(local_idx * 3 + 0) * 2 + 0], coef * dx_r);
+            atomicAdd(&s_grid[(local_idx * 3 + 0) * 2 + 1], coef * dx_i);
+            atomicAdd(&s_grid[(local_idx * 3 + 1) * 2 + 0], coef * dy_r);
+            atomicAdd(&s_grid[(local_idx * 3 + 1) * 2 + 1], coef * dy_i);
+            atomicAdd(&s_grid[(local_idx * 3 + 2) * 2 + 0], coef * dz_r);
+            atomicAdd(&s_grid[(local_idx * 3 + 2) * 2 + 1], coef * dz_i);
+        }
+        __syncthreads();
+
+        // Flush to global memory
+        for (int offset = threadIdx.x; offset < local_grid_size; offset += blockDim.x) {
+            int local_x = offset / (dim_y * dim_z);
+            int local_y = (offset / dim_z) % dim_y;
+            int local_z = offset % dim_z;
+
+            int global_gx = ((block_min_gx + local_x) % num_grid_x + num_grid_x) % num_grid_x;
+            int global_gy = ((block_min_gy + local_y) % num_grid_y + num_grid_y) % num_grid_y;
+            int global_gz = ((block_min_gz + local_z) % num_grid_z + num_grid_z) % num_grid_z;
+
+            size_t global_idx = (static_cast<size_t>(global_gx) * num_grid_y * num_grid_z +
+                                  static_cast<size_t>(global_gy) * num_grid_z +
+                                  static_cast<size_t>(global_gz)) * 3;
+
+            double val_x_r = s_grid[(offset * 3 + 0) * 2 + 0];
+            double val_x_i = s_grid[(offset * 3 + 0) * 2 + 1];
+            double val_y_r = s_grid[(offset * 3 + 1) * 2 + 0];
+            double val_y_i = s_grid[(offset * 3 + 1) * 2 + 1];
+            double val_z_r = s_grid[(offset * 3 + 2) * 2 + 0];
+            double val_z_i = s_grid[(offset * 3 + 2) * 2 + 1];
+
+            if (val_x_r != 0.0) atomicAdd(&fE_grid[(global_idx + 0) * 2 + 0], val_x_r);
+            if (val_x_i != 0.0) atomicAdd(&fE_grid[(global_idx + 0) * 2 + 1], val_x_i);
+            if (val_y_r != 0.0) atomicAdd(&fE_grid[(global_idx + 1) * 2 + 0], val_y_r);
+            if (val_y_i != 0.0) atomicAdd(&fE_grid[(global_idx + 1) * 2 + 1], val_y_i);
+            if (val_z_r != 0.0) atomicAdd(&fE_grid[(global_idx + 2) * 2 + 0], val_z_r);
+            if (val_z_i != 0.0) atomicAdd(&fE_grid[(global_idx + 2) * 2 + 1], val_z_i);
+        }
+    } else {
+        // Fallback to direct global memory writes
+        if (active) {
+            int global_gx = ((gx) % num_grid_x + num_grid_x) % num_grid_x;
+            int global_gy = ((gy) % num_grid_y + num_grid_y) % num_grid_y;
+            int global_gz = ((gz) % num_grid_z + num_grid_z) % num_grid_z;
+
+            size_t global_idx = (static_cast<size_t>(global_gx) * num_grid_y * num_grid_z +
+                                  static_cast<size_t>(global_gy) * num_grid_z +
+                                  static_cast<size_t>(global_gz)) * 3;
+
+            atomicAdd(&fE_grid[(global_idx + 0) * 2 + 0], coef * dx_r);
+            atomicAdd(&fE_grid[(global_idx + 0) * 2 + 1], coef * dx_i);
+            atomicAdd(&fE_grid[(global_idx + 1) * 2 + 0], coef * dy_r);
+            atomicAdd(&fE_grid[(global_idx + 1) * 2 + 1], coef * dy_i);
+            atomicAdd(&fE_grid[(global_idx + 2) * 2 + 0], coef * dz_r);
+            atomicAdd(&fE_grid[(global_idx + 2) * 2 + 1], coef * dz_i);
+        }
+    }
 }
 
 __global__ void scale_kernel(
@@ -1187,17 +1284,9 @@ __global__ void contract_kernel(
     double E_y_r = 0.0, E_y_i = 0.0;
     double E_z_r = 0.0, E_z_i = 0.0;
 
-    size_t base_idx = i * num_offsets;
-
     for (size_t o = 0; o < num_offsets; ++o) {
-        size_t idx = base_idx + o;
-        int gx = contract_idxs[idx * 3 + 0];
-        int gy = contract_idxs[idx * 3 + 1];
-        int gz = contract_idxs[idx * 3 + 2];
-
-        size_t v = static_cast<size_t>(gx) * num_grid_y * num_grid_z +
-                   static_cast<size_t>(gy) * num_grid_z +
-                   static_cast<size_t>(gz);
+        size_t idx = o * num_field_points + i;
+        int v = contract_idxs[idx];
 
         double coef = contract_coef[idx];
 
@@ -1236,12 +1325,17 @@ __global__ void real_space_self_kernel(
     double factor_r = sc_r + self_perp;
     double factor_i = sc_i;
 
-    double dx_r = d_dipoles[(i * 3 + 0) * 2 + 0];
-    double dx_i = d_dipoles[(i * 3 + 0) * 2 + 1];
-    double dy_r = d_dipoles[(i * 3 + 1) * 2 + 0];
-    double dy_i = d_dipoles[(i * 3 + 1) * 2 + 1];
-    double dz_r = d_dipoles[(i * 3 + 2) * 2 + 0];
-    double dz_i = d_dipoles[(i * 3 + 2) * 2 + 1];
+    const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
+    double2 dip_x = d_dipoles_d2[i * 3 + 0];
+    double2 dip_y = d_dipoles_d2[i * 3 + 1];
+    double2 dip_z = d_dipoles_d2[i * 3 + 2];
+
+    double dx_r = dip_x.x;
+    double dx_i = dip_x.y;
+    double dy_r = dip_y.x;
+    double dy_i = dip_y.y;
+    double dz_r = dip_z.x;
+    double dz_i = dip_z.y;
 
     atomicAdd(&E_point[(i * 3 + 0) * 2 + 0], factor_r * dx_r - factor_i * dx_i);
     atomicAdd(&E_point[(i * 3 + 0) * 2 + 1], factor_r * dx_i + factor_i * dx_r);
@@ -1285,12 +1379,17 @@ __global__ void real_space_neighbor_kernel(
     double yi = y_part[i];
     double zi = z_part[i];
 
-    double dip_x_r = d_dipoles[(i * 3 + 0) * 2 + 0];
-    double dip_x_i = d_dipoles[(i * 3 + 0) * 2 + 1];
-    double dip_y_r = d_dipoles[(i * 3 + 1) * 2 + 0];
-    double dip_y_i = d_dipoles[(i * 3 + 1) * 2 + 1];
-    double dip_z_r = d_dipoles[(i * 3 + 2) * 2 + 0];
-    double dip_z_i = d_dipoles[(i * 3 + 2) * 2 + 1];
+    const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
+    double2 dip_x = d_dipoles_d2[i * 3 + 0];
+    double2 dip_y = d_dipoles_d2[i * 3 + 1];
+    double2 dip_z = d_dipoles_d2[i * 3 + 2];
+
+    double dip_x_r = dip_x.x;
+    double dip_x_i = dip_x.y;
+    double dip_y_r = dip_y.x;
+    double dip_y_i = dip_y.y;
+    double dip_z_r = dip_z.x;
+    double dip_z_i = dip_z.y;
 
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];
@@ -1348,7 +1447,7 @@ void Ewald_Electric_Field::spread(double* d_fE_grid) {
     int threadsPerBlock = 256;
     int blocksPerGrid = (num_spread + threadsPerBlock - 1) / threadsPerBlock;
 
-    spread_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+    spread_kernel<<<blocksPerGrid, threadsPerBlock, 24576>>>(
         d_dipoles,
         d_spread_coef, d_spread_idxs,
         d_fE_grid,

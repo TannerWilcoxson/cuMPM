@@ -10,7 +10,7 @@ class dipole_solver:
     a GPU-resident restarted complex GMRES or BiCGSTAB solver and uses 3D Ewald summation 
     to evaluate the dipole-dipole interactions efficiently.
     """
-    def __init__(self, box, eps_p, radius=1.0, eps_m=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto"):
+    def __init__(self, box, eps_p, radius=1.0, eps_m=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", E0=None):
         """
         Initialize the dipole solver with system and solver parameters.
 
@@ -35,10 +35,12 @@ class dipole_solver:
         solver_type : str, optional
             Krylov solver type: "gmres" or "bicgstab". Defaults to "gmres".
         field_type : str, optional
-            Field grid type: "auto", "monodisperse", or "polydisperse". Defaults to "auto".
+            Field grid type: "auto", "monodisperse", "polydisperse", or "direct" (open BCs). Defaults to "auto".
+        E0 : array_like, optional
+            The electric polarization of the incident field (a 3-element vector or a list/array of 3-element vectors). Defaults to None.
         """
-        if field_type not in ("auto", "monodisperse", "polydisperse"):
-            raise ValueError(f"field_type must be 'auto', 'monodisperse', or 'polydisperse', got {field_type}")
+        if field_type not in ("auto", "monodisperse", "polydisperse", "direct"):
+            raise ValueError(f"field_type must be 'auto', 'monodisperse', 'polydisperse', or 'direct', got {field_type}")
 
         # Convert box to a list of 3 floats
         box_list = [float(x) for x in box]
@@ -51,31 +53,46 @@ class dipole_solver:
         else:
             radius_list = [float(radius)]
 
+        # Convert E0 to standard 2D list of complex
+        E0_list = []
+        if E0 is not None:
+            E0_arr = np.asarray(E0)
+            if E0_arr.ndim == 1:
+                if E0_arr.size != 3:
+                    raise ValueError("Incident field vector must be 3-dimensional")
+                E0_list = [[complex(x) for x in E0_arr]]
+            elif E0_arr.ndim == 2:
+                if E0_arr.shape[1] != 3:
+                    raise ValueError("Each incident field vector must be 3-dimensional")
+                E0_list = [[complex(x) for x in row] for row in E0_arr]
+            else:
+                raise ValueError("E0 must be a 1D vector or a 2D array of vectors")
+
         # Convert eps_p based on dimension
         eps_p_arr = np.asarray(eps_p)
         if eps_p_arr.ndim == 0:
             # Scalar
             eps_p_scalar = complex(eps_p_arr.item())
             self._solver = _cuMPM.Dipole_Solver(
-                box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list
             )
         elif eps_p_arr.ndim == 1:
             # 1D array
             if eps_p_arr.size == 1:
                 eps_p_scalar = complex(eps_p_arr.item())
                 self._solver = _cuMPM.Dipole_Solver(
-                    box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                    box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list
                 )
             else:
                 eps_p_1d = [complex(x) for x in eps_p_arr]
                 self._solver = _cuMPM.Dipole_Solver(
-                    box_list, eps_p_1d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                    box_list, eps_p_1d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list
                 )
         elif eps_p_arr.ndim == 2:
             # 2D array
             eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
             self._solver = _cuMPM.Dipole_Solver(
-                box_list, eps_p_2d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                box_list, eps_p_2d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list
             )
         else:
             raise ValueError("eps_p must be a scalar, 1D array, or 2D array")

@@ -1,6 +1,7 @@
 #include "dipole_solver.h"
 #include "electric_field/ewald_electric_field.h"
 #include "electric_field/polydisperse_electric_field.h"
+#include "electric_field/direct_electric_field.h"
 #include "numerical_solver/gmres_solver.h"
 #include "numerical_solver/bicgstab_solver.h"
 #include <cuda_runtime.h>
@@ -37,8 +38,21 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
                              bool quiet,
                              const std::string& guess_type,
                              const std::string& solver_type,
-                             const std::string& field_type)
-    : box(box), eps_p(eps_p), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type) {
+                             const std::string& field_type,
+                             const std::vector<std::vector<Complex>>& E0)
+    : box(box), eps_p(eps_p), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0) {
+    if (this->E0.empty()) {
+        this->E0 = {
+            {1.0, 0.0, 0.0},
+            {0.0, 1.0, 0.0},
+            {0.0, 0.0, 1.0}
+        };
+    }
+    for (const auto& vec : this->E0) {
+        if (vec.size() != 3) {
+            throw std::runtime_error("Each vector in E0 must be 3-dimensional.");
+        }
+    }
 }
 
 // Constructor 2: Wavelength-dependent (1D eps_p)
@@ -51,8 +65,21 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
                              bool quiet,
                              const std::string& guess_type,
                              const std::string& solver_type,
-                             const std::string& field_type)
-    : box(box), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type) {
+                             const std::string& field_type,
+                             const std::vector<std::vector<Complex>>& E0)
+    : box(box), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0) {
+    if (this->E0.empty()) {
+        this->E0 = {
+            {1.0, 0.0, 0.0},
+            {0.0, 1.0, 0.0},
+            {0.0, 0.0, 1.0}
+        };
+    }
+    for (const auto& vec : this->E0) {
+        if (vec.size() != 3) {
+            throw std::runtime_error("Each vector in E0 must be 3-dimensional.");
+        }
+    }
     
     // We will expand eps_p_1d in compute() once we know num_particles
     this->eps_p.resize(eps_p_1d.size(), std::vector<Complex>(1, 0.0));
@@ -71,8 +98,21 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
                              bool quiet,
                              const std::string& guess_type,
                              const std::string& solver_type,
-                             const std::string& field_type)
-    : box(box), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type) {
+                             const std::string& field_type,
+                             const std::vector<std::vector<Complex>>& E0)
+    : box(box), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0) {
+    if (this->E0.empty()) {
+        this->E0 = {
+            {1.0, 0.0, 0.0},
+            {0.0, 1.0, 0.0},
+            {0.0, 0.0, 1.0}
+        };
+    }
+    for (const auto& vec : this->E0) {
+        if (vec.size() != 3) {
+            throw std::runtime_error("Each vector in E0 must be 3-dimensional.");
+        }
+    }
     
     this->eps_p.resize(1, std::vector<Complex>(1, eps_p_scalar));
 }
@@ -177,15 +217,17 @@ std::vector<Complex> Dipole_Solver::calc_guess(const std::vector<Complex>& prev_
 }
 
 std::vector<Complex> Dipole_Solver::calc_mean_field_guess(size_t wavevec_idx) const {
-    // Return guess of shape: num_particles * 3 * 3 (diagonal matrices)
-    std::vector<Complex> dip_guess(num_particles * 9, 0.0);
+    size_t K = E0.size();
+    std::vector<Complex> dip_guess(num_particles * K * 3, 0.0);
     for (size_t p = 0; p < num_particles; ++p) {
         Complex beta = (eps_p[wavevec_idx][p] - 1.0) / (eps_p[wavevec_idx][p] + 2.0);
         Complex val = 4.0 * M_PI * beta / (1.0 - beta * vol_frac);
         
-        dip_guess[p * 9 + 0 * 3 + 0] = val; // (0,0)
-        dip_guess[p * 9 + 1 * 3 + 1] = val; // (1,1)
-        dip_guess[p * 9 + 2 * 3 + 2] = val; // (2,2)
+        for (size_t dim = 0; dim < K; ++dim) {
+            for (int c = 0; c < 3; ++c) {
+                dip_guess[p * (K * 3) + dim * 3 + c] = val * E0[dim][c];
+            }
+        }
     }
     return dip_guess;
 }
@@ -194,11 +236,10 @@ std::vector<Complex> Dipole_Solver::calc_previous_guess(const std::vector<Comple
     if (wavevec_idx < 1) {
         return calc_mean_field_guess(wavevec_idx);
     }
-    // prev_dip contains dipoles for previous wavevectors
-    // Return frame_dips[wavevec_idx - 1]
-    std::vector<Complex> dip_guess(num_particles * 9);
-    size_t offset = (wavevec_idx - 1) * num_particles * 9;
-    std::copy(prev_dip.begin() + offset, prev_dip.begin() + offset + num_particles * 9, dip_guess.begin());
+    size_t K = E0.size();
+    std::vector<Complex> dip_guess(num_particles * K * 3);
+    size_t offset = (wavevec_idx - 1) * num_particles * K * 3;
+    std::copy(prev_dip.begin() + offset, prev_dip.begin() + offset + num_particles * K * 3, dip_guess.begin());
     return dip_guess;
 }
 
@@ -206,11 +247,12 @@ std::vector<Complex> Dipole_Solver::calc_derivative_guess(const std::vector<Comp
     if (wavevec_idx < 2) {
         return calc_mean_field_guess(wavevec_idx);
     }
+    size_t K = E0.size();
     size_t i = wavevec_idx;
     size_t im2 = i - 2;
     size_t im1 = i - 1;
 
-    std::vector<Complex> dip_guess(num_particles * 9);
+    std::vector<Complex> dip_guess(num_particles * K * 3);
     for (size_t p = 0; p < num_particles; ++p) {
         Complex run = eps_p[im1][p] - eps_p[im2][p];
         Complex new_run = eps_p[i][p] - eps_p[im1][p];
@@ -219,11 +261,11 @@ std::vector<Complex> Dipole_Solver::calc_derivative_guess(const std::vector<Comp
             new_run = 0.0;
         }
 
-        for (int idx = 0; idx < 9; ++idx) {
-            Complex val_im1 = prev_dip[im1 * num_particles * 9 + p * 9 + idx];
-            Complex val_im2 = prev_dip[im2 * num_particles * 9 + p * 9 + idx];
+        for (size_t idx = 0; idx < K * 3; ++idx) {
+            Complex val_im1 = prev_dip[im1 * num_particles * K * 3 + p * K * 3 + idx];
+            Complex val_im2 = prev_dip[im2 * num_particles * K * 3 + p * K * 3 + idx];
             Complex rise = val_im1 - val_im2;
-            dip_guess[p * 9 + idx] = val_im1 + new_run * rise / run;
+            dip_guess[p * K * 3 + idx] = val_im1 + new_run * rise / run;
         }
     }
     return dip_guess;
@@ -246,21 +288,24 @@ void Dipole_Solver::compute_tensor(const std::vector<Complex>& dip_guess,
                                    std::vector<Complex>& frame_cap, 
                                    std::vector<Complex>& frame_dip) {
     size_t vec_size = num_particles * 3;
+    size_t K = E0.size();
     
-    // E represents unit fields for x, y, and z directions
-    std::vector<std::vector<Complex>> E(3, std::vector<Complex>(vec_size, 0.0));
-    for (int dim = 0; dim < 3; ++dim) {
+    // E represents unit fields or custom fields for K polarization directions
+    std::vector<std::vector<Complex>> E(K, std::vector<Complex>(vec_size, 0.0));
+    for (size_t dim = 0; dim < K; ++dim) {
         for (size_t p = 0; p < num_particles; ++p) {
-            E[dim][p * 3 + dim] = 1.0;
+            E[dim][p * 3 + 0] = E0[dim][0];
+            E[dim][p * 3 + 1] = E0[dim][1];
+            E[dim][p * 3 + 2] = E0[dim][2];
         }
     }
 
-    // Solve for x, y, and z orientations
-    for (int dim = 0; dim < 3; ++dim) {
+    // Solve for each orientation
+    for (size_t dim = 0; dim < K; ++dim) {
         std::vector<Complex> dip_guess_dim(vec_size);
         for (size_t p = 0; p < num_particles; ++p) {
             for (int c = 0; c < 3; ++c) {
-                dip_guess_dim[p * 3 + c] = dip_guess[p * 9 + dim * 3 + c];
+                dip_guess_dim[p * 3 + c] = dip_guess[p * (K * 3) + dim * 3 + c];
             }
         }
 
@@ -269,7 +314,7 @@ void Dipole_Solver::compute_tensor(const std::vector<Complex>& dip_guess,
         // Store solved dipoles
         for (size_t p = 0; p < num_particles; ++p) {
             for (int c = 0; c < 3; ++c) {
-                frame_dip[p * 9 + dim * 3 + c] = sol_dip[p * 3 + c];
+                frame_dip[p * (K * 3) + dim * 3 + c] = sol_dip[p * 3 + c];
             }
         }
 
@@ -287,10 +332,9 @@ void Dipole_Solver::compute_tensor(const std::vector<Complex>& dip_guess,
 }
 
 std::vector<Complex> Dipole_Solver::compute_spectrum(const std::vector<Complex>& initial_guess) {
-    // Returns full calculated dipoles for the frame of shape: num_wavevectors * num_particles * 9
-    // And averages polarizabilities to frame_cap of shape: num_wavevectors * 9
-    std::vector<Complex> frame_cap(num_wavevectors * 9, 0.0);
-    std::vector<Complex> frame_dip(num_wavevectors * num_particles * 9, 0.0);
+    size_t K = E0.size();
+    std::vector<Complex> frame_cap(num_wavevectors * K * 3, 0.0);
+    std::vector<Complex> frame_dip(num_wavevectors * num_particles * K * 3, 0.0);
 
     std::vector<Complex> dip_guess = initial_guess;
 
@@ -314,13 +358,13 @@ std::vector<Complex> Dipole_Solver::compute_spectrum(const std::vector<Complex>&
         dip_guess = calc_guess(frame_dip, wavevec_idx);
 
         // Solve frame tensor
-        std::vector<Complex> step_cap(9, 0.0);
-        std::vector<Complex> step_dip(num_particles * 9, 0.0);
+        std::vector<Complex> step_cap(K * 3, 0.0);
+        std::vector<Complex> step_dip(num_particles * K * 3, 0.0);
         compute_tensor(dip_guess, step_cap, step_dip);
 
         // Store wavevector results
-        std::copy(step_cap.begin(), step_cap.end(), frame_cap.begin() + wavevec_idx * 9);
-        std::copy(step_dip.begin(), step_dip.end(), frame_dip.begin() + wavevec_idx * num_particles * 9);
+        std::copy(step_cap.begin(), step_cap.end(), frame_cap.begin() + wavevec_idx * K * 3);
+        std::copy(step_dip.begin(), step_dip.end(), frame_dip.begin() + wavevec_idx * num_particles * K * 3);
     }
     decrease_indent();
 
@@ -357,29 +401,33 @@ void Dipole_Solver::compute(const std::vector<double>& x_part,
         solver->initialize(num_particles);
 
         // Instantiate CUDA-accelerated Electric_Field solver
-        bool use_polydisperse = false;
-        if (field_type == "polydisperse") {
-            use_polydisperse = true;
-        } else if (field_type == "monodisperse") {
-            use_polydisperse = false;
-        } else if (field_type == "auto") {
-            // Check if radii are identical
-            bool is_monodisperse = true;
-            for (size_t i = 1; i < num_particles; ++i) {
-                if (radius[i] != radius[0]) {
-                    is_monodisperse = false;
-                    break;
+        if (field_type == "direct") {
+            EF = std::make_unique<Direct_Electric_Field>(radius);
+        } else {
+            bool use_polydisperse = false;
+            if (field_type == "polydisperse") {
+                use_polydisperse = true;
+            } else if (field_type == "monodisperse") {
+                use_polydisperse = false;
+            } else if (field_type == "auto") {
+                // Check if radii are identical
+                bool is_monodisperse = true;
+                for (size_t i = 1; i < num_particles; ++i) {
+                    if (radius[i] != radius[0]) {
+                        is_monodisperse = false;
+                        break;
+                    }
                 }
+                use_polydisperse = !is_monodisperse;
+            } else {
+                throw std::runtime_error("Unknown field_type: " + field_type);
             }
-            use_polydisperse = !is_monodisperse;
-        } else {
-            throw std::runtime_error("Unknown field_type: " + field_type);
-        }
 
-        if (use_polydisperse) {
-            EF = std::make_unique<Polydisperse_Electric_Field>(box[0], box[1], box[2], tol, xi, true, radius);
-        } else {
-            EF = std::make_unique<Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true);
+            if (use_polydisperse) {
+                EF = std::make_unique<Polydisperse_Electric_Field>(box[0], box[1], box[2], tol, xi, true, radius);
+            } else {
+                EF = std::make_unique<Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true);
+            }
         }
     } else if (num_particles != num_p) {
         throw std::runtime_error("The number of particles has changed!");
@@ -427,17 +475,17 @@ void Dipole_Solver::compute(const std::vector<double>& x_part,
 // -----------------------------------------------------------------------------
 
 std::vector<Complex> Dipole_Solver::get_eff_polarizability() const {
-    // Average polarizabilities over all frames: shape: num_wavevectors * 9
-    std::vector<Complex> eff_polarizability(num_wavevectors * 9, 0.0);
+    size_t K = E0.size();
+    std::vector<Complex> eff_polarizability(num_wavevectors * K * 3, 0.0);
     if (num_frames == 0) return eff_polarizability;
 
     for (size_t w = 0; w < num_wavevectors; ++w) {
-        for (int idx = 0; idx < 9; ++idx) {
+        for (size_t idx = 0; idx < K * 3; ++idx) {
             Complex sum = 0.0;
             for (size_t f = 0; f < num_frames; ++f) {
-                sum += avg_dips[f * num_wavevectors * 9 + w * 9 + idx];
+                sum += avg_dips[f * num_wavevectors * K * 3 + w * K * 3 + idx];
             }
-            eff_polarizability[w * 9 + idx] = sum / static_cast<double>(num_frames);
+            eff_polarizability[w * K * 3 + idx] = sum / static_cast<double>(num_frames);
         }
     }
     return eff_polarizability;

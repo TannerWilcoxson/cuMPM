@@ -47,3 +47,45 @@ def test_gmres_vs_bicgstab():
     max_diff = np.max(diff)
     
     assert max_diff < 1e-4, f"GMRES and BiCGSTAB polarizabilities do not match! Max diff: {max_diff}"
+
+
+def test_custom_E0():
+    # Parameters
+    box = [50.0, 50.0, 50.0]
+    eps_p = 4.0 + 0.1j
+    radius = 1.0
+    pos = np.array([[0.0, 0.0, 0.0], [5.0, 5.0, 5.0]])
+
+    # 1. Standard basis solver
+    solver_std = cuMPM.dipole_solver(box, eps_p, radius=radius, E0=None)
+    solver_std.compute(pos)
+    alpha_std = solver_std.get_eff_polarizability() # Shape: (3, 3)
+    dips_std = solver_std.get_dipoles() # Shape: (2, 3, 3) (num_particles, K, 3)
+
+    # 2. Custom 1D vector E0
+    E0_single = [1.0, 0.0, 0.0]
+    solver_single = cuMPM.dipole_solver(box, eps_p, radius=radius, E0=E0_single)
+    solver_single.compute(pos)
+    alpha_single = solver_single.get_eff_polarizability() # Shape: (3,)
+    dips_single = solver_single.get_dipoles() # Shape: (2, 3)
+
+    # 3. Custom 2D list of vectors E0
+    E0_double = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    solver_double = cuMPM.dipole_solver(box, eps_p, radius=radius, E0=E0_double)
+    solver_double.compute(pos)
+    alpha_double = solver_double.get_eff_polarizability() # Shape: (2, 3)
+    dips_double = solver_double.get_dipoles() # Shape: (2, 2, 3)
+
+    # Assert shapes
+    assert alpha_single.shape == (3,)
+    assert alpha_double.shape == (2, 3)
+
+    # Assert values match
+    np.testing.assert_allclose(alpha_single, alpha_std[0], rtol=1e-5)
+    np.testing.assert_allclose(alpha_double[0], alpha_std[0], rtol=1e-5)
+    np.testing.assert_allclose(alpha_double[1], alpha_std[1], rtol=1e-5)
+
+
+
+
+

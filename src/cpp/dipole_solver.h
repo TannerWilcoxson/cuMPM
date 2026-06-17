@@ -22,6 +22,7 @@ private:
     std::string guess_type;
     std::string solver_type;
     std::string field_type;
+    std::vector<std::vector<Complex>> E0;
 
     size_t num_particles = 0;
     size_t num_wavevectors = 0;
@@ -35,10 +36,10 @@ private:
 
     // Results storage
     // avg_dips: average polarizability tensor over all frames for each wavelength
-    // shape: num_wavevectors * 3 * 3 (layout: wavevec * 9)
+    // shape: num_wavevectors * K * 3 (layout: wavevec * (K*3))
     std::vector<Complex> avg_dips;
     // dips: calculated dipoles for all frames, wavelengths, particles
-    // shape: num_frames * num_wavevectors * num_particles * 3 * 3 (layout: frame * wavevec * part * 9)
+    // shape: num_frames * num_wavevectors * num_particles * K * 3 (layout: frame * wavevec * part * (K*3))
     std::vector<Complex> dips;
 
     // Helper functions
@@ -62,8 +63,8 @@ private:
     // System solve (delegates to Numerical_Solver)
     std::vector<Complex> compute_spectrum(const std::vector<Complex>& initial_guess);
     void compute_tensor(const std::vector<Complex>& dip_guess, 
-                        std::vector<Complex>& frame_cap, 
-                        std::vector<Complex>& frame_dip);
+                         std::vector<Complex>& frame_cap, 
+                         std::vector<Complex>& frame_dip);
     std::vector<Complex> compute_dipoles(const std::vector<Complex>& E, 
                                          const std::vector<Complex>& dip_guess);
 
@@ -83,7 +84,8 @@ public:
                   bool quiet = false,
                   const std::string& guess_type = "derivative",
                   const std::string& solver_type = "gmres",
-                  const std::string& field_type = "auto");
+                  const std::string& field_type = "auto",
+                  const std::vector<std::vector<Complex>>& E0 = {});
 
     // 2. 1D eps_p (wavelength-dependent, same for all particles)
     Dipole_Solver(const std::vector<double>& box,
@@ -95,7 +97,8 @@ public:
                   bool quiet = false,
                   const std::string& guess_type = "derivative",
                   const std::string& solver_type = "gmres",
-                  const std::string& field_type = "auto");
+                  const std::string& field_type = "auto",
+                  const std::vector<std::vector<Complex>>& E0 = {});
 
     // 3. Scalar eps_p (single wavelength, same for all particles)
     Dipole_Solver(const std::vector<double>& box,
@@ -107,7 +110,8 @@ public:
                   bool quiet = false,
                   const std::string& guess_type = "derivative",
                   const std::string& solver_type = "gmres",
-                  const std::string& field_type = "auto");
+                  const std::string& field_type = "auto",
+                  const std::vector<std::vector<Complex>>& E0 = {});
 
     ~Dipole_Solver();
 
@@ -118,16 +122,17 @@ public:
 
     // Getters for results
     // Returns average effective polarizability over all processed frames
-    // shape: num_wavevectors * 3 * 3
+    // shape: num_wavevectors * K * 3
     std::vector<Complex> get_eff_polarizability() const;
 
     // Returns all calculated dipoles
-    // shape: num_frames * num_wavevectors * num_particles * 3 * 3
+    // shape: num_frames * num_wavevectors * num_particles * K * 3
     std::vector<Complex> get_dipoles() const;
 
     size_t get_num_frames() const { return num_frames; }
     size_t get_num_particles() const { return num_particles; }
     size_t get_num_wavevectors() const { return num_wavevectors; }
+    size_t get_num_incident_polarizations() const { return E0.size(); }
 };
 
 #endif // DIPOLE_SOLVER_H

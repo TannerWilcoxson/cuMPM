@@ -29,7 +29,7 @@ eps_inf2 = 2
 eps_p2 = drude_dielectric(omega, gamma2, omega_p2, eps_inf2)
 
 # Create 12x12 square lattice (144 particles)
-N = 20
+N = 200
 L = d * N
 A = np.arange(0, L, d)
 y, x = np.meshgrid(A, A)
@@ -85,4 +85,5 @@ axes[1].legend(frameon=True, shadow=True)
 
 plt.suptitle(f"Mixed-Dielectric Square Lattice Polarizability ({num_particles} Particles)", fontsize=14, fontweight='bold')
 plt.tight_layout()
+plt.show()
 print("Saved polarizability plot to mixed_eps_polarizability.png")

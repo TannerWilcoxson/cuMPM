@@ -97,13 +97,7 @@ __global__ void spread_precalcs_kernel_polydisperse(
     double oxyz_y = offsetxyz[o * 3 + 1];
     double oxyz_z = offsetxyz[o * 3 + 2];
 
-    int geix = ((gix + ox) % num_grid_x + num_grid_x) % num_grid_x;
-    int geiy = ((giy + oy) % num_grid_y + num_grid_y) % num_grid_y;
-    int geiz = ((giz + oz) % num_grid_z + num_grid_z) % num_grid_z;
-
-    spread_idxs[idx * 3 + 0] = geix;
-    spread_idxs[idx * 3 + 1] = geiy;
-    spread_idxs[idx * 3 + 2] = geiz;
+    spread_idxs[idx] = ((gix + ox + 256) << 20) | ((giy + oy + 256) << 10) | (giz + oz + 256);
 
     double gdx = dx + oxyz_x;
     double gdy = dy + oxyz_y;
@@ -183,11 +177,10 @@ __global__ void contract_precalcs_kernel_polydisperse(
     int geiy = ((giy + oy) % num_grid_y + num_grid_y) % num_grid_y;
     int geiz = ((giz + oz) % num_grid_z + num_grid_z) % num_grid_z;
 
-    contract_idxs[idx * 3 + 0] = geix;
-    contract_idxs[idx * 3 + 1] = geiy;
-    contract_idxs[idx * 3 + 2] = geiz;
+    int transposed_idx = o * num_field_points + i;
+    contract_idxs[transposed_idx] = geix * num_grid_y * num_grid_z + geiy * num_grid_z + geiz;
 
-    particle_index[idx] = i;
+    particle_index[transposed_idx] = i;
 
     double gdx = dx + oxyz_x;
     double gdy = dy + oxyz_y;
@@ -198,20 +191,22 @@ __global__ void contract_precalcs_kernel_polydisperse(
     const double PI = 3.14159265358979323846;
     double xi_sq = xi * xi;
 
+    size_t num_contract = num_field_points * num_offsets;
+
     if (d >= 1e-6) {
         double k = 3.0 / (8.0 * sqrt(2.0) * pow(PI, 1.5) * pow(a_i, 3.0) * sqrt(eta) * xi * d * d);
         double term_p = (eta + 4.0 * a_i * xi_sq * d) * exp(-2.0 * pow(d + a_i, 2) * xi_sq / eta);
         double term_m = (eta - 4.0 * a_i * xi_sq * d) * exp(-2.0 * pow(d - a_i, 2) * xi_sq / eta);
         double coef_scalar = k * (term_p - term_m);
 
-        contract_coef[idx * 3 + 0] = coef_scalar * (gdx / d);
-        contract_coef[idx * 3 + 1] = coef_scalar * (gdy / d);
-        contract_coef[idx * 3 + 2] = coef_scalar * (gdz / d);
+        contract_coef[0 * num_contract + transposed_idx] = coef_scalar * (gdx / d);
+        contract_coef[1 * num_contract + transposed_idx] = coef_scalar * (gdy / d);
+        contract_coef[2 * num_contract + transposed_idx] = coef_scalar * (gdz / d);
     } else {
         double k_async = 8.0 * sqrt(2.0) * pow(xi, 5.0) * exp(-2.0 * a_i * xi_sq / eta) / (pow(PI, 1.5) * pow(eta, 2.5));
-        contract_coef[idx * 3 + 0] = k_async * gdx;
-        contract_coef[idx * 3 + 1] = k_async * gdy;
-        contract_coef[idx * 3 + 2] = k_async * gdz;
+        contract_coef[0 * num_contract + transposed_idx] = k_async * gdx;
+        contract_coef[1 * num_contract + transposed_idx] = k_async * gdy;
+        contract_coef[2 * num_contract + transposed_idx] = k_async * gdz;
     }
 }
 
@@ -291,36 +286,122 @@ __global__ void spread_kernel_polydisperse(
     int num_grid_y,
     int num_grid_z)
 {
+    __shared__ int block_min_gx, block_max_gx;
+    __shared__ int block_min_gy, block_max_gy;
+    __shared__ int block_min_gz, block_max_gz;
+
+    if (threadIdx.x == 0) {
+        block_min_gx = 999999; block_max_gx = -999999;
+        block_min_gy = 999999; block_max_gy = -999999;
+        block_min_gz = 999999; block_max_gz = -999999;
+    }
+    __syncthreads();
+
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_spread) return;
+    bool active = (idx < num_spread);
 
-    int i = idx / num_offsets;
+    int gx = 0, gy = 0, gz = 0;
+    double val_r = 0.0, val_i = 0.0;
 
-    double px_r = d_dipoles[(i * 3 + 0) * 2 + 0];
-    double px_i = d_dipoles[(i * 3 + 0) * 2 + 1];
-    double py_r = d_dipoles[(i * 3 + 1) * 2 + 0];
-    double py_i = d_dipoles[(i * 3 + 1) * 2 + 1];
-    double pz_r = d_dipoles[(i * 3 + 2) * 2 + 0];
-    double pz_i = d_dipoles[(i * 3 + 2) * 2 + 1];
+    if (active) {
+        int i = idx / num_offsets;
 
-    double cx = spread_coef[idx * 3 + 0];
-    double cy = spread_coef[idx * 3 + 1];
-    double cz = spread_coef[idx * 3 + 2];
+        const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
+        double2 dip_x = d_dipoles_d2[i * 3 + 0];
+        double2 dip_y = d_dipoles_d2[i * 3 + 1];
+        double2 dip_z = d_dipoles_d2[i * 3 + 2];
 
-    int gx = spread_idxs[idx * 3 + 0];
-    int gy = spread_idxs[idx * 3 + 1];
-    int gz = spread_idxs[idx * 3 + 2];
+        double px_r = dip_x.x;
+        double px_i = dip_x.y;
+        double py_r = dip_y.x;
+        double py_i = dip_y.y;
+        double pz_r = dip_z.x;
+        double pz_i = dip_z.y;
 
-    size_t grid_linear_idx = static_cast<size_t>(gx) * num_grid_y * num_grid_z +
-                              static_cast<size_t>(gy) * num_grid_z +
-                              static_cast<size_t>(gz);
+        double cx = spread_coef[idx * 3 + 0];
+        double cy = spread_coef[idx * 3 + 1];
+        double cz = spread_coef[idx * 3 + 2];
 
-    // Dot product: C . p
-    double val_r = cx * px_r + cy * py_r + cz * pz_r;
-    double val_i = cx * px_i + cy * py_i + cz * pz_i;
+        // Dot product: C . p
+        val_r = cx * px_r + cy * py_r + cz * pz_r;
+        val_i = cx * px_i + cy * py_i + cz * pz_i;
 
-    atomicAdd(&fE_grid[grid_linear_idx * 2 + 0], val_r);
-    atomicAdd(&fE_grid[grid_linear_idx * 2 + 1], val_i);
+        uint32_t packed = spread_idxs[idx];
+        gx = static_cast<int>(packed >> 20) - 256;
+        gy = static_cast<int>((packed >> 10) & 0x3FF) - 256;
+        gz = static_cast<int>(packed & 0x3FF) - 256;
+
+        atomicMin(&block_min_gx, gx);
+        atomicMax(&block_max_gx, gx);
+        atomicMin(&block_min_gy, gy);
+        atomicMax(&block_max_gy, gy);
+        atomicMin(&block_min_gz, gz);
+        atomicMax(&block_max_gz, gz);
+    }
+    __syncthreads();
+
+    int dim_x = block_max_gx - block_min_gx + 1;
+    int dim_y = block_max_gy - block_min_gy + 1;
+    int dim_z = block_max_gz - block_min_gz + 1;
+    int local_grid_size = dim_x * dim_y * dim_z;
+
+    extern __shared__ double s_grid[];
+
+    bool use_shared = (local_grid_size > 0 && local_grid_size <= 512);
+
+    if (use_shared) {
+        // Initialize shared memory
+        for (int offset = threadIdx.x; offset < local_grid_size * 2; offset += blockDim.x) {
+            s_grid[offset] = 0.0;
+        }
+        __syncthreads();
+
+        if (active) {
+            int local_x = gx - block_min_gx;
+            int local_y = gy - block_min_gy;
+            int local_z = gz - block_min_gz;
+            int local_idx = local_x * dim_y * dim_z + local_y * dim_z + local_z;
+
+            atomicAdd(&s_grid[local_idx * 2 + 0], val_r);
+            atomicAdd(&s_grid[local_idx * 2 + 1], val_i);
+        }
+        __syncthreads();
+
+        // Flush to global memory
+        for (int offset = threadIdx.x; offset < local_grid_size; offset += blockDim.x) {
+            int local_x = offset / (dim_y * dim_z);
+            int local_y = (offset / dim_z) % dim_y;
+            int local_z = offset % dim_z;
+
+            int global_gx = ((block_min_gx + local_x) % num_grid_x + num_grid_x) % num_grid_x;
+            int global_gy = ((block_min_gy + local_y) % num_grid_y + num_grid_y) % num_grid_y;
+            int global_gz = ((block_min_gz + local_z) % num_grid_z + num_grid_z) % num_grid_z;
+
+            size_t global_idx = static_cast<size_t>(global_gx) * num_grid_y * num_grid_z +
+                                static_cast<size_t>(global_gy) * num_grid_z +
+                                static_cast<size_t>(global_gz);
+
+            double v_r = s_grid[offset * 2 + 0];
+            double v_i = s_grid[offset * 2 + 1];
+
+            if (v_r != 0.0) atomicAdd(&fE_grid[global_idx * 2 + 0], v_r);
+            if (v_i != 0.0) atomicAdd(&fE_grid[global_idx * 2 + 1], v_i);
+        }
+    } else {
+        // Fallback to direct global memory writes
+        if (active) {
+            int global_gx = ((gx) % num_grid_x + num_grid_x) % num_grid_x;
+            int global_gy = ((gy) % num_grid_y + num_grid_y) % num_grid_y;
+            int global_gz = ((gz) % num_grid_z + num_grid_z) % num_grid_z;
+
+            size_t global_idx = static_cast<size_t>(global_gx) * num_grid_y * num_grid_z +
+                                static_cast<size_t>(global_gy) * num_grid_z +
+                                static_cast<size_t>(global_gz);
+
+            atomicAdd(&fE_grid[global_idx * 2 + 0], val_r);
+            atomicAdd(&fE_grid[global_idx * 2 + 1], val_i);
+        }
+    }
 }
 
 __global__ void scale_kernel_polydisperse(
@@ -355,24 +436,18 @@ __global__ void contract_kernel_polydisperse(
     double E_y_r = 0.0, E_y_i = 0.0;
     double E_z_r = 0.0, E_z_i = 0.0;
 
-    size_t base_idx = i * num_offsets;
+    size_t num_contract = num_field_points * num_offsets;
 
     for (size_t o = 0; o < num_offsets; ++o) {
-        size_t idx = base_idx + o;
-        int gx = contract_idxs[idx * 3 + 0];
-        int gy = contract_idxs[idx * 3 + 1];
-        int gz = contract_idxs[idx * 3 + 2];
+        size_t idx = o * num_field_points + i;
+        int v = contract_idxs[idx];
 
-        size_t grid_linear_idx = static_cast<size_t>(gx) * num_grid_y * num_grid_z +
-                                  static_cast<size_t>(gy) * num_grid_z +
-                                  static_cast<size_t>(gz);
+        double grid_r = fE_grid[v * 2 + 0];
+        double grid_i = fE_grid[v * 2 + 1];
 
-        double grid_r = fE_grid[grid_linear_idx * 2 + 0];
-        double grid_i = fE_grid[grid_linear_idx * 2 + 1];
-
-        double cx = contract_coef[idx * 3 + 0];
-        double cy = contract_coef[idx * 3 + 1];
-        double cz = contract_coef[idx * 3 + 2];
+        double cx = contract_coef[0 * num_contract + idx];
+        double cy = contract_coef[1 * num_contract + idx];
+        double cz = contract_coef[2 * num_contract + idx];
 
         E_x_r += cx * grid_r;
         E_x_i += cx * grid_i;
@@ -414,12 +489,17 @@ __global__ void real_space_self_kernel_polydisperse(
     double factor_r = sc_r + self_perp_val;
     double factor_i = sc_i;
 
-    double dx_r = d_dipoles[(i * 3 + 0) * 2 + 0];
-    double dx_i = d_dipoles[(i * 3 + 0) * 2 + 1];
-    double dy_r = d_dipoles[(i * 3 + 1) * 2 + 0];
-    double dy_i = d_dipoles[(i * 3 + 1) * 2 + 1];
-    double dz_r = d_dipoles[(i * 3 + 2) * 2 + 0];
-    double dz_i = d_dipoles[(i * 3 + 2) * 2 + 1];
+    const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
+    double2 dip_x = d_dipoles_d2[i * 3 + 0];
+    double2 dip_y = d_dipoles_d2[i * 3 + 1];
+    double2 dip_z = d_dipoles_d2[i * 3 + 2];
+
+    double dx_r = dip_x.x;
+    double dx_i = dip_x.y;
+    double dy_r = dip_y.x;
+    double dy_i = dip_y.y;
+    double dz_r = dip_z.x;
+    double dz_i = dip_z.y;
 
     atomicAdd(&E_point[(i * 3 + 0) * 2 + 0], factor_r * dx_r - factor_i * dx_i);
     atomicAdd(&E_point[(i * 3 + 0) * 2 + 1], factor_r * dx_i + factor_i * dx_r);
@@ -482,12 +562,17 @@ __global__ void real_space_neighbor_kernel_polydisperse(
             double delta_z = rz / d;
 
             // neighbor dipoles
-            double dip_x_r = d_dipoles[(j * 3 + 0) * 2 + 0];
-            double dip_x_i = d_dipoles[(j * 3 + 0) * 2 + 1];
-            double dip_y_r = d_dipoles[(j * 3 + 1) * 2 + 0];
-            double dip_y_i = d_dipoles[(j * 3 + 1) * 2 + 1];
-            double dip_z_r = d_dipoles[(j * 3 + 2) * 2 + 0];
-            double dip_z_i = d_dipoles[(j * 3 + 2) * 2 + 1];
+            const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
+            double2 dip_x = d_dipoles_d2[j * 3 + 0];
+            double2 dip_y = d_dipoles_d2[j * 3 + 1];
+            double2 dip_z = d_dipoles_d2[j * 3 + 2];
+
+            double dip_x_r = dip_x.x;
+            double dip_x_i = dip_x.y;
+            double dip_y_r = dip_y.x;
+            double dip_y_i = dip_y.y;
+            double dip_z_r = dip_z.x;
+            double dip_z_i = dip_z.y;
 
             double delta_dip_r = dip_x_r * delta_x + dip_y_r * delta_y + dip_z_r * delta_z;
             double delta_dip_i = dip_x_i * delta_x + dip_y_i * delta_y + dip_z_i * delta_z;
@@ -1191,7 +1276,7 @@ void Polydisperse_Electric_Field::spreadPrecalcs() {
 
     num_spread = num_particles * num_offsets;
     size_t size_coef_bytes = num_spread * 3 * sizeof(double);
-    size_t size_idxs_bytes = num_spread * 3 * sizeof(int);
+    size_t size_idxs_bytes = num_spread * sizeof(int);
 
     if (d_spread_coef) CUDA_CHECK(cudaFree(d_spread_coef));
     if (d_spread_idxs) CUDA_CHECK(cudaFree(d_spread_idxs));
@@ -1221,7 +1306,7 @@ void Polydisperse_Electric_Field::contractPrecalcs() {
 
     num_contract = num_field_points * num_offsets;
     size_t size_coef_bytes = num_contract * 3 * sizeof(double);
-    size_t size_idxs_bytes = num_contract * 3 * sizeof(int);
+    size_t size_idxs_bytes = num_contract * sizeof(int);
     size_t size_idx_bytes = num_contract * sizeof(int);
     size_t size_epoint_bytes = num_field_points * 3 * 2 * sizeof(double);
 
@@ -1302,7 +1387,7 @@ void Polydisperse_Electric_Field::spread(double* d_fE_grid) {
     int threadsPerBlock = 256;
     int blocksPerGrid = (num_spread + threadsPerBlock - 1) / threadsPerBlock;
 
-    spread_kernel_polydisperse<<<blocksPerGrid, threadsPerBlock>>>(
+    spread_kernel_polydisperse<<<blocksPerGrid, threadsPerBlock, 8192>>>(
         d_dipoles,
         d_spread_coef, d_spread_idxs,
         d_fE_grid,

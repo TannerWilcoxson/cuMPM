@@ -84,3 +84,45 @@ def test_polydisperse_mixed_sizes():
 
     assert alpha_poly.shape == (len(omega), 3, 3)
     assert not np.any(np.isnan(alpha_poly))
+
+
+def test_direct_vs_ewald_large_box():
+    """
+    Verify that field_type='direct' (open BC) agrees with the Ewald-based
+    monodisperse solver when the box is very large relative to the cluster,
+    so that periodic images contribute negligibly.
+    
+    We use a small cluster (5 particles) in a very large box and compare
+    the effective polarizabilities from both methods.
+    """
+    # A small cluster of 5 particles
+    d = 5.0          # inter-particle distance (nm)
+    radius = 2.0     # particle radius (nm)
+    eps_p = 4.0 + 0.2j
+    eps_m = 1.0
+
+    # Simple 5-particle cross arrangement
+    pos = np.array([
+        [0.0,  0.0,  0.0],
+        [d,    0.0,  0.0],
+        [-d,   0.0,  0.0],
+        [0.0,  d,    0.0],
+        [0.0, -d,    0.0],
+    ])
+
+    # Box >> cluster size: periodic images are ~100 nm away
+    L = 500.0
+    box = [L, L, L]
+
+    solver_ewald = cuMPM.dipole_solver(box, eps_p, radius=radius, eps_m=eps_m,
+                                       tol=1e-5, field_type='monodisperse', quiet=True)
+    solver_ewald.compute(pos)
+    alpha_ewald = solver_ewald.get_eff_polarizability()
+
+    solver_direct = cuMPM.dipole_solver(box, eps_p, radius=radius, eps_m=eps_m,
+                                        tol=1e-5, field_type='direct', quiet=True)
+    solver_direct.compute(pos)
+    alpha_direct = solver_direct.get_eff_polarizability()
+
+    # In the large-box limit, the two methods should agree within ~0.5%
+    np.testing.assert_allclose(alpha_ewald, alpha_direct, rtol=5e-3, atol=1e-5)
