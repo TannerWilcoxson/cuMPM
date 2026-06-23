@@ -9,7 +9,7 @@ class EELS:
     spectrum and self-consistent induced dipoles for a collection of particles 
     subject to the relativistic incident field of a moving electron beam.
     """
-    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto"):
+    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None):
         """
         Initialize the EELS solver with system, electron, and solver parameters.
 
@@ -39,7 +39,41 @@ class EELS:
             Krylov solver type: "gmres" or "bicgstab". Defaults to "gmres".
         field_type : str, optional
             Field evaluation type: "auto", "monodisperse", "polydisperse", or "direct" (open BCs). Defaults to "auto".
+        split_dist : float, optional
+            The cutoff distance from the electron beam within which to split particles. Defaults to None.
+        N_split : int, optional
+            The number of sub-dipoles to split each close particle into. Defaults to None.
         """
+        if (split_dist is None) != (N_split is None):
+            raise ValueError("Both split_dist and N_split must be specified, or both left as None.")
+
+        if split_dist is None:
+            self.split_dist = 0.0
+            self.N_split = 0
+        else:
+            self.split_dist = float(split_dist)
+            self.N_split = int(N_split)
+
+        # Store parameters for dynamic solver instantiation in compute() if splitting is enabled
+        self.box = box
+        self.eps_p = eps_p
+        self.omega = omega
+        self.v = v
+        self.eps_m = eps_m
+        self.radius = radius
+        self.xi = xi
+        self.tol = tol
+        self.quiet = quiet
+        self.guess_type = guess_type
+        self.solver_type = solver_type
+        self.field_type = field_type
+
+        # Initialize results lists for splitting mode
+        self._eels_results = []
+        self._dips_results = []
+        self._split_poss = []
+        self.positions = None
+
         if field_type not in ("auto", "monodisperse", "polydisperse", "direct"):
             raise ValueError(f"field_type must be 'auto', 'monodisperse', 'polydisperse', or 'direct', got {field_type}")
 
@@ -54,31 +88,90 @@ class EELS:
         else:
             radius_list = [float(radius)]
 
-        # Convert eps_p based on dimension
-        eps_p_arr = np.asarray(eps_p)
-        if eps_p_arr.ndim == 0:
-            eps_p_scalar = complex(eps_p_arr.item())
-            self._solver = _cuMPM.EELS_Solver(
-                box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
-            )
-        elif eps_p_arr.ndim == 1:
-            if eps_p_arr.size == 1:
+        if self.split_dist > 0.0 and self.N_split > 1:
+            self._solver = None
+        else:
+            # Convert eps_p based on dimension
+            eps_p_arr = np.asarray(eps_p)
+            if eps_p_arr.ndim == 0:
                 eps_p_scalar = complex(eps_p_arr.item())
                 self._solver = _cuMPM.EELS_Solver(
                     box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
                 )
-            else:
-                eps_p_1d = [complex(x) for x in eps_p_arr]
+            elif eps_p_arr.ndim == 1:
+                if eps_p_arr.size == 1:
+                    eps_p_scalar = complex(eps_p_arr.item())
+                    self._solver = _cuMPM.EELS_Solver(
+                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                    )
+                else:
+                    eps_p_1d = [complex(x) for x in eps_p_arr]
+                    self._solver = _cuMPM.EELS_Solver(
+                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                    )
+            elif eps_p_arr.ndim == 2:
+                eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
                 )
-        elif eps_p_arr.ndim == 2:
-            eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
-            self._solver = _cuMPM.EELS_Solver(
-                box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
-            )
-        else:
-            raise ValueError("eps_p must be a scalar, 1D array, or 2D array")
+            else:
+                raise ValueError("eps_p must be a scalar, 1D array, or 2D array")
+
+    def _split_close_dipoles(self, positions, e_pos, radii, eps_p_2d):
+        """
+        Split particles close to the electron beam into N_split smaller dipoles.
+        """
+        dists_2d = np.linalg.norm(positions[:, :2] - e_pos[np.newaxis, :], axis=1)
+        to_split = dists_2d < self.split_dist
+
+        if not np.any(to_split) or self.N_split <= 1:
+            return positions.copy(), radii.copy(), eps_p_2d.copy()
+
+        new_positions = []
+        new_radii = []
+        new_eps_p = []
+
+        # Keep unsplit particles
+        unsplit_indices = np.where(~to_split)[0]
+        for idx in unsplit_indices:
+            new_positions.append(positions[idx])
+            new_radii.append(radii[idx])
+            new_eps_p.append(eps_p_2d[:, idx])
+
+        # Generate Fibonacci volume offsets inside a unit sphere
+        unit_offsets = []
+        phi = np.pi * (3.0 - np.sqrt(5.0))
+        for i in range(self.N_split):
+            r_frac = ((i + 0.5) / self.N_split)**(1.0 / 3.0)
+            y = 1.0 - (i / float(self.N_split - 1)) * 2.0
+            theta = phi * i
+            rad = np.sqrt(1.0 - y * y) * r_frac
+            x = np.cos(theta) * rad
+            z = np.sin(theta) * rad
+            unit_offsets.append([x, y * r_frac, z])
+        unit_offsets = np.array(unit_offsets)
+
+        # Split close particles
+        split_indices = np.where(to_split)[0]
+        for idx in split_indices:
+            R = radii[idx]
+            pos = positions[idx]
+            eps = eps_p_2d[:, idx]
+
+            # Scale and shift the offsets
+            sub_pos = pos + unit_offsets * R
+            sub_R = R / (self.N_split**(1.0 / 3.0))
+
+            for sp in sub_pos:
+                new_positions.append(sp)
+                new_radii.append(sub_R)
+                new_eps_p.append(eps)
+
+        final_positions = np.array(new_positions)
+        final_radii = np.array(new_radii)
+        final_eps_p = np.column_stack(new_eps_p)
+
+        return final_positions, final_radii, final_eps_p
 
     def compute(self, epos, positions):
         """
@@ -87,32 +180,118 @@ class EELS:
         Parameters
         ----------
         epos : array_like
-            The 2D electron beam impact coordinates, shape (2,) or (num_frames, 2).
+            The 2D electron beam impact coordinates, shape (2,) or (num_epos, 2).
         positions : array_like
-            The spatial coordinates of the particles, shape (num_particles, 3) or (num_frames, num_particles, 3).
+            The spatial coordinates of the particles, shape (num_particles, 3).
         """
         positions = np.asarray(positions)
-        if positions.ndim == 2:
-            positions = positions[np.newaxis, ...]
-        elif positions.ndim != 3 or positions.shape[-1] != 3:
-            raise ValueError("positions must be of shape (num_particles, 3) or (num_frames, num_particles, 3)")
+        if positions.ndim != 2 or positions.shape[1] != 3:
+            raise ValueError("positions must be of shape (num_particles, 3)")
 
         epos = np.asarray(epos)
         if epos.ndim == 1:
-            epos = epos[np.newaxis, ...]
-        elif epos.ndim != 2 or epos.shape[-1] != 2:
-            raise ValueError("epos must be of shape (2,) or (num_frames, 2)")
+            if epos.shape[0] != 2:
+                raise ValueError("epos must be of shape (2,) or (num_epos, 2)")
+            epos = epos[np.newaxis, :]
+        elif epos.ndim != 2 or epos.shape[1] != 2:
+            raise ValueError("epos must be of shape (2,) or (num_epos, 2)")
 
-        num_frames = positions.shape[0]
-        if epos.shape[0] != num_frames:
-            raise ValueError(f"The number of frames in epos ({epos.shape[0]}) must match positions ({num_frames})")
+        num_epos = epos.shape[0]
+        num_particles = positions.shape[0]
+        self.positions = positions
 
-        for frame_idx in range(num_frames):
-            x_part = positions[frame_idx, :, 0].tolist()
-            y_part = positions[frame_idx, :, 1].tolist()
-            z_part = positions[frame_idx, :, 2].tolist()
-            epos_frame = epos[frame_idx].tolist()
-            self._solver.compute(epos_frame, x_part, y_part, z_part)
+        if self.split_dist > 0.0 and self.N_split > 1:
+            # Clear previous results from this compute call
+            self._eels_results = []
+            self._dips_results = []
+            self._split_poss = []
+
+            # We must standardize radii and eps_p to map to individual particles
+            if np.iterable(self.radius):
+                radii = np.asarray(self.radius, dtype=np.float64)
+                if radii.ndim == 0:
+                    radii = np.repeat(radii.item(), num_particles)
+                elif radii.size == 1:
+                    radii = np.repeat(radii.item(), num_particles)
+                elif radii.size != num_particles:
+                    raise ValueError("The number of particles is inconsistent with the number of radii provided.")
+            else:
+                radii = np.repeat(float(self.radius), num_particles)
+
+            eps_p_arr = np.asarray(self.eps_p)
+            num_wavevectors = len(self.omega)
+            if eps_p_arr.ndim == 0:
+                eps_p_2d = np.full((num_wavevectors, num_particles), complex(eps_p_arr.item()))
+            elif eps_p_arr.ndim == 1:
+                if eps_p_arr.size == 1:
+                    eps_p_2d = np.full((num_wavevectors, num_particles), complex(eps_p_arr.item()))
+                else:
+                    if eps_p_arr.size != num_wavevectors:
+                        raise ValueError("1D eps_p must have length equal to num_wavevectors")
+                    eps_p_2d = np.tile(eps_p_arr[:, np.newaxis], (1, num_particles))
+            elif eps_p_arr.ndim == 2:
+                if eps_p_arr.shape[0] != num_wavevectors:
+                    raise ValueError("First dimension of 2D eps_p must be equal to num_wavevectors")
+                if eps_p_arr.shape[1] == 1:
+                    eps_p_2d = np.tile(eps_p_arr, (1, num_particles))
+                elif eps_p_arr.shape[1] != num_particles:
+                    raise ValueError("Second dimension of 2D eps_p must be equal to num_particles")
+                else:
+                    eps_p_2d = eps_p_arr.copy()
+            else:
+                raise ValueError("eps_p must be a scalar, 1D array, or 2D array")
+
+            # Loop over all electron beam impact coordinates
+            for epos_idx in range(num_epos):
+                e_pos = epos[epos_idx]
+                if not self.quiet:
+                    print(f"  [EELS] Processing impact parameter {epos_idx + 1}/{num_epos}...")
+                
+                # Split particles that are within split_dist from the ebeam
+                split_pos, split_R, split_eps = self._split_close_dipoles(positions, e_pos, radii, eps_p_2d)
+                
+                # Setup a fresh _cuMPM.EELS_Solver for this split system
+                box_list = [float(x) for x in self.box]
+                omega_list = [float(o) for o in self.omega]
+                
+                # Convert split_eps to nested lists
+                split_eps_2d = [[complex(x) for x in row] for row in split_eps]
+                
+                frame_solver = _cuMPM.EELS_Solver(
+                    box_list, split_eps_2d, omega_list, float(self.v), split_R.tolist(),
+                    float(self.eps_m), float(self.xi), float(self.tol), bool(self.quiet),
+                    self.guess_type, self.solver_type, self.field_type
+                )
+                
+                # Run the solver
+                x_part = split_pos[:, 0].tolist()
+                y_part = split_pos[:, 1].tolist()
+                z_part = split_pos[:, 2].tolist()
+                frame_solver.compute(e_pos.tolist(), x_part, y_part, z_part)
+                
+                # Retrieve EELS spectrum and dipoles
+                frame_eels = np.squeeze(frame_solver.get_eels())
+                frame_dips = np.squeeze(frame_solver.get_dipoles())
+                
+                if frame_eels.ndim == 0:
+                    frame_eels = np.array([frame_eels.item()])
+                if len(omega_list) == 1:
+                    if frame_dips.ndim == 2:
+                        frame_dips = frame_dips[np.newaxis, ...]
+                    elif frame_dips.ndim == 1:
+                        frame_dips = frame_dips[np.newaxis, np.newaxis, ...]
+                
+                self._eels_results.append(frame_eels)
+                self._dips_results.append(frame_dips)
+                self._split_poss.append(split_pos)
+        else:
+            x_part = positions[:, 0].tolist()
+            y_part = positions[:, 1].tolist()
+            z_part = positions[:, 2].tolist()
+            for epos_idx in range(num_epos):
+                if not self.quiet:
+                    print(f"  [EELS] Processing impact parameter {epos_idx + 1}/{num_epos}...")
+                self._solver.compute(epos[epos_idx].tolist(), x_part, y_part, z_part)
 
     def get_eels(self):
         """
@@ -121,9 +300,14 @@ class EELS:
         Returns
         -------
         eels : numpy.ndarray
-            EELS probability spectrum with shape (num_frames, num_wavelengths) (squeezed if single frame)
+            EELS probability spectrum with shape (num_epos, num_wavelengths) (squeezed if single epos)
         """
-        return np.squeeze(self._solver.get_eels())
+        if self.split_dist > 0.0 and self.N_split > 1:
+            if not self._eels_results:
+                return np.array([])
+            return np.squeeze(np.array(self._eels_results))
+        else:
+            return np.squeeze(self._solver.get_eels())
 
     def get_dipoles(self):
         """
@@ -131,7 +315,41 @@ class EELS:
 
         Returns
         -------
-        p : numpy.ndarray
-            Induced dipoles of each particle with shape (num_frames, num_wavelengths, num_particles, 3) (squeezed)
+        p : numpy.ndarray or list of numpy.ndarray
+            Induced dipoles of each particle. If split, returns a list of arrays (one per epos)
+            of shape (num_wavelengths, num_split_particles, 3).
+            If shapes across all epos are identical, they are stacked into a single array of shape 
+            (num_epos, num_wavelengths, num_split_particles, 3).
+            Squeezed if single epos.
         """
-        return np.squeeze(self._solver.get_dipoles())
+        if self.split_dist > 0.0 and self.N_split > 1:
+            if not self._dips_results:
+                return []
+            if len(self._dips_results) == 1:
+                return np.squeeze(self._dips_results[0])
+            try:
+                stacked = np.stack(self._dips_results)
+                return np.squeeze(stacked)
+            except ValueError:
+                return [np.squeeze(d) for d in self._dips_results]
+        else:
+            return np.squeeze(self._solver.get_dipoles())
+
+    def get_positions(self):
+        """
+        Returns the particle positions used in the calculation.
+        If splitting was enabled, returns a list of positions arrays (one per epos)
+        or a single stacked/squeezed array.
+        """
+        if self.split_dist > 0.0 and self.N_split > 1:
+            if not self._split_poss:
+                return []
+            if len(self._split_poss) == 1:
+                return np.squeeze(self._split_poss[0])
+            try:
+                stacked = np.stack(self._split_poss)
+                return np.squeeze(stacked)
+            except ValueError:
+                return [np.squeeze(p) for p in self._split_poss]
+        else:
+            return self.positions

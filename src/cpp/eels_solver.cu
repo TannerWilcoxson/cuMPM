@@ -377,7 +377,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
             if (use_polydisperse) {
                 EF = std::make_unique<Polydisperse_Electric_Field>(box[0], box[1], box[2], tol, xi, true, radius);
-                eels_EF = std::make_unique<Polydisperse_Electric_Field>(box[0], box[1], box[2], tol, xi, false, radius);
+                eels_EF = std::make_unique<Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, false);
             } else {
                 EF = std::make_unique<Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true);
                 eels_EF = std::make_unique<Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, false);
@@ -426,7 +426,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
     if (field_type == "direct") {
         static_cast<Direct_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
-    } else if (field_type == "polydisperse") {
+    } else if (dynamic_cast<Polydisperse_Electric_Field*>(eels_EF.get()) != nullptr) {
         static_cast<Polydisperse_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
     } else {
         // Ewald
@@ -553,7 +553,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
             std::vector<double> self_r(num_particles, 0.0), self_i(num_particles, 0.0);
             derived->setSelfCoef(self_r, self_i);
-        } else if (field_type == "polydisperse") {
+        } else if (dynamic_cast<Polydisperse_Electric_Field*>(eels_EF.get()) != nullptr) {
             auto* derived = static_cast<Polydisperse_Electric_Field*>(eels_EF.get());
             derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
             std::vector<double> self_r(num_particles, 0.0), self_i(num_particles, 0.0);
@@ -586,9 +586,9 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         double integral = simpson_integrate(integrand, 0.01);
         double eels_val = integral / (2.0 * M_PI * M_PI * omega_val);
         
-        // Match the scaling: the solved dipoles were physically scaled by Enorm,
-        // so we scale eels probability by Enorm (since E_ind is linear in dipoles).
-        frame_eels[wavevec_idx] = eels_val * Enorm;
+        // The solved dipoles were already physically scaled by Enorm,
+        // so eels_val already contains the Enorm scaling factor.
+        frame_eels[wavevec_idx] = eels_val;
     }
     decrease_indent();
 
