@@ -86,6 +86,48 @@ def test_custom_E0():
     np.testing.assert_allclose(alpha_double[1], alpha_std[1], rtol=1e-5)
 
 
+def test_per_particle_E0():
+    # Parameters
+    box = [50.0, 50.0, 50.0]
+    eps_p = 4.0 + 0.1j
+    radius = 1.0
+    pos = np.array([[0.0, 0.0, 0.0], [5000.0, 0.0, 0.0]]) # extremely far apart to ignore interaction
+
+    # 1. Uniform field test for comparison (using direct solver)
+    solver_p0 = cuMPM.dipole_solver(box, eps_p, radius=radius, E0=[1.0, 0.0, 0.0], field_type="direct", tol=1e-10)
+    solver_p0.compute(pos)
+    dips_p0 = solver_p0.get_dipoles() # Shape: (2, 3)
+
+    solver_p1 = cuMPM.dipole_solver(box, eps_p, radius=radius, E0=[0.0, 2.0, 0.0], field_type="direct", tol=1e-10)
+    solver_p1.compute(pos)
+    dips_p1 = solver_p1.get_dipoles() # Shape: (2, 3)
+
+    # 2. Per-particle field passed as 3D array (shape [1, 2, 3])
+    E0_3d = np.array([[[1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]])
+    solver_3d = cuMPM.dipole_solver(box, eps_p, radius=radius, E0=E0_3d, field_type="direct", tol=1e-10)
+    solver_3d.compute(pos)
+    dips_3d = solver_3d.get_dipoles() # Shape: (2, 3)
+
+    # 3. Per-particle field passed as 1D array (shape [6])
+    E0_1d = [1.0, 0.0, 0.0, 0.0, 2.0, 0.0]
+    solver_1d = cuMPM.dipole_solver(box, eps_p, radius=radius, E0=E0_1d, field_type="direct", tol=1e-10)
+    solver_1d.compute(pos)
+    dips_1d = solver_1d.get_dipoles() # Shape: (2, 3)
+
+    # Assert shape
+    assert dips_3d.shape == (2, 3)
+    assert dips_1d.shape == (2, 3)
+
+    # Assert that particle 0's dipole in the per-particle case matches uniform solver_p0
+    np.testing.assert_allclose(dips_3d[0], dips_p0[0], rtol=1e-5, atol=1e-8)
+    np.testing.assert_allclose(dips_1d[0], dips_p0[0], rtol=1e-5, atol=1e-8)
+
+    # Assert that particle 1's dipole in the per-particle case matches uniform solver_p1
+    np.testing.assert_allclose(dips_3d[1], dips_p1[1], rtol=1e-5, atol=1e-8)
+    np.testing.assert_allclose(dips_1d[1], dips_p1[1], rtol=1e-5, atol=1e-8)
+
+
+
 
 
 

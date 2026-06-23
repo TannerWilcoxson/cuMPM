@@ -58,15 +58,22 @@ class dipole_solver:
         if E0 is not None:
             E0_arr = np.asarray(E0)
             if E0_arr.ndim == 1:
-                if E0_arr.size != 3:
-                    raise ValueError("Incident field vector must be 3-dimensional")
+                if E0_arr.size % 3 != 0:
+                    raise ValueError("Incident field vector size must be a multiple of 3")
                 E0_list = [[complex(x) for x in E0_arr]]
             elif E0_arr.ndim == 2:
-                if E0_arr.shape[1] != 3:
-                    raise ValueError("Each incident field vector must be 3-dimensional")
-                E0_list = [[complex(x) for x in row] for row in E0_arr]
+                if E0_arr.shape[1] == 3:
+                    E0_list = [[complex(x) for x in row] for row in E0_arr]
+                elif E0_arr.shape[1] % 3 == 0:
+                    E0_list = [[complex(x) for x in row] for row in E0_arr]
+                else:
+                    raise ValueError("Each vector in E0 must be 3-dimensional or have a size that is a multiple of 3")
+            elif E0_arr.ndim == 3:
+                if E0_arr.shape[2] != 3:
+                    raise ValueError("The last dimension of E0 must be 3")
+                E0_list = [[complex(x) for x in block.ravel()] for block in E0_arr]
             else:
-                raise ValueError("E0 must be a 1D vector or a 2D array of vectors")
+                raise ValueError("E0 must be a 1D, 2D, or 3D array")
 
         # Convert eps_p based on dimension
         eps_p_arr = np.asarray(eps_p)

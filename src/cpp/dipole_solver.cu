@@ -49,8 +49,8 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
         };
     }
     for (const auto& vec : this->E0) {
-        if (vec.size() != 3) {
-            throw std::runtime_error("Each vector in E0 must be 3-dimensional.");
+        if (vec.size() != 3 && vec.size() % 3 != 0) {
+            throw std::runtime_error("Each vector in E0 must be 3-dimensional or have a size that is a multiple of 3 (for per-particle fields).");
         }
     }
 }
@@ -76,8 +76,8 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
         };
     }
     for (const auto& vec : this->E0) {
-        if (vec.size() != 3) {
-            throw std::runtime_error("Each vector in E0 must be 3-dimensional.");
+        if (vec.size() != 3 && vec.size() % 3 != 0) {
+            throw std::runtime_error("Each vector in E0 must be 3-dimensional or have a size that is a multiple of 3 (for per-particle fields).");
         }
     }
     
@@ -109,8 +109,8 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
         };
     }
     for (const auto& vec : this->E0) {
-        if (vec.size() != 3) {
-            throw std::runtime_error("Each vector in E0 must be 3-dimensional.");
+        if (vec.size() != 3 && vec.size() % 3 != 0) {
+            throw std::runtime_error("Each vector in E0 must be 3-dimensional or have a size that is a multiple of 3 (for per-particle fields).");
         }
     }
     
@@ -293,10 +293,18 @@ void Dipole_Solver::compute_tensor(const std::vector<Complex>& dip_guess,
     // E represents unit fields or custom fields for K polarization directions
     std::vector<std::vector<Complex>> E(K, std::vector<Complex>(vec_size, 0.0));
     for (size_t dim = 0; dim < K; ++dim) {
-        for (size_t p = 0; p < num_particles; ++p) {
-            E[dim][p * 3 + 0] = E0[dim][0];
-            E[dim][p * 3 + 1] = E0[dim][1];
-            E[dim][p * 3 + 2] = E0[dim][2];
+        if (E0[dim].size() == vec_size) {
+            E[dim] = E0[dim];
+        } else if (E0[dim].size() == 3) {
+            for (size_t p = 0; p < num_particles; ++p) {
+                E[dim][p * 3 + 0] = E0[dim][0];
+                E[dim][p * 3 + 1] = E0[dim][1];
+                E[dim][p * 3 + 2] = E0[dim][2];
+            }
+        } else {
+            throw std::runtime_error("Incident field E0[" + std::to_string(dim) + "] has size " + 
+                                     std::to_string(E0[dim].size()) + ", but expected either 3 or " + 
+                                     std::to_string(vec_size) + " (3 * num_particles).");
         }
     }
 

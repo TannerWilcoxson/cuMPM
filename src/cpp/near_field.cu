@@ -1,6 +1,7 @@
 #include "near_field.h"
 #include "electric_field/ewald_electric_field.h"
 #include "electric_field/polydisperse_electric_field.h"
+#include "electric_field/direct_electric_field.h"
 #include <cuda_runtime.h>
 #include <stdexcept>
 #include <iostream>
@@ -105,7 +106,10 @@ std::vector<double> Near_Field::calculate() {
         }
 
         use_polydisperse = false;
-        if (field_type == "polydisperse") {
+        bool use_direct = (field_type == "direct");
+        if (use_direct) {
+            use_polydisperse = false;
+        } else if (field_type == "polydisperse") {
             use_polydisperse = true;
         } else if (field_type == "monodisperse") {
             use_polydisperse = false;
@@ -122,7 +126,9 @@ std::vector<double> Near_Field::calculate() {
             throw std::runtime_error("Unknown field_type: " + field_type);
         }
 
-        if (use_polydisperse) {
+        if (use_direct) {
+            EF = std::make_unique<Direct_Electric_Field>(scaled_radius);
+        } else if (use_polydisperse) {
             EF = std::make_unique<Polydisperse_Electric_Field>(
                 scaled_box_x, scaled_box_y, scaled_box_z, errortol, xi, false, scaled_radius
             );
@@ -153,7 +159,15 @@ std::vector<double> Near_Field::calculate() {
         scaled_field_z[i] = field_pos_z[i] / length_scale;
     }
 
-    if (use_polydisperse) {
+    if (field_type == "direct") {
+        auto* derived = static_cast<Direct_Electric_Field*>(EF.get());
+        derived->updateFieldCoordinates(scaled_field_x, scaled_field_y, scaled_field_z);
+        derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
+        // set self coeff to 0
+        std::vector<double> self_r(num_particles, 0.0);
+        std::vector<double> self_i(num_particles, 0.0);
+        derived->setSelfCoef(self_r, self_i);
+    } else if (use_polydisperse) {
         auto* derived = static_cast<Polydisperse_Electric_Field*>(EF.get());
         derived->updateFieldCoordinates(scaled_field_x, scaled_field_y, scaled_field_z);
         derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);

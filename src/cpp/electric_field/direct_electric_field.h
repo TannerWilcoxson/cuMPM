@@ -41,6 +41,12 @@ private:
     double* d_self_coef_r = nullptr;
     double* d_self_coef_i = nullptr;
 
+    double* d_x_field = nullptr;
+    double* d_y_field = nullptr;
+    double* d_z_field = nullptr;
+    size_t num_field_points = 0;
+    bool field_points_updated = false;
+
     std::vector<double> host_radius;
     double* d_radius = nullptr;
 
@@ -63,6 +69,14 @@ public:
     void updateParticleCoordinates(const std::vector<double>& x_part,
                                    const std::vector<double>& y_part,
                                    const std::vector<double>& z_part) override;
+
+    void updateFieldCoordinates(const std::vector<double>& x_field,
+                                 const std::vector<double>& y_field,
+                                 const std::vector<double>& z_field);
+
+    void updateDipolesComplex(const std::vector<double>& dip_xr, const std::vector<double>& dip_xi,
+                              const std::vector<double>& dip_yr, const std::vector<double>& dip_yi,
+                              const std::vector<double>& dip_zr, const std::vector<double>& dip_zi);
 
     void setSelfCoef(const std::vector<double>& self_coef_r,
                      const std::vector<double>& self_coef_i) override;

@@ -118,7 +118,9 @@ endif()
 pybind11_add_module(_cuMPM MODULE
     src/cpp/dipole_solver_bindings.cpp
     src/cpp/near_field_bindings.cpp
+    src/cpp/eels_bindings.cpp
     src/cpp/near_field.cu
+    src/cpp/eels_solver.cu
     src/cpp/dipole_solver.cu
     src/cpp/electric_field/neighbor_list.cu
     src/cpp/electric_field/ewald_electric_field.cu
