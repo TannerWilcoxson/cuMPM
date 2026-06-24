@@ -94,6 +94,49 @@ private:
     double* d_fEs_grid = nullptr; // Shuffled scalar grid
     int fft_plan = 0;
 
+    // Quadrupole member variables
+    bool solve_quadrupoles = false;
+    std::vector<int> quad_idxs;
+    int* d_quad_idxs = nullptr;
+    int* d_quad_map = nullptr;
+    size_t num_quads = 0;
+
+    // Device pointers for quadrupole real space tables
+    double* d_field_quad_1 = nullptr; // F_quad_1 (table_size x num_pairs_unique)
+    double* d_field_quad_2 = nullptr; // F_quad_2
+    double* d_field_quad_3 = nullptr; // F_quad_3
+    double* d_grad_quad_1 = nullptr;  // G_quad_1
+    double* d_grad_quad_2 = nullptr;  // G_quad_2
+    double* d_grad_quad_3 = nullptr;  // G_quad_3
+    double* d_grad_quad_4 = nullptr;  // G_quad_4
+
+    // Device pointers for quadrupole neighbor interpolation
+    double* d_perp_Q = nullptr;
+    double* d_para_Q = nullptr;
+    double* d_Q3 = nullptr;
+    double* d_G1 = nullptr;
+    double* d_G2 = nullptr;
+    double* d_G3 = nullptr;
+    double* d_G4 = nullptr;
+
+    // Quadrupole grid and FFT members
+    double* d_fG_grid = nullptr;
+    double* d_fGs_grid = nullptr;
+    int fft_plan_G = 0;
+
+    // Reciprocal scaling coefficients
+    double* d_scale_coef_Q_imag = nullptr;
+    double* d_scale_coef_GP_imag = nullptr;
+    double* d_scale_coef_GQ_real = nullptr;
+    double* d_Qfactor = nullptr;
+    double* d_Qfactor_dot = nullptr;
+
+    // Temporary gradient buffer
+    double* d_G_point = nullptr;
+
+    double* d_spread_coef_Q = nullptr;
+    double* d_contract_coef_Q = nullptr;
+
     void electricField();
 
 public:
@@ -101,7 +144,9 @@ public:
                                 double errortol,
                                 double xi,
                                 bool calc_inter_dipole,
-                                const std::vector<double>& particle_radii);
+                                const std::vector<double>& particle_radii,
+                                bool solve_quadrupoles = false,
+                                const std::vector<int>& quad_idxs = {});
 
     ~Polydisperse_Electric_Field();
 
@@ -204,6 +249,14 @@ public:
     void scale(double* d_fE_grid);
     void contract(double* d_E_point, const double* d_Es_grid);
     void realSpace(double* d_E_point);
+
+    bool getSolveQuadrupoles() const { return solve_quadrupoles; }
+    size_t getNumQuads() const { return num_quads; }
+    double* getDevGPoint() const { return d_G_point; }
+    int* getDevQuadIdxs() const { return d_quad_idxs; }
+    int* getDevQuadMap() const { return d_quad_map; }
+    double* getDevSpreadCoefQ() const { return d_spread_coef_Q; }
+    double* getDevContractCoefQ() const { return d_contract_coef_Q; }
 
     void calculate() override;
 };

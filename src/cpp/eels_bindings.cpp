@@ -52,7 +52,8 @@ void register_eels(py::module_& m) {
                       bool,
                       const std::string&,
                       const std::string&,
-                      const std::string&>(),
+                      const std::string&,
+                      double>(),
              py::arg("box"),
              py::arg("eps_p"),
              py::arg("omega"),
@@ -64,7 +65,8 @@ void register_eels(py::module_& m) {
              py::arg("quiet") = false,
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
-             py::arg("field_type") = "auto")
+             py::arg("field_type") = "auto",
+             py::arg("integration_step") = 0.01)
         // 2. 1D eps_p
         .def(py::init<const std::vector<double>&,
                       const std::vector<Complex>&,
@@ -77,7 +79,8 @@ void register_eels(py::module_& m) {
                       bool,
                       const std::string&,
                       const std::string&,
-                      const std::string&>(),
+                      const std::string&,
+                      double>(),
              py::arg("box"),
              py::arg("eps_p_1d"),
              py::arg("omega"),
@@ -89,7 +92,8 @@ void register_eels(py::module_& m) {
              py::arg("quiet") = false,
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
-             py::arg("field_type") = "auto")
+             py::arg("field_type") = "auto",
+             py::arg("integration_step") = 0.01)
         // 3. Scalar eps_p
         .def(py::init<const std::vector<double>&,
                       Complex,
@@ -102,7 +106,8 @@ void register_eels(py::module_& m) {
                       bool,
                       const std::string&,
                       const std::string&,
-                      const std::string&>(),
+                      const std::string&,
+                      double>(),
              py::arg("box"),
              py::arg("eps_p_scalar"),
              py::arg("omega"),
@@ -114,7 +119,8 @@ void register_eels(py::module_& m) {
              py::arg("quiet") = false,
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
-             py::arg("field_type") = "auto")
+             py::arg("field_type") = "auto",
+             py::arg("integration_step") = 0.01)
         .def("compute", &EELS_Solver::compute,
              py::arg("epos"),
              py::arg("x_part"),

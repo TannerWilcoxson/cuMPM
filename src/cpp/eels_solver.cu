@@ -100,8 +100,9 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          bool quiet,
                          const std::string& guess_type,
                          const std::string& solver_type,
-                         const std::string& field_type)
-    : box(box), eps_p(eps_p), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type) {}
+                         const std::string& field_type,
+                         double integration_step)
+    : box(box), eps_p(eps_p), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step) {}
 
 // Constructor 2: 1D eps_p
 EELS_Solver::EELS_Solver(const std::vector<double>& box,
@@ -115,8 +116,9 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          bool quiet,
                          const std::string& guess_type,
                          const std::string& solver_type,
-                         const std::string& field_type)
-    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type) {
+                         const std::string& field_type,
+                         double integration_step)
+    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step) {
     this->eps_p.resize(eps_p_1d.size(), std::vector<Complex>(1, 0.0));
     for (size_t w = 0; w < eps_p_1d.size(); ++w) {
         this->eps_p[w][0] = eps_p_1d[w];
@@ -135,8 +137,9 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          bool quiet,
                          const std::string& guess_type,
                          const std::string& solver_type,
-                         const std::string& field_type)
-    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type) {
+                         const std::string& field_type,
+                         double integration_step)
+    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step) {
     this->eps_p.resize(1, std::vector<Complex>(1, eps_p_scalar));
 }
 
@@ -207,6 +210,8 @@ void EELS_Solver::nondimensionalize() {
             eps_p[w][p] /= eps_scale;
         }
     }
+
+    integration_step /= length_scale;
 }
 
 void EELS_Solver::precalculations() {
@@ -220,7 +225,7 @@ void EELS_Solver::precalculations() {
 }
 
 void EELS_Solver::precomp_eels(const std::vector<double>& z_part) {
-    double dz = 0.01;
+    double dz = integration_step;
     bool any_neg = false;
     for (double zp : z_part) {
         if (zp <= 0.0) {
@@ -313,8 +318,16 @@ std::vector<Complex> EELS_Solver::calc_derivative_guess(const std::vector<Comple
     size_t im1 = i - 1;
     std::vector<Complex> dip_guess(num_particles * 3);
     for (size_t p = 0; p < num_particles; ++p) {
-        Complex run = eps_p[im1][p] - eps_p[im2][p];
-        Complex new_run = eps_p[i][p] - eps_p[im1][p];
+        Complex eps_im2 = eps_p[im2][p];
+        Complex eps_im1 = eps_p[im1][p];
+        Complex eps_i = eps_p[i][p];
+
+        Complex X_im2 = (eps_im2 - 1.0 == 0.0) ? 0.0 : (eps_im2 + 2.0) / (eps_im2 - 1.0);
+        Complex X_im1 = (eps_im1 - 1.0 == 0.0) ? 0.0 : (eps_im1 + 2.0) / (eps_im1 - 1.0);
+        Complex X_i = (eps_i - 1.0 == 0.0) ? 0.0 : (eps_i + 2.0) / (eps_i - 1.0);
+
+        Complex run = X_im1 - X_im2;
+        Complex new_run = X_i - X_im1;
         if (run == 0.0) {
             run = 1.0;
             new_run = 0.0;
@@ -583,7 +596,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             integrand[j] = (Eind_z * exp_factor).real();
         }
 
-        double integral = simpson_integrate(integrand, 0.01);
+        double integral = simpson_integrate(integrand, integration_step);
         double eels_val = integral / (2.0 * M_PI * M_PI * omega_val);
         
         // The solved dipoles were already physically scaled by Enorm,

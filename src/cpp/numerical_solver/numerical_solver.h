@@ -20,7 +20,7 @@ protected:
 public:
     virtual ~Numerical_Solver() = default;
 
-    virtual void initialize(size_t num_particles) {}
+    virtual void initialize(size_t vec_size) {}
 
     virtual std::vector<Complex> solve(
         const std::vector<Complex>& b,

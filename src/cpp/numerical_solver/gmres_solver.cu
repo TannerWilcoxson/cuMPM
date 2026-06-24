@@ -24,13 +24,12 @@ GMRES_Solver::~GMRES_Solver() {
     free_buffers();
 }
 
-void GMRES_Solver::initialize(size_t num_particles) {
-    if (num_particles == 0) return;
-    if (num_particles == allocated_particles && d_x != nullptr) return;
+void GMRES_Solver::initialize(size_t vec_size) {
+    if (vec_size == 0) return;
+    if (vec_size == allocated_vec_size && d_x != nullptr) return;
 
     free_buffers();
 
-    size_t vec_size = num_particles * 3;
     size_t size_bytes = vec_size * 2 * sizeof(double);
     size_t restart = std::min(vec_size, static_cast<size_t>(10));
 
@@ -41,7 +40,7 @@ void GMRES_Solver::initialize(size_t num_particles) {
     CUDA_CHECK(cudaMalloc(&d_V, (restart + 1) * size_bytes));
     CUDA_CHECK(cudaMalloc(&d_reduce_buf, 2 * sizeof(double)));
 
-    allocated_particles = num_particles;
+    allocated_vec_size = vec_size;
 }
 
 void GMRES_Solver::free_buffers() {
@@ -51,7 +50,7 @@ void GMRES_Solver::free_buffers() {
     if (d_w) { cudaFree(d_w); d_w = nullptr; }
     if (d_V) { cudaFree(d_V); d_V = nullptr; }
     if (d_reduce_buf) { cudaFree(d_reduce_buf); d_reduce_buf = nullptr; }
-    allocated_particles = 0;
+    allocated_vec_size = 0;
 }
 
 std::vector<Complex> GMRES_Solver::solve(
@@ -63,8 +62,7 @@ std::vector<Complex> GMRES_Solver::solve(
     size_t vec_size = b.size();
     if (vec_size == 0) return std::vector<Complex>();
 
-    size_t num_p = vec_size / 3;
-    initialize(num_p);
+    initialize(vec_size);
 
     size_t restart = std::min(vec_size, static_cast<size_t>(10));
     size_t maxiter = std::min(vec_size, static_cast<size_t>(100));

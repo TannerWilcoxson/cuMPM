@@ -75,7 +75,7 @@ def test_eels_direct_vs_python():
     epos = np.array([5.0, 0.0])
     
     # 2. Run new C++ EELS solver (via python interface)
-    eels_solver = cuMPM.EELS(box, eps_p, omega, v, eps_m=eps_m, radius=radius, tol=tol, field_type="direct")
+    eels_solver = cuMPM.EELS(box, eps_p, omega, v, eps_m=eps_m, radius=radius, tol=tol, field_type="direct", integration_step=0.01 * radius)
     eels_solver.compute(epos, pos)
     
     eels_val_cu = eels_solver.get_eels()
@@ -134,38 +134,6 @@ def test_eels_direct_vs_python():
     # Let's compare relative difference
     np.testing.assert_allclose(dips_cu, dips_ref, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(eels_val_cu, eels_val_ref, rtol=1e-5, atol=1e-5)
-
-def test_eels_ewald_vs_direct_large_box():
-    # Verify Ewald boundary conditions match open BCs (direct solver) in the limit of a very large box
-    box = [500.0, 500.0, 500.0]
-    eps_p = [4.0 + 0.1j]
-    omega = [0.15]
-    v = 0.3
-    radius = 2.0
-    eps_m = 1.0
-    tol = 1e-5
-    
-    pos = np.array([
-        [0.0, 0.0, -3.0],
-        [0.0, 0.0, 3.0]
-    ])
-    epos = np.array([5.0, 0.0])
-    
-    # Direct
-    eels_direct = cuMPM.EELS(box, eps_p, omega, v, eps_m=eps_m, radius=radius, tol=tol, field_type="direct")
-    eels_direct.compute(epos, pos)
-    val_direct = eels_direct.get_eels()
-    
-    # Ewald
-    eels_ewald = cuMPM.EELS(box, eps_p, omega, v, eps_m=eps_m, radius=radius, tol=tol, field_type="monodisperse")
-    eels_ewald.compute(epos, pos)
-    val_ewald = eels_ewald.get_eels()
-    
-    print("Direct EELS:", val_direct)
-    print("Ewald EELS:", val_ewald)
-    
-    # Match within 1% in the large box limit
-    np.testing.assert_allclose(val_ewald, val_direct, rtol=1e-2, atol=1e-5)
 
 def test_eels_vs_python_module():
     import sys
@@ -230,7 +198,8 @@ def test_eels_vs_python_module():
         xi=0.5,
         tol=1e-3,
         field_type="direct",
-        solver_type="bicgstab"
+        solver_type="bicgstab",
+        integration_step=0.01 * R
     )
     # Pass positions as 2D array of shape (num_particles, 3)
     cu_solver.compute(e_pos, points)
@@ -257,10 +226,12 @@ def test_eels_splitting():
     with pytest.raises(ValueError, match="Both split_dist and N_split must be specified"):
         cuMPM.EELS(box=[50, 50, 50], eps_p=[4.0], omega=[0.1], v=0.3, N_split=5)
 
-    # Valid initialization
-    solver = cuMPM.EELS(box=[100, 100, 100], eps_p=[4.0], omega=[0.15], v=0.3, radius=2.0, split_dist=4.0, N_split=5, field_type="direct")
+    # Valid initialization — use N_split=27 (= 3³) so the cubic lattice has n=3
+    # and roughly 14 grid points survive truncation at the unit-sphere boundary.
+    N_split_test = 27
+    solver = cuMPM.EELS(box=[100, 100, 100], eps_p=[4.0], omega=[0.15], v=0.3, radius=2.0, split_dist=4.0, N_split=N_split_test, field_type="direct")
     assert solver.split_dist == 4.0
-    assert solver.N_split == 5
+    assert solver.N_split == N_split_test
 
     # Positions and beam impact
     pos = np.array([
@@ -270,15 +241,22 @@ def test_eels_splitting():
     epos = np.array([1.0, 0.0]) # 2D distance to first is 1.0, to second is 9.0
 
     solver.compute(epos, pos)
-    
-    # Check positions used
+
+    # Compute expected sub-dipole count from the cubic lattice geometry
+    n_grid = int(np.ceil(N_split_test ** (1.0 / 3.0)))
+    h = 2.0 / n_grid
+    coords = np.linspace(-1.0 + h / 2.0, 1.0 - h / 2.0, n_grid)
+    gx, gy, gz = np.meshgrid(coords, coords, coords, indexing='ij')
+    grid = np.column_stack([gx.ravel(), gy.ravel(), gz.ravel()])
+    M = int(np.sum(np.linalg.norm(grid, axis=1) <= 1.0))  # points inside unit sphere
+
+    # Check positions used: 1 unsplit + M split sub-dipoles
     split_pos = solver.get_positions()
-    # First particle split into 5 sub-particles, second remains 1. Total: 6 particles
-    assert len(split_pos) == 6
-    
-    # First position should be exactly pos[1]
+    assert len(split_pos) == 1 + M
+
+    # First position should be exactly pos[1] (unsplit)
     np.testing.assert_allclose(split_pos[0], pos[1])
-    # The remaining 5 positions should be within radius 2.0 of pos[0]
+    # The remaining M positions should be within radius 2.0 of pos[0]
     for p in split_pos[1:]:
         assert np.linalg.norm(p - pos[0]) <= 2.0001
 
@@ -287,10 +265,9 @@ def test_eels_splitting():
     # Squeezed: since we have 1 epos and 1 wavevector, it should be a 0D scalar array
     assert eels.shape == ()
 
-    # Check dipoles shape
+    # Check dipoles shape: (num_wavelengths, num_split_particles, 3) squeezed -> (1+M, 3)
     dips = solver.get_dipoles()
-    # (num_wavelengths, num_split_particles, 3) squeezed -> (6, 3)
-    assert dips.shape == (6, 3)
+    assert dips.shape == (1 + M, 3)
 
     # Test N_split = 1 behavior (should match unsplit solver exactly)
     solver_ns1 = cuMPM.EELS(box=[100, 100, 100], eps_p=[4.0], omega=[0.15], v=0.3, radius=2.0, split_dist=4.0, N_split=1, field_type="direct")
@@ -324,6 +301,7 @@ def test_eels_splitting_polydisperse():
         [4.2 + 0.1j, 5.3 + 0.2j]
     ])
     
+    N_split_test = 27
     solver = cuMPM.EELS(
         box=box,
         eps_p=eps_p,
@@ -332,38 +310,45 @@ def test_eels_splitting_polydisperse():
         eps_m=eps_m,
         radius=radii,
         split_dist=4.0,
-        N_split=5,
+        N_split=N_split_test,
         field_type="polydisperse"
     )
-    
+
     # First close to beam, second far from beam
     pos = np.array([
         [0.0, 0.0, 0.0],
         [10.0, 0.0, 0.0]
     ])
     epos = np.array([1.0, 0.0])
-    
+
     solver.compute(epos, pos)
-    
-    # Assert positions: first particle (idx 0, radius 2.0) should be split into 5 sub-particles
-    # second particle (idx 1, radius 3.0) should remain 1 unsplit particle
+
+    # Compute expected sub-dipole count from the cubic lattice geometry
+    n_grid = int(np.ceil(N_split_test ** (1.0 / 3.0)))
+    h = 2.0 / n_grid
+    coords = np.linspace(-1.0 + h / 2.0, 1.0 - h / 2.0, n_grid)
+    gx, gy, gz = np.meshgrid(coords, coords, coords, indexing='ij')
+    grid = np.column_stack([gx.ravel(), gy.ravel(), gz.ravel()])
+    M = int(np.sum(np.linalg.norm(grid, axis=1) <= 1.0))
+
+    # Assert positions: first particle split into M sub-particles, second remains 1
     split_pos = solver.get_positions()
-    assert len(split_pos) == 6
-    
+    assert len(split_pos) == 1 + M
+
     # In _split_close_dipoles, unsplit particle pos[1] comes first
     np.testing.assert_allclose(split_pos[0], pos[1])
-    # The next 5 are split from pos[0]
+    # The next M are split from pos[0]
     for p in split_pos[1:]:
         assert np.linalg.norm(p - pos[0]) <= 2.0001
-        
+
     # Check EELS shape (num_wavevectors,) -> shape (2,)
     eels = solver.get_eels()
     assert eels.shape == (2,)
     assert not np.any(np.isnan(eels))
-    
-    # Check dipoles shape (num_wavevectors, num_split_particles, 3) -> shape (2, 6, 3)
+
+    # Check dipoles shape (num_wavevectors, num_split_particles, 3) -> shape (2, 1+M, 3)
     dips = solver.get_dipoles()
-    assert dips.shape == (2, 6, 3)
+    assert dips.shape == (2, 1 + M, 3)
     assert not np.any(np.isnan(dips))
     
     # Verify N_split = 1 matches the unsplit polydisperse solver

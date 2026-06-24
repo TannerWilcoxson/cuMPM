@@ -42,6 +42,28 @@ py::array_t<std::complex<double>> get_dipoles_numpy(const Dipole_Solver& self) {
     return result;
 }
 
+// Helper to convert std::vector<Complex> to a shaped NumPy array for quadrupoles
+py::array_t<std::complex<double>> get_quadrupoles_numpy(const Dipole_Solver& self) {
+    std::vector<std::complex<double>> vec = self.get_quadrupoles();
+    size_t num_frames = self.get_num_frames();
+    size_t num_waves = self.get_num_wavevectors();
+    size_t num_quads = self.get_num_quads();
+    size_t K = self.get_num_incident_polarizations();
+    
+    py::array_t<std::complex<double>> result({
+        (ssize_t)num_frames,
+        (ssize_t)num_waves,
+        (ssize_t)num_quads,
+        (ssize_t)K,
+        (ssize_t)5
+    });
+    auto buffer = result.request();
+    std::complex<double>* ptr = static_cast<std::complex<double>*>(buffer.ptr);
+    
+    std::copy(vec.begin(), vec.end(), ptr);
+    return result;
+}
+
 PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
     m.doc() = "CUDA-accelerated Dipole Solver Python Extension";
 
@@ -56,7 +78,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       const std::string&,
                       const std::string&,
                       const std::string&,
-                      const std::vector<std::vector<std::complex<double>>>&>(),
+                      const std::vector<std::vector<std::complex<double>>>&,
+                      bool,
+                      const std::vector<int>&>(),
              py::arg("box"),
              py::arg("eps_p"),
              py::arg("radius") = std::vector<double>{},
@@ -67,7 +91,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
              py::arg("field_type") = "auto",
-             py::arg("E0") = std::vector<std::vector<std::complex<double>>>{})
+             py::arg("E0") = std::vector<std::vector<std::complex<double>>>{},
+             py::arg("solve_quadrupoles") = false,
+             py::arg("quad_idxs") = std::vector<int>{})
         .def(py::init<const std::vector<double>&,
                       const std::vector<std::complex<double>>&,
                       const std::vector<double>&,
@@ -78,7 +104,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       const std::string&,
                       const std::string&,
                       const std::string&,
-                      const std::vector<std::vector<std::complex<double>>>&>(),
+                      const std::vector<std::vector<std::complex<double>>>&,
+                      bool,
+                      const std::vector<int>&>(),
              py::arg("box"),
              py::arg("eps_p_1d"),
              py::arg("radius") = std::vector<double>{},
@@ -89,7 +117,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
              py::arg("field_type") = "auto",
-             py::arg("E0") = std::vector<std::vector<std::complex<double>>>{})
+             py::arg("E0") = std::vector<std::vector<std::complex<double>>>{},
+             py::arg("solve_quadrupoles") = false,
+             py::arg("quad_idxs") = std::vector<int>{})
         .def(py::init<const std::vector<double>&,
                       std::complex<double>,
                       const std::vector<double>&,
@@ -100,7 +130,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       const std::string&,
                       const std::string&,
                       const std::string&,
-                      const std::vector<std::vector<std::complex<double>>>&>(),
+                      const std::vector<std::vector<std::complex<double>>>&,
+                      bool,
+                      const std::vector<int>&>(),
              py::arg("box"),
              py::arg("eps_p_scalar"),
              py::arg("radius") = std::vector<double>{},
@@ -111,15 +143,19 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
              py::arg("field_type") = "auto",
-             py::arg("E0") = std::vector<std::vector<std::complex<double>>>{})
+             py::arg("E0") = std::vector<std::vector<std::complex<double>>>{},
+             py::arg("solve_quadrupoles") = false,
+             py::arg("quad_idxs") = std::vector<int>{})
         .def("compute", &Dipole_Solver::compute,
              py::arg("x_part"),
              py::arg("y_part"),
              py::arg("z_part"))
         .def("get_eff_polarizability", &get_eff_polarizability_numpy)
         .def("get_dipoles", &get_dipoles_numpy)
+        .def("get_quadrupoles", &get_quadrupoles_numpy)
         .def("get_num_frames", &Dipole_Solver::get_num_frames)
         .def("get_num_particles", &Dipole_Solver::get_num_particles)
+        .def("get_num_quads", &Dipole_Solver::get_num_quads)
         .def("get_num_wavevectors", &Dipole_Solver::get_num_wavevectors)
         .def("get_num_incident_polarizations", &Dipole_Solver::get_num_incident_polarizations);
 
@@ -129,4 +165,7 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
 
     void register_eels(py::module_& m);
     register_eels(m);
+
+    void register_electric_fields(py::module_& m);
+    register_electric_fields(m);
 }

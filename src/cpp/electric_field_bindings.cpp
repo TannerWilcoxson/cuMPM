@@ -1,0 +1,314 @@
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/complex.h>
+#include <optional>
+#include <cstdint>
+#include "electric_field/electric_field.h"
+#include "electric_field/direct_electric_field.h"
+#include "electric_field/ewald_electric_field.h"
+#include "electric_field/polydisperse_electric_field.h"
+
+namespace py = pybind11;
+
+void register_electric_fields(py::module_& m) {
+    // Expose abstract base class Electric_Field
+    py::class_<Electric_Field, std::unique_ptr<Electric_Field>>(m, "Electric_Field")
+        .def("getDevDipoles", [](const Electric_Field& self) {
+            return reinterpret_cast<uintptr_t>(self.getDevDipoles());
+        })
+        .def("getDevEPoint", [](const Electric_Field& self) {
+            return reinterpret_cast<uintptr_t>(self.getDevEPoint());
+        })
+        .def("calculate", &Electric_Field::calculate)
+        .def("updateParticleCoordinates", &Electric_Field::updateParticleCoordinates,
+             py::arg("x_part"), py::arg("y_part"), py::arg("z_part"))
+        .def("setSelfCoef", &Electric_Field::setSelfCoef,
+             py::arg("self_coef_r"), py::arg("self_coef_i"));
+
+    // Expose Direct_Electric_Field
+    py::class_<Direct_Electric_Field, Electric_Field, std::unique_ptr<Direct_Electric_Field>>(m, "Direct_Electric_Field")
+        .def(py::init<const std::vector<double>&>(), py::arg("radius") = std::vector<double>{})
+        .def("updateFieldCoordinates", &Direct_Electric_Field::updateFieldCoordinates,
+             py::arg("x_field"), py::arg("y_field"), py::arg("z_field"))
+        .def("updateDipolesComplex", &Direct_Electric_Field::updateDipolesComplex,
+             py::arg("dip_xr"), py::arg("dip_xi"), py::arg("dip_yr"), py::arg("dip_yi"), py::arg("dip_zr"), py::arg("dip_zi"));
+
+    // Expose Ewald_Electric_Field
+    py::class_<Ewald_Electric_Field, Electric_Field, std::unique_ptr<Ewald_Electric_Field>>(m, "Ewald_Electric_Field")
+        .def(py::init<double, double, double, double, double, bool, bool, const std::vector<int>&>(),
+             py::arg("box_x"), py::arg("box_y"), py::arg("box_z"),
+             py::arg("errortol"), py::arg("xi"), py::arg("calc_inter_dipole"),
+             py::arg("solve_quadrupoles") = false,
+             py::arg("quad_idxs") = std::vector<int>{})
+        // Scalar and state getters/setters
+        .def("getBoxX", &Ewald_Electric_Field::getBoxX)
+        .def("getBoxY", &Ewald_Electric_Field::getBoxY)
+        .def("getBoxZ", &Ewald_Electric_Field::getBoxZ)
+        .def("getErrortol", &Ewald_Electric_Field::getErrortol)
+        .def("getRc", &Ewald_Electric_Field::getRc)
+        .def("getXi", &Ewald_Electric_Field::getXi)
+        .def("getCalcInterDipole", &Ewald_Electric_Field::getCalcInterDipole)
+        .def("getSelfCoef", &Ewald_Electric_Field::getSelfCoef)
+        .def("getNumParticles", &Ewald_Electric_Field::getNumParticles)
+        .def("getNumFieldPoints", &Ewald_Electric_Field::getNumFieldPoints)
+        .def("getParticlesUpdated", &Ewald_Electric_Field::getParticlesUpdated)
+        .def("getFieldPointsUpdated", &Ewald_Electric_Field::getFieldPointsUpdated)
+        .def("clearParticlesUpdated", &Ewald_Electric_Field::clearParticlesUpdated)
+        .def("clearFieldPointsUpdated", &Ewald_Electric_Field::clearFieldPointsUpdated)
+        .def("getDipolesUpdated", &Ewald_Electric_Field::getDipolesUpdated)
+        .def("clearDipolesUpdated", &Ewald_Electric_Field::clearDipolesUpdated)
+        .def("getNumSpread", &Ewald_Electric_Field::getNumSpread)
+        .def("getNumContract", &Ewald_Electric_Field::getNumContract)
+        .def("getNumPairs", &Ewald_Electric_Field::getNumPairs)
+        .def("getMaxNeighbors", &Ewald_Electric_Field::getMaxNeighbors)
+        .def("getTableSize", &Ewald_Electric_Field::getTableSize)
+        .def("getNumOffsets", &Ewald_Electric_Field::getNumOffsets)
+        .def("getSolveQuadrupoles", &Ewald_Electric_Field::getSolveQuadrupoles)
+        .def("getNumQuads", &Ewald_Electric_Field::getNumQuads)
+        // Array getters
+        .def("getNumGrid", [](const Ewald_Electric_Field& self) {
+            const int* grid = self.getNumGrid();
+            return std::vector<int>{grid[0], grid[1], grid[2]};
+        })
+        .def("getGridSpacing", [](const Ewald_Electric_Field& self) {
+            const double* spacing = self.getGridSpacing();
+            return std::vector<double>{spacing[0], spacing[1], spacing[2]};
+        })
+        .def("getSpectralSplit", [](const Ewald_Electric_Field& self) {
+            const double* split = self.getSpectralSplit();
+            return std::vector<double>{split[0], split[1], split[2]};
+        })
+        // Device pointer getters
+        .def("getDevXPart", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevXPart()); })
+        .def("getDevYPart", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevYPart()); })
+        .def("getDevZPart", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevZPart()); })
+        .def("getDevXField", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevXField()); })
+        .def("getDevYField", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevYField()); })
+        .def("getDevZField", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevZField()); })
+        .def("getDevSelfCoefReal", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoefReal()); })
+        .def("getDevSelfCoefImag", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoefImag()); })
+        .def("getDevSpreadCoef", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSpreadCoef()); })
+        .def("getDevSpreadIdxs", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSpreadIdxs()); })
+        .def("getDevParticleIndex", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevParticleIndex()); })
+        .def("getDevContractCoef", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevContractCoef()); })
+        .def("getDevContractIdxs", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevContractIdxs()); })
+        .def("getDevSelfPerp", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfPerp()); })
+        .def("getDevPerp", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevPerp()); })
+        .def("getDevPara", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevPara()); })
+        .def("getDevFEGrid", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevFEGrid()); })
+        .def("getDevFEsGrid", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevFEsGrid()); })
+        .def("getDevNeighborList", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevNeighborList()); })
+        .def("getDevNeighborCounts", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevNeighborCounts()); })
+        .def("getDevRTable", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevRTable()); })
+        .def("getDevFieldDip1", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevFieldDip1()); })
+        .def("getDevFieldDip2", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevFieldDip2()); })
+        .def("getDevOffset", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevOffset()); })
+        .def("getDevOffsetxyz", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevOffsetxyz()); })
+        .def("getDevScaleCoef", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevScaleCoef()); })
+        .def("getDevKhat", [](const Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevKhat()); })
+        // Action methods
+        .def("computeNeighborList", &Ewald_Electric_Field::computeNeighborList, py::arg("max_neighbors_per_particle") = 128)
+        .def("computeRealSpaceTables", &Ewald_Electric_Field::computeRealSpaceTables)
+        .def("computePrecalculations", &Ewald_Electric_Field::computePrecalculations)
+        .def("updateFieldCoordinates", &Ewald_Electric_Field::updateFieldCoordinates,
+             py::arg("x_field"), py::arg("y_field"), py::arg("z_field"))
+        .def("updateDipoles", &Ewald_Electric_Field::updateDipoles,
+             py::arg("dip_x"), py::arg("dip_y"), py::arg("dip_z"))
+        .def("updateDipolesComplex", &Ewald_Electric_Field::updateDipolesComplex,
+             py::arg("dip_xr"), py::arg("dip_xi"), py::arg("dip_yr"), py::arg("dip_yi"), py::arg("dip_zr"), py::arg("dip_zi"))
+        .def("setSelfCoef", py::overload_cast<const std::vector<double>&, const std::vector<double>&>(&Ewald_Electric_Field::setSelfCoef),
+             py::arg("self_coef_r"), py::arg("self_coef_i"))
+        .def("setSelfCoef", py::overload_cast<double, double>(&Ewald_Electric_Field::setSelfCoef),
+             py::arg("val_r"), py::arg("val_i") = 0.0)
+        .def("spreadPrecalcs", &Ewald_Electric_Field::spreadPrecalcs)
+        .def("contractPrecalcs", &Ewald_Electric_Field::contractPrecalcs)
+        .def("realSpacePrecalcs", &Ewald_Electric_Field::realSpacePrecalcs)
+        // Host data-copy verification helper methods
+        .def("getNeighborListHost", [](const Ewald_Electric_Field& self) {
+            std::vector<int> host_list;
+            std::vector<int> host_counts;
+            self.getNeighborListHost(host_list, host_counts);
+            return std::make_pair(host_list, host_counts);
+        })
+        .def("getRealSpaceTablesHost", [](const Ewald_Electric_Field& self) {
+            std::vector<double> host_r_table;
+            std::vector<double> host_field_dip_1;
+            std::vector<double> host_field_dip_2;
+            self.getRealSpaceTablesHost(host_r_table, host_field_dip_1, host_field_dip_2);
+            return std::make_tuple(host_r_table, host_field_dip_1, host_field_dip_2);
+        })
+        .def("getPrecalculationsHost", [](const Ewald_Electric_Field& self) {
+            std::vector<int> host_offset;
+            std::vector<double> host_offsetxyz;
+            std::vector<double> host_scale_coef;
+            std::vector<double> host_khat;
+            self.getPrecalculationsHost(host_offset, host_offsetxyz, host_scale_coef, host_khat);
+            return std::make_tuple(host_offset, host_offsetxyz, host_scale_coef, host_khat);
+        })
+        .def("getDipolesHost", [](const Ewald_Electric_Field& self) {
+            std::vector<double> host_dip_x;
+            std::vector<double> host_dip_y;
+            std::vector<double> host_dip_z;
+            self.getDipolesHost(host_dip_x, host_dip_y, host_dip_z);
+            return std::make_tuple(host_dip_x, host_dip_y, host_dip_z);
+        })
+        .def("getDipolesComplexHost", [](const Ewald_Electric_Field& self) {
+            std::vector<double> host_dip_xr; std::vector<double> host_dip_xi;
+            std::vector<double> host_dip_yr; std::vector<double> host_dip_yi;
+            std::vector<double> host_dip_zr; std::vector<double> host_dip_zi;
+            self.getDipolesComplexHost(host_dip_xr, host_dip_xi, host_dip_yr, host_dip_yi, host_dip_zr, host_dip_zi);
+            return std::make_tuple(host_dip_xr, host_dip_xi, host_dip_yr, host_dip_yi, host_dip_zr, host_dip_zi);
+        })
+        .def("getSpreadPrecalcsHost", [](const Ewald_Electric_Field& self) {
+            std::vector<double> host_spread_coef;
+            std::vector<int> host_spread_idxs;
+            self.getSpreadPrecalcsHost(host_spread_coef, host_spread_idxs);
+            return std::make_pair(host_spread_coef, host_spread_idxs);
+        })
+        .def("getContractPrecalcsHost", [](const Ewald_Electric_Field& self) {
+            std::vector<double> host_E_point;
+            std::vector<int> host_particle_index;
+            std::vector<double> host_contract_coef;
+            std::vector<int> host_contract_idxs;
+            self.getContractPrecalcsHost(host_E_point, host_particle_index, host_contract_coef, host_contract_idxs);
+            return std::make_tuple(host_E_point, host_particle_index, host_contract_coef, host_contract_idxs);
+        })
+        .def("getRealSpacePrecalcsHost", [](const Ewald_Electric_Field& self) {
+            double host_self_perp = 0.0;
+            std::vector<double> host_perp;
+            std::vector<double> host_para;
+            self.getRealSpacePrecalcsHost(host_self_perp, host_perp, host_para);
+            return std::make_tuple(host_self_perp, host_perp, host_para);
+        })
+        .def("getEPointHost", &Ewald_Electric_Field::getEPointHost)
+        // Pipeline operations with optional custom GPU pointer support
+        .def("spread", [](Ewald_Electric_Field& self, std::optional<uintptr_t> grid_ptr) {
+            double* ptr = grid_ptr ? reinterpret_cast<double*>(*grid_ptr) : self.getDevFEGrid();
+            self.spread(ptr);
+        }, py::arg("grid_ptr") = py::none())
+        .def("scale", [](Ewald_Electric_Field& self, std::optional<uintptr_t> grid_ptr) {
+            double* ptr = grid_ptr ? reinterpret_cast<double*>(*grid_ptr) : self.getDevFEsGrid();
+            if (!ptr) ptr = self.getDevFEGrid();
+            self.scale(ptr);
+        }, py::arg("grid_ptr") = py::none())
+        .def("contract", [](Ewald_Electric_Field& self, std::optional<uintptr_t> E_point_ptr, std::optional<uintptr_t> Es_grid_ptr) {
+            double* E_ptr = E_point_ptr ? reinterpret_cast<double*>(*E_point_ptr) : self.getDevEPoint();
+            const double* Es_ptr = Es_grid_ptr ? reinterpret_cast<const double*>(*Es_grid_ptr) : self.getDevFEGrid();
+            self.contract(E_ptr, Es_ptr);
+        }, py::arg("E_point_ptr") = py::none(), py::arg("Es_grid_ptr") = py::none())
+        .def("realSpace", [](Ewald_Electric_Field& self, std::optional<uintptr_t> E_point_ptr) {
+            double* ptr = E_point_ptr ? reinterpret_cast<double*>(*E_point_ptr) : self.getDevEPoint();
+            self.realSpace(ptr);
+        }, py::arg("E_point_ptr") = py::none());
+
+    // Expose Polydisperse_Electric_Field
+    py::class_<Polydisperse_Electric_Field, Electric_Field, std::unique_ptr<Polydisperse_Electric_Field>>(m, "Polydisperse_Electric_Field")
+        .def(py::init<double, double, double, double, double, bool, const std::vector<double>&, bool, const std::vector<int>&>(),
+             py::arg("box_x"), py::arg("box_y"), py::arg("box_z"),
+             py::arg("errortol"), py::arg("xi"), py::arg("calc_inter_dipole"),
+             py::arg("particle_radii"),
+             py::arg("solve_quadrupoles") = false,
+             py::arg("quad_idxs") = std::vector<int>{})
+        // Scalar and state getters/setters
+        .def("getBoxX", &Polydisperse_Electric_Field::getBoxX)
+        .def("getBoxY", &Polydisperse_Electric_Field::getBoxY)
+        .def("getBoxZ", &Polydisperse_Electric_Field::getBoxZ)
+        .def("getErrortol", &Polydisperse_Electric_Field::getErrortol)
+        .def("getRc", &Polydisperse_Electric_Field::getRc)
+        .def("getXi", &Polydisperse_Electric_Field::getXi)
+        .def("getCalcInterDipole", &Polydisperse_Electric_Field::getCalcInterDipole)
+        .def("getNumParticles", &Polydisperse_Electric_Field::getNumParticles)
+        .def("getNumFieldPoints", &Polydisperse_Electric_Field::getNumFieldPoints)
+        .def("getParticlesUpdated", &Polydisperse_Electric_Field::getParticlesUpdated)
+        .def("getFieldPointsUpdated", &Polydisperse_Electric_Field::getFieldPointsUpdated)
+        .def("clearParticlesUpdated", &Polydisperse_Electric_Field::clearParticlesUpdated)
+        .def("clearFieldPointsUpdated", &Polydisperse_Electric_Field::clearFieldPointsUpdated)
+        .def("getDipolesUpdated", &Polydisperse_Electric_Field::getDipolesUpdated)
+        .def("clearDipolesUpdated", &Polydisperse_Electric_Field::clearDipolesUpdated)
+        .def("getNumSpread", &Polydisperse_Electric_Field::getNumSpread)
+        .def("getNumContract", &Polydisperse_Electric_Field::getNumContract)
+        .def("getNumPairs", &Polydisperse_Electric_Field::getNumPairs)
+        .def("getMaxNeighbors", &Polydisperse_Electric_Field::getMaxNeighbors)
+        .def("getTableSize", &Polydisperse_Electric_Field::getTableSize)
+        .def("getNumOffsets", &Polydisperse_Electric_Field::getNumOffsets)
+        .def("getSolveQuadrupoles", &Polydisperse_Electric_Field::getSolveQuadrupoles)
+        .def("getNumQuads", &Polydisperse_Electric_Field::getNumQuads)
+        .def("getEta", &Polydisperse_Electric_Field::getEta)
+        .def("getP", &Polydisperse_Electric_Field::getP)
+        // Array getters
+        .def("getNumGrid", [](const Polydisperse_Electric_Field& self) {
+            const int* grid = self.getNumGrid();
+            return std::vector<int>{grid[0], grid[1], grid[2]};
+        })
+        .def("getGridSpacing", [](const Polydisperse_Electric_Field& self) {
+            const double* spacing = self.getGridSpacing();
+            return std::vector<double>{spacing[0], spacing[1], spacing[2]};
+        })
+        // Device pointer getters
+        .def("getDevXPart", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevXPart()); })
+        .def("getDevYPart", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevYPart()); })
+        .def("getDevZPart", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevZPart()); })
+        .def("getDevXField", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevXField()); })
+        .def("getDevYField", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevYField()); })
+        .def("getDevZField", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevZField()); })
+        .def("getDevSelfCoefReal", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoefReal()); })
+        .def("getDevSelfCoefImag", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoefImag()); })
+        .def("getDevSpreadCoef", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSpreadCoef()); })
+        .def("getDevSpreadIdxs", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSpreadIdxs()); })
+        .def("getDevParticleIndex", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevParticleIndex()); })
+        .def("getDevContractCoef", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevContractCoef()); })
+        .def("getDevContractIdxs", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevContractIdxs()); })
+        .def("getDevPerp", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevPerp()); })
+        .def("getDevPara", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevPara()); })
+        .def("getDevFEGrid", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevFEGrid()); })
+        .def("getDevFEsGrid", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevFEsGrid()); })
+        .def("getDevNeighborList", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevNeighborList()); })
+        .def("getDevNeighborCounts", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevNeighborCounts()); })
+        .def("getDevRTable", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevRTable()); })
+        .def("getDevFieldDip1", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevFieldDip1()); })
+        .def("getDevFieldDip2", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevFieldDip2()); })
+        .def("getDevOffset", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevOffset()); })
+        .def("getDevOffsetxyz", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevOffsetxyz()); })
+        .def("getDevScaleCoef", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevScaleCoef()); })
+        .def("getDevGPoint", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevGPoint()); })
+        .def("getDevQuadIdxs", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevQuadIdxs()); })
+        .def("getDevQuadMap", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevQuadMap()); })
+        .def("getDevSpreadCoefQ", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSpreadCoefQ()); })
+        .def("getDevContractCoefQ", [](const Polydisperse_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevContractCoefQ()); })
+        // Action methods
+        .def("computeNeighborList", &Polydisperse_Electric_Field::computeNeighborList, py::arg("max_neighbors_per_particle") = 128)
+        .def("computeRealSpaceTables", &Polydisperse_Electric_Field::computeRealSpaceTables)
+        .def("computePrecalculations", &Polydisperse_Electric_Field::computePrecalculations)
+        .def("updateFieldCoordinates", &Polydisperse_Electric_Field::updateFieldCoordinates,
+             py::arg("x_field"), py::arg("y_field"), py::arg("z_field"))
+        .def("updateDipoles", &Polydisperse_Electric_Field::updateDipoles,
+             py::arg("dip_x"), py::arg("dip_y"), py::arg("dip_z"))
+        .def("updateDipolesComplex", &Polydisperse_Electric_Field::updateDipolesComplex,
+             py::arg("dip_xr"), py::arg("dip_xi"), py::arg("dip_yr"), py::arg("dip_yi"), py::arg("dip_zr"), py::arg("dip_zi"))
+        .def("setSelfCoef", py::overload_cast<const std::vector<double>&, const std::vector<double>&>(&Polydisperse_Electric_Field::setSelfCoef),
+             py::arg("self_coef_r"), py::arg("self_coef_i"))
+        .def("setSelfCoef", py::overload_cast<double, double>(&Polydisperse_Electric_Field::setSelfCoef),
+             py::arg("val_r"), py::arg("val_i") = 0.0)
+        .def("spreadPrecalcs", &Polydisperse_Electric_Field::spreadPrecalcs)
+        .def("contractPrecalcs", &Polydisperse_Electric_Field::contractPrecalcs)
+        .def("realSpacePrecalcs", &Polydisperse_Electric_Field::realSpacePrecalcs)
+        // Pipeline operations with optional custom GPU pointer support
+        .def("spread", [](Polydisperse_Electric_Field& self, std::optional<uintptr_t> grid_ptr) {
+            double* ptr = grid_ptr ? reinterpret_cast<double*>(*grid_ptr) : self.getDevFEGrid();
+            self.spread(ptr);
+        }, py::arg("grid_ptr") = py::none())
+        .def("scale", [](Polydisperse_Electric_Field& self, std::optional<uintptr_t> grid_ptr) {
+            double* ptr = grid_ptr ? reinterpret_cast<double*>(*grid_ptr) : self.getDevFEsGrid();
+            if (!ptr) ptr = self.getDevFEGrid();
+            self.scale(ptr);
+        }, py::arg("grid_ptr") = py::none())
+        .def("contract", [](Polydisperse_Electric_Field& self, std::optional<uintptr_t> E_point_ptr, std::optional<uintptr_t> Es_grid_ptr) {
+            double* E_ptr = E_point_ptr ? reinterpret_cast<double*>(*E_point_ptr) : self.getDevEPoint();
+            const double* Es_ptr = Es_grid_ptr ? reinterpret_cast<const double*>(*Es_grid_ptr) : self.getDevFEGrid();
+            self.contract(E_ptr, Es_ptr);
+        }, py::arg("E_point_ptr") = py::none(), py::arg("Es_grid_ptr") = py::none())
+        .def("realSpace", [](Polydisperse_Electric_Field& self, std::optional<uintptr_t> E_point_ptr) {
+            double* ptr = E_point_ptr ? reinterpret_cast<double*>(*E_point_ptr) : self.getDevEPoint();
+            self.realSpace(ptr);
+        }, py::arg("E_point_ptr") = py::none());
+}

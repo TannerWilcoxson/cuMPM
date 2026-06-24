@@ -36,6 +36,7 @@ private:
     std::unique_ptr<Numerical_Solver> solver;
 
     // Simpson's rule integration coordinates along electron path
+    double integration_step = 0.002;
     std::vector<double> z_pts;
     std::vector<double> Z_pts;
 
@@ -83,7 +84,8 @@ public:
                 bool quiet = false,
                 const std::string& guess_type = "derivative",
                 const std::string& solver_type = "gmres",
-                const std::string& field_type = "auto");
+                const std::string& field_type = "auto",
+                double integration_step = 0.002);
 
     // 2. 1D eps_p
     EELS_Solver(const std::vector<double>& box,
@@ -97,7 +99,8 @@ public:
                 bool quiet = false,
                 const std::string& guess_type = "derivative",
                 const std::string& solver_type = "gmres",
-                const std::string& field_type = "auto");
+                const std::string& field_type = "auto",
+                double integration_step = 0.002);
 
     // 3. Scalar eps_p
     EELS_Solver(const std::vector<double>& box,
@@ -111,7 +114,8 @@ public:
                 bool quiet = false,
                 const std::string& guess_type = "derivative",
                 const std::string& solver_type = "gmres",
-                const std::string& field_type = "auto");
+                const std::string& field_type = "auto",
+                double integration_step = 0.002);
 
     ~EELS_Solver();
 

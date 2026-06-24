@@ -167,6 +167,7 @@ __global__ void direct_field_evaluate_kernel(
     const double* __restrict__ d_x_field,
     const double* __restrict__ d_y_field,
     const double* __restrict__ d_z_field,
+    const double* __restrict__ d_radius,
     double*       d_E_point,
     int           N,
     int           M)
@@ -174,6 +175,7 @@ __global__ void direct_field_evaluate_kernel(
     __shared__ double sh_x[DIRECT_TILE_SIZE];
     __shared__ double sh_y[DIRECT_TILE_SIZE];
     __shared__ double sh_z[DIRECT_TILE_SIZE];
+    __shared__ double sh_radius[DIRECT_TILE_SIZE];
     __shared__ double sh_dip_xr[DIRECT_TILE_SIZE];
     __shared__ double sh_dip_xi[DIRECT_TILE_SIZE];
     __shared__ double sh_dip_yr[DIRECT_TILE_SIZE];
@@ -202,6 +204,7 @@ __global__ void direct_field_evaluate_kernel(
             sh_x[tid] = d_x_part[src];
             sh_y[tid] = d_y_part[src];
             sh_z[tid] = d_z_part[src];
+            sh_radius[tid] = d_radius ? d_radius[src] : 0.0;
             double2 px = dips[src * 3 + 0];
             double2 py = dips[src * 3 + 1];
             double2 pz = dips[src * 3 + 2];
@@ -210,6 +213,7 @@ __global__ void direct_field_evaluate_kernel(
             sh_dip_zr[tid] = pz.x;  sh_dip_zi[tid] = pz.y;
         } else {
             sh_x[tid] = 0.0; sh_y[tid] = 0.0; sh_z[tid] = 0.0;
+            sh_radius[tid] = 0.0;
             sh_dip_xr[tid] = 0.0; sh_dip_xi[tid] = 0.0;
             sh_dip_yr[tid] = 0.0; sh_dip_yi[tid] = 0.0;
             sh_dip_zr[tid] = 0.0; sh_dip_zi[tid] = 0.0;
@@ -223,6 +227,15 @@ __global__ void direct_field_evaluate_kernel(
                 double ry = jy - sh_y[k];
                 double rz = jz - sh_z[k];
                 double r2 = rx*rx + ry*ry + rz*rz;
+
+                // Soften/regularize field evaluation inside particle volume
+                double r_sub = sh_radius[k];
+                double min_dist = 1.0 * r_sub;
+                double min_dist2 = min_dist * min_dist;
+                if (r2 < min_dist2) {
+                    r2 = min_dist2;
+                }
+
                 if (r2 < 1e-18) continue; // Skip exact overlaps to avoid singularity
 
                 double r  = sqrt(r2);
@@ -427,6 +440,7 @@ void Direct_Electric_Field::electricField() {
             d_dipoles,
             d_x_part, d_y_part, d_z_part,
             d_x_field, d_y_field, d_z_field,
+            d_radius,
             d_E_point,
             static_cast<int>(num_particles),
             static_cast<int>(num_field_points)

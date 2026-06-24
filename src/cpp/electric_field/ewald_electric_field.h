@@ -5,7 +5,10 @@
 #include <vector>
 #include <cstddef>
 #include <memory>
+#include <complex>
 #include "neighbor_list.h"
+
+using Complex = std::complex<double>;
 
 class Ewald_Electric_Field : public Electric_Field {
 private:
@@ -54,7 +57,7 @@ private:
     bool field_points_updated = false;
 
     // GPU device pointer for contiguous complex dipoles
-    // Layout: num_particles * 3 components (x, y, z) * 2 (real, imag)
+    // Layout: (num_particles * 3 + num_quads * 5) components * 2 (real, imag)
     double* d_dipoles = nullptr;
     bool dipoles_updated = false;
 
@@ -79,11 +82,53 @@ private:
     double* d_perp = nullptr;
     double* d_para = nullptr;
     double self_coef = 0.0;
+    double self_perp_val = 0.0;
+    double self_G2_val = 0.0;
 
     // Grid and FFT members
     double* d_fE_grid = nullptr;
     double* d_fEs_grid = nullptr;
     int fft_plan = 0;
+
+    // Quadrupole member variables
+    bool solve_quadrupoles = false;
+    std::vector<int> quad_idxs;
+    int* d_quad_idxs = nullptr;
+    int* d_quad_map = nullptr;
+    size_t num_quads = 0;
+
+    // Device pointers for quadrupole real space tables
+    double* d_field_quad_1 = nullptr;
+    double* d_field_quad_2 = nullptr;
+    double* d_field_quad_3 = nullptr;
+    double* d_grad_quad_1 = nullptr;
+    double* d_grad_quad_2 = nullptr;
+    double* d_grad_quad_3 = nullptr;
+    double* d_grad_quad_4 = nullptr;
+
+    // Device pointers for quadrupole neighbor interpolation
+    double* d_perp_Q = nullptr;
+    double* d_para_Q = nullptr;
+    double* d_Q3 = nullptr;
+    double* d_G1 = nullptr;
+    double* d_G2 = nullptr;
+    double* d_G3 = nullptr;
+    double* d_G4 = nullptr;
+
+    // Quadrupole grid and FFT members
+    double* d_fG_grid = nullptr;
+    double* d_fGs_grid = nullptr;
+    int fft_plan_G = 0;
+
+    // Reciprocal scaling coefficients
+    double* d_scale_coef_Q_imag = nullptr;
+    double* d_scale_coef_GP_imag = nullptr;
+    double* d_scale_coef_GQ_real = nullptr;
+    double* d_Qfactor = nullptr;
+    double* d_Qfactor_dot = nullptr;
+
+    // Temporary gradient buffer
+    double* d_G_point = nullptr;
 
     // Private method for the Ewald calculation pipeline
     void electricField();
@@ -93,7 +138,9 @@ public:
     Ewald_Electric_Field(double box_x, double box_y, double box_z,
                          double errortol,
                          double xi,
-                         bool calc_inter_dipole);
+                         bool calc_inter_dipole,
+                         bool solve_quadrupoles = false,
+                         const std::vector<int>& quad_idxs = {});
 
     // Destructor: Frees GPU memory
     ~Ewald_Electric_Field();
@@ -245,6 +292,10 @@ public:
     void scale(double* d_fE_grid);
     void contract(double* d_E_point, const double* d_Es_grid);
     void realSpace(double* d_E_point);
+
+    std::vector<Complex> getEPointHost() const;
+    bool getSolveQuadrupoles() const { return solve_quadrupoles; }
+    size_t getNumQuads() const { return num_quads; }
 
     // Public method to run Ewald calculation pipeline
     void calculate() override;

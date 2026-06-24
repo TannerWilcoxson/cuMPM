@@ -42,6 +42,11 @@ private:
     // shape: num_frames * num_wavevectors * num_particles * K * 3 (layout: frame * wavevec * part * (K*3))
     std::vector<Complex> dips;
 
+    bool solve_quadrupoles = false;
+    std::vector<int> quad_idxs;
+    size_t num_quads = 0;
+    std::vector<Complex> quads;
+
     // Helper functions
     void set_dims(size_t num_p);
     void nondimensionalize();
@@ -61,10 +66,11 @@ private:
     std::vector<Complex> calc_derivative_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx) const;
 
     // System solve (delegates to Numerical_Solver)
-    std::vector<Complex> compute_spectrum(const std::vector<Complex>& initial_guess);
+    std::vector<Complex> compute_spectrum(const std::vector<Complex>& initial_guess, std::vector<Complex>& frame_quad);
     void compute_tensor(const std::vector<Complex>& dip_guess, 
                          std::vector<Complex>& frame_cap, 
-                         std::vector<Complex>& frame_dip);
+                         std::vector<Complex>& frame_dip,
+                         std::vector<Complex>& frame_quad);
     std::vector<Complex> compute_dipoles(const std::vector<Complex>& E, 
                                          const std::vector<Complex>& dip_guess);
 
@@ -85,7 +91,9 @@ public:
                   const std::string& guess_type = "derivative",
                   const std::string& solver_type = "gmres",
                   const std::string& field_type = "auto",
-                  const std::vector<std::vector<Complex>>& E0 = {});
+                  const std::vector<std::vector<Complex>>& E0 = {},
+                  bool solve_quadrupoles = false,
+                  const std::vector<int>& quad_idxs = {});
 
     // 2. 1D eps_p (wavelength-dependent, same for all particles)
     Dipole_Solver(const std::vector<double>& box,
@@ -98,7 +106,9 @@ public:
                   const std::string& guess_type = "derivative",
                   const std::string& solver_type = "gmres",
                   const std::string& field_type = "auto",
-                  const std::vector<std::vector<Complex>>& E0 = {});
+                  const std::vector<std::vector<Complex>>& E0 = {},
+                  bool solve_quadrupoles = false,
+                  const std::vector<int>& quad_idxs = {});
 
     // 3. Scalar eps_p (single wavelength, same for all particles)
     Dipole_Solver(const std::vector<double>& box,
@@ -111,7 +121,9 @@ public:
                   const std::string& guess_type = "derivative",
                   const std::string& solver_type = "gmres",
                   const std::string& field_type = "auto",
-                  const std::vector<std::vector<Complex>>& E0 = {});
+                  const std::vector<std::vector<Complex>>& E0 = {},
+                  bool solve_quadrupoles = false,
+                  const std::vector<int>& quad_idxs = {});
 
     ~Dipole_Solver();
 
@@ -129,8 +141,13 @@ public:
     // shape: num_frames * num_wavevectors * num_particles * K * 3
     std::vector<Complex> get_dipoles() const;
 
+    // Returns all calculated quadrupoles
+    // shape: num_frames * num_wavevectors * num_quads * K * 5
+    std::vector<Complex> get_quadrupoles() const;
+
     size_t get_num_frames() const { return num_frames; }
     size_t get_num_particles() const { return num_particles; }
+    size_t get_num_quads() const { return num_quads; }
     size_t get_num_wavevectors() const { return num_wavevectors; }
     size_t get_num_incident_polarizations() const { return E0.size(); }
 };

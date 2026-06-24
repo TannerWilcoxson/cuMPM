@@ -10,7 +10,7 @@ class dipole_solver:
     a GPU-resident restarted complex GMRES or BiCGSTAB solver and uses 3D Ewald summation 
     to evaluate the dipole-dipole interactions efficiently.
     """
-    def __init__(self, box, eps_p, radius=1.0, eps_m=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", E0=None):
+    def __init__(self, box, eps_p, radius=1.0, eps_m=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", E0=None, quadrupoles=False):
         """
         Initialize the dipole solver with system and solver parameters.
 
@@ -75,31 +75,42 @@ class dipole_solver:
             else:
                 raise ValueError("E0 must be a 1D, 2D, or 3D array")
 
+        # Resolve quadrupoles argument
+        solve_quadrupoles = False
+        quad_idxs_list = []
+        if isinstance(quadrupoles, bool):
+            solve_quadrupoles = quadrupoles
+        elif np.iterable(quadrupoles):
+            solve_quadrupoles = True
+            quad_idxs_list = [int(i) for i in quadrupoles]
+        else:
+            raise TypeError("quadrupoles must be a boolean or a list/iterable of particle indices")
+
         # Convert eps_p based on dimension
         eps_p_arr = np.asarray(eps_p)
         if eps_p_arr.ndim == 0:
             # Scalar
             eps_p_scalar = complex(eps_p_arr.item())
             self._solver = _cuMPM.Dipole_Solver(
-                box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list
+                box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list
             )
         elif eps_p_arr.ndim == 1:
             # 1D array
             if eps_p_arr.size == 1:
                 eps_p_scalar = complex(eps_p_arr.item())
                 self._solver = _cuMPM.Dipole_Solver(
-                    box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list
+                    box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list
                 )
             else:
                 eps_p_1d = [complex(x) for x in eps_p_arr]
                 self._solver = _cuMPM.Dipole_Solver(
-                    box_list, eps_p_1d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list
+                    box_list, eps_p_1d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list
                 )
         elif eps_p_arr.ndim == 2:
             # 2D array
             eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
             self._solver = _cuMPM.Dipole_Solver(
-                box_list, eps_p_2d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list
+                box_list, eps_p_2d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list
             )
         else:
             raise ValueError("eps_p must be a scalar, 1D array, or 2D array")
@@ -149,6 +160,17 @@ class dipole_solver:
             Dipoles of each particle with shape (num_frames, num_wavelengths, num_particles, 3, 3) (squeezed)
         """
         return np.squeeze(self._solver.get_dipoles())
+
+    def get_quadrupoles(self):
+        """
+        Returns the quadrupoles calculated for all frames.
+        
+        Returns
+        -------
+        Q : numpy.ndarray
+            Quadrupoles of each particle in the quadrupole subset with shape (num_frames, num_wavelengths, num_quads, 3, 5) (squeezed)
+        """
+        return np.squeeze(self._solver.get_quadrupoles())
 
     def get_cap_dip(self):
         """

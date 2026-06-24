@@ -111,7 +111,7 @@ def test_direct_vs_ewald_large_box():
     ])
 
     # Box >> cluster size: periodic images are ~100 nm away
-    L = 500.0
+    L = 30.0
     box = [L, L, L]
 
     solver_ewald = cuMPM.dipole_solver(box, eps_p, radius=radius, eps_m=eps_m,
@@ -126,3 +126,82 @@ def test_direct_vs_ewald_large_box():
 
     # In the large-box limit, the two methods should agree within ~0.5%
     np.testing.assert_allclose(alpha_ewald, alpha_direct, rtol=5e-3, atol=1e-5)
+
+
+def test_quadrupoles():
+    """
+    Verify that the joint dipole-quadrupole solver in C++ matches
+    a Python implementation built from the reference quadrupole_field.py equations.
+    """
+    import sys
+    sys.path.append("/home/tanner/cuMPM")
+    from quadrupole_field import Electric_Field as PyElectric_Field
+
+    box = np.array([100.0, 100.0, 100.0])
+    xi = 0.4
+    errortol = 1e-6
+    eps_p = 4.5 + 0.2j
+    radius = 1.0
+    eps_m = 1.0
+
+    pos = np.array([
+        [10.0, 10.0, 10.0],
+        [20.0, 20.0, 20.0]
+    ])
+    num_particles = len(pos)
+
+    # C++ Solver
+    solver_cpp = cuMPM.dipole_solver(
+        box, eps_p, radius=radius, eps_m=eps_m, xi=xi, tol=1e-8,
+        field_type='monodisperse', quiet=True, quadrupoles=True
+    )
+    solver_cpp.compute(pos)
+    dips_cpp = solver_cpp.get_dipoles()
+    quads_cpp = solver_cpp.get_quadrupoles()
+
+    # Squeezed C++ solution vectors
+    assert dips_cpp.shape == (num_particles, 3, 3)
+    assert quads_cpp.shape == (num_particles, 3, 5)
+
+    # Let's build the joint Python system matrix A_py to compare
+    N_dofs = 3 * num_particles + 5 * num_particles
+    A_py = np.zeros((N_dofs, N_dofs), dtype=complex)
+    
+    ef_py = PyElectric_Field(box, xi, errortol, eps_p=eps_p)
+    ef_py.set_points(pos)
+    ef_py.set_dip_pos(pos)
+
+    for col in range(N_dofs):
+        P_in = np.zeros((num_particles, 3), dtype=complex)
+        Q_in = np.zeros((num_particles, 5), dtype=complex)
+        if col < 3 * num_particles:
+            p_idx = col // 3
+            p_dim = col % 3
+            P_in[p_idx, p_dim] = 1.0
+        else:
+            q_col = col - 3 * num_particles
+            q_idx = q_col // 5
+            q_dim = q_col % 5
+            Q_in[q_idx, q_dim] = 1.0
+        
+        ef_py.set_dipoles(P_in, Q_in)
+        E_out, G_out = ef_py.calculate()
+        
+        col_vec = np.zeros(N_dofs, dtype=complex)
+        col_vec[:3*num_particles] = E_out.ravel()
+        col_vec[3*num_particles:] = G_out.ravel()
+        A_py[:, col] = col_vec
+
+    for dim in range(3):
+        b = np.zeros(N_dofs, dtype=complex)
+        for p in range(num_particles):
+            b[p * 3 + dim] = 1.0
+            
+        sol_py = np.linalg.solve(A_py, b)
+        
+        dips_py = sol_py[:3*num_particles].reshape(num_particles, 3)
+        quads_py = sol_py[3*num_particles:].reshape(num_particles, 5)
+        
+        np.testing.assert_allclose(dips_cpp[:, dim], dips_py, rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(quads_cpp[:, dim], quads_py, rtol=1e-5, atol=1e-5)
+

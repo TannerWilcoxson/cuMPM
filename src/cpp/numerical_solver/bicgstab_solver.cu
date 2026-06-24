@@ -19,13 +19,12 @@ BiCGSTAB_Solver::~BiCGSTAB_Solver() {
     free_buffers();
 }
 
-void BiCGSTAB_Solver::initialize(size_t num_particles) {
-    if (num_particles == 0) return;
-    if (num_particles == allocated_particles && d_x != nullptr) return;
+void BiCGSTAB_Solver::initialize(size_t vec_size) {
+    if (vec_size == 0) return;
+    if (vec_size == allocated_vec_size && d_x != nullptr) return;
 
     free_buffers();
 
-    size_t vec_size = num_particles * 3;
     size_t size_bytes = vec_size * 2 * sizeof(double);
 
     CUDA_CHECK(cudaMalloc(&d_x, size_bytes));
@@ -39,7 +38,7 @@ void BiCGSTAB_Solver::initialize(size_t num_particles) {
     CUDA_CHECK(cudaMalloc(&d_tmp, size_bytes));
     CUDA_CHECK(cudaMalloc(&d_reduce_buf, 2 * sizeof(double)));
 
-    allocated_particles = num_particles;
+    allocated_vec_size = vec_size;
 }
 
 void BiCGSTAB_Solver::free_buffers() {
@@ -53,7 +52,7 @@ void BiCGSTAB_Solver::free_buffers() {
     if (d_t) { cudaFree(d_t); d_t = nullptr; }
     if (d_tmp) { cudaFree(d_tmp); d_tmp = nullptr; }
     if (d_reduce_buf) { cudaFree(d_reduce_buf); d_reduce_buf = nullptr; }
-    allocated_particles = 0;
+    allocated_vec_size = 0;
 }
 
 std::vector<Complex> BiCGSTAB_Solver::solve(
@@ -65,8 +64,7 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
     size_t vec_size = b.size();
     if (vec_size == 0) return std::vector<Complex>();
 
-    size_t num_p = vec_size / 3;
-    initialize(num_p);
+    initialize(vec_size);
 
     size_t maxiter = std::min(vec_size, static_cast<size_t>(100));
     size_t size_bytes = vec_size * 2 * sizeof(double);

@@ -11,7 +11,7 @@ private:
     double* d_w = nullptr;
     double* d_V = nullptr;
     double* d_reduce_buf = nullptr;
-    size_t allocated_particles = 0;
+    size_t allocated_vec_size = 0;
 
     void free_buffers();
 
@@ -22,7 +22,7 @@ public:
     GMRES_Solver(const GMRES_Solver&) = delete;
     GMRES_Solver& operator=(const GMRES_Solver&) = delete;
 
-    void initialize(size_t num_particles) override;
+    void initialize(size_t vec_size) override;
 
     std::vector<Complex> solve(
         const std::vector<Complex>& b,

@@ -9,7 +9,7 @@ class EELS:
     spectrum and self-consistent induced dipoles for a collection of particles 
     subject to the relativistic incident field of a moving electron beam.
     """
-    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None):
+    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None, integration_step=0.05, split_method="cubic"):
         """
         Initialize the EELS solver with system, electron, and solver parameters.
 
@@ -42,8 +42,24 @@ class EELS:
         split_dist : float, optional
             The cutoff distance from the electron beam within which to split particles. Defaults to None.
         N_split : int, optional
-            The number of sub-dipoles to split each close particle into. Defaults to None.
+            The target number of sub-dipoles to split each close particle into. Defaults to None.
+        integration_step : float, optional
+            Step size along the electron beam trajectory in nanometers. Defaults to 0.05.
+        split_method : str, optional
+            Algorithm used to distribute sub-dipoles inside the NC volume.
+            ``"cubic"``    – uniform cubic lattice truncated at the NC radius (default).
+                            N_split is rounded up to the next perfect cube n³; the actual
+                            sub-dipole count M ≈ (π/6)·n³ after truncation.
+            ``"fibonacci"``– Fibonacci/golden-angle spiral on the unit sphere with
+                            cube-root-spaced shells decoupled by a fixed random shuffle.
+                            The actual count equals exactly N_split.
+            In both cases sub-dipole radii are set so that the total sub-dipole volume
+            equals the original NC volume.
         """
+        if split_method not in ("cubic", "fibonacci"):
+            raise ValueError("split_method must be 'cubic' or 'fibonacci', got " + repr(split_method))
+        self.split_method = split_method
+
         if (split_dist is None) != (N_split is None):
             raise ValueError("Both split_dist and N_split must be specified, or both left as None.")
 
@@ -67,6 +83,7 @@ class EELS:
         self.guess_type = guess_type
         self.solver_type = solver_type
         self.field_type = field_type
+        self.integration_step = float(integration_step)
 
         # Initialize results lists for splitting mode
         self._eels_results = []
@@ -96,30 +113,86 @@ class EELS:
             if eps_p_arr.ndim == 0:
                 eps_p_scalar = complex(eps_p_arr.item())
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                    box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step)
                 )
             elif eps_p_arr.ndim == 1:
                 if eps_p_arr.size == 1:
                     eps_p_scalar = complex(eps_p_arr.item())
                     self._solver = _cuMPM.EELS_Solver(
-                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step)
                     )
                 else:
                     eps_p_1d = [complex(x) for x in eps_p_arr]
                     self._solver = _cuMPM.EELS_Solver(
-                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step)
                     )
             elif eps_p_arr.ndim == 2:
                 eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type
+                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step)
                 )
             else:
                 raise ValueError("eps_p must be a scalar, 1D array, or 2D array")
 
+    # ------------------------------------------------------------------
+    # Sub-dipole lattice generators
+    # ------------------------------------------------------------------
+
+    def _make_cubic_offsets(self):
+        """
+        Return unit-sphere offsets on a cubic lattice truncated at r=1.
+
+        N_split is rounded up to the next perfect cube n³ to determine grid
+        resolution n.  Points in [-1,1]³ whose distance from the origin
+        exceeds 1 are discarded.  The retained count M ≈ (π/6)·n³.
+        """
+        n = int(np.ceil(self.N_split ** (1.0 / 3.0)))
+        while n ** 3 < self.N_split:
+            n += 1
+
+        h = 2.0 / n
+        coords_1d = np.linspace(-1.0 + h / 2.0, 1.0 - h / 2.0, n)
+        gx, gy, gz = np.meshgrid(coords_1d, coords_1d, coords_1d, indexing='ij')
+        grid = np.column_stack([gx.ravel(), gy.ravel(), gz.ravel()])
+        inside = np.linalg.norm(grid, axis=1) <= 1.0
+        return grid[inside]
+
+    def _make_fibonacci_offsets(self):
+        """
+        Return N_split unit-sphere offsets using a Fibonacci/golden-angle spiral.
+
+        Directions are drawn from the Fibonacci sphere algorithm (uniform surface
+        coverage).  Shell radii use cube-root spacing for uniform volume density.
+        The two are decoupled by a fixed random shuffle so that no particular shell
+        radius is tied to a particular latitude.
+        """
+        N = self.N_split
+        phi = np.pi * (3.0 - np.sqrt(5.0))
+
+        directions = np.empty((N, 3))
+        for i in range(N):
+            y_unit  = 1.0 - (i / float(N - 1)) * 2.0
+            theta   = phi * i
+            sin_lat = np.sqrt(max(0.0, 1.0 - y_unit * y_unit))
+            directions[i] = [np.cos(theta) * sin_lat, y_unit, np.sin(theta) * sin_lat]
+
+        r_fracs = np.array([((i + 0.5) / N) ** (1.0 / 3.0) for i in range(N)])
+        rng = np.random.default_rng(0)
+        rng.shuffle(r_fracs)
+
+        return r_fracs[:, np.newaxis] * directions
+
     def _split_close_dipoles(self, positions, e_pos, radii, eps_p_2d):
         """
-        Split particles close to the electron beam into N_split smaller dipoles.
+        Split particles close to the electron beam into sub-dipoles.
+
+        The distribution method is controlled by ``self.split_method``:
+        - ``"cubic"``     – cubic lattice truncated at the NC sphere boundary.
+        - ``"fibonacci"`` – Fibonacci volume lattice (golden-angle directions +
+                            cube-root shells, radially decoupled).
+
+        In both cases sub-dipole radii are chosen to conserve the total NC volume:
+            M × (4π/3) sub_R³ = (4π/3) R³  ⟹  sub_R = R / M^(1/3)
         """
         dists_2d = np.linalg.norm(positions[:, :2] - e_pos[np.newaxis, :], axis=1)
         to_split = dists_2d < self.split_dist
@@ -138,29 +211,28 @@ class EELS:
             new_radii.append(radii[idx])
             new_eps_p.append(eps_p_2d[:, idx])
 
-        # Generate Fibonacci volume offsets inside a unit sphere
-        unit_offsets = []
-        phi = np.pi * (3.0 - np.sqrt(5.0))
-        for i in range(self.N_split):
-            r_frac = ((i + 0.5) / self.N_split)**(1.0 / 3.0)
-            y = 1.0 - (i / float(self.N_split - 1)) * 2.0
-            theta = phi * i
-            rad = np.sqrt(1.0 - y * y) * r_frac
-            x = np.cos(theta) * rad
-            z = np.sin(theta) * rad
-            unit_offsets.append([x, y * r_frac, z])
-        unit_offsets = np.array(unit_offsets)
+        # Build the unit-sphere offsets using the chosen method
+        if self.split_method == "cubic":
+            unit_offsets = self._make_cubic_offsets()
+        else:
+            unit_offsets = self._make_fibonacci_offsets()
+
+        # Number of sub-dipoles (exact for Fibonacci; ≈π/6·n³ for cubic)
+        M = len(unit_offsets)
+
+        # Sub-dipole radius conserves total NC volume:
+        #   M × (4π/3) sub_R³ = (4π/3) R³  →  sub_R = R / M^(1/3)
+        sub_R_frac = 1.0 / (M ** (1.0 / 3.0))
 
         # Split close particles
         split_indices = np.where(to_split)[0]
         for idx in split_indices:
-            R = radii[idx]
+            R   = radii[idx]
             pos = positions[idx]
             eps = eps_p_2d[:, idx]
 
-            # Scale and shift the offsets
             sub_pos = pos + unit_offsets * R
-            sub_R = R / (self.N_split**(1.0 / 3.0))
+            sub_R   = R * sub_R_frac
 
             for sp in sub_pos:
                 new_positions.append(sp)
@@ -168,8 +240,8 @@ class EELS:
                 new_eps_p.append(eps)
 
         final_positions = np.array(new_positions)
-        final_radii = np.array(new_radii)
-        final_eps_p = np.column_stack(new_eps_p)
+        final_radii     = np.array(new_radii)
+        final_eps_p     = np.column_stack(new_eps_p)
 
         return final_positions, final_radii, final_eps_p
 
@@ -260,7 +332,7 @@ class EELS:
                 frame_solver = _cuMPM.EELS_Solver(
                     box_list, split_eps_2d, omega_list, float(self.v), split_R.tolist(),
                     float(self.eps_m), float(self.xi), float(self.tol), bool(self.quiet),
-                    self.guess_type, self.solver_type, self.field_type
+                    self.guess_type, self.solver_type, self.field_type, float(self.integration_step)
                 )
                 
                 # Run the solver
