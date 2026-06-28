@@ -25,7 +25,7 @@ void BiCGSTAB_Solver::initialize(size_t vec_size) {
 
     free_buffers();
 
-    size_t size_bytes = vec_size * 2 * sizeof(double);
+    size_t size_bytes = vec_size * sizeof(Complex);
 
     CUDA_CHECK(cudaMalloc(&d_x, size_bytes));
     CUDA_CHECK(cudaMalloc(&d_b, size_bytes));
@@ -66,16 +66,11 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
 
     initialize(vec_size);
 
-    size_t maxiter = std::min(vec_size, static_cast<size_t>(100));
-    size_t size_bytes = vec_size * 2 * sizeof(double);
+    size_t active_maxiter = this->maxiter;
+    size_t size_bytes = vec_size * sizeof(Complex);
 
     // 1. Copy RHS b to GPU
-    std::vector<double> host_b(vec_size * 2, 0.0);
-    for (size_t i = 0; i < vec_size; ++i) {
-        host_b[i * 2 + 0] = b[i].real();
-        host_b[i * 2 + 1] = b[i].imag();
-    }
-    CUDA_CHECK(cudaMemcpy(d_b, host_b.data(), size_bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_b, b.data(), size_bytes, cudaMemcpyHostToDevice));
 
     double b_norm = gpu_norm(d_b, vec_size, d_reduce_buf);
     if (b_norm == 0.0) {
@@ -83,24 +78,16 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
     }
 
     // 2. Copy initial guess x0 to GPU
-    std::vector<double> host_x(vec_size * 2, 0.0);
-    for (size_t i = 0; i < vec_size; ++i) {
-        host_x[i * 2 + 0] = x0[i].real();
-        host_x[i * 2 + 1] = x0[i].imag();
-    }
-    CUDA_CHECK(cudaMemcpy(d_x, host_x.data(), size_bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_x, x0.data(), size_bytes, cudaMemcpyHostToDevice));
 
     // 3. Compute initial residual r = b - A(x0)
     compute_Ax(d_x, d_tmp, EF, vec_size);
     gpu_vector_sub(d_r, d_b, d_tmp, vec_size);
 
     double r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
-    if (r_norm / b_norm < tol) {
+    if (r_norm < tol * b_norm) {
         std::vector<Complex> sol(vec_size);
-        CUDA_CHECK(cudaMemcpy(host_x.data(), d_x, size_bytes, cudaMemcpyDeviceToHost));
-        for (size_t i = 0; i < vec_size; ++i) {
-            sol[i] = Complex(host_x[i * 2 + 0], host_x[i * 2 + 1]);
-        }
+        CUDA_CHECK(cudaMemcpy(sol.data(), d_x, size_bytes, cudaMemcpyDeviceToHost));
         return sol;
     }
 
@@ -115,9 +102,9 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
 
     CUDA_CHECK(cudaMemset(d_v, 0, size_bytes));
 
-    for (size_t iter = 0; iter < maxiter; ++iter) {
-        Complex rho_new = gpu_dot_product(d_r0tilde, d_r, vec_size, d_reduce_buf);
-        if (std::abs(rho_new) == 0.0) {
+    for (size_t iter = 0; iter < active_maxiter; ++iter) {
+        Complex rho_new = gpu_dot_product_unconjugated(d_r0tilde, d_r, vec_size, d_reduce_buf);
+        if (std::abs(rho_new) < 1e-16) {
             break; // Method failed
         }
 
@@ -137,8 +124,8 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
         // v = A(p)
         compute_Ax(d_p, d_v, EF, vec_size);
 
-        Complex r0tilde_dot_v = gpu_dot_product(d_r0tilde, d_v, vec_size, d_reduce_buf);
-        if (std::abs(r0tilde_dot_v) == 0.0) {
+        Complex r0tilde_dot_v = gpu_dot_product_unconjugated(d_r0tilde, d_v, vec_size, d_reduce_buf);
+        if (std::abs(r0tilde_dot_v) < 1e-16) {
             break; // Stagnation
         }
         alpha = rho / r0tilde_dot_v;
@@ -149,7 +136,7 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
 
         // Check norm of s
         double s_norm = gpu_norm(d_s, vec_size, d_reduce_buf);
-        if (s_norm / b_norm < tol) {
+        if (s_norm < tol * b_norm) {
             // x = x + alpha * p
             gpu_vector_add(d_x, d_p, alpha, vec_size);
             break;
@@ -161,7 +148,7 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
         // omega = dot(t, s) / dot(t, t)
         Complex t_dot_s = gpu_dot_product(d_t, d_s, vec_size, d_reduce_buf);
         Complex t_dot_t = gpu_dot_product(d_t, d_t, vec_size, d_reduce_buf);
-        if (std::abs(t_dot_t) == 0.0) {
+        if (std::abs(t_dot_t) < 1e-16) {
             break;
         }
         omega = t_dot_s / t_dot_t.real();
@@ -176,20 +163,17 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
 
         // Check convergence on r
         r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
-        if (r_norm / b_norm < tol) {
+        if (r_norm < tol * b_norm) {
             break;
         }
 
-        if (std::abs(omega) == 0.0) {
+        if (std::abs(omega) < 1e-16) {
             break; // Stagnation
         }
     }
 
     // Retrieve solution from GPU
     std::vector<Complex> sol(vec_size);
-    CUDA_CHECK(cudaMemcpy(host_x.data(), d_x, size_bytes, cudaMemcpyDeviceToHost));
-    for (size_t i = 0; i < vec_size; ++i) {
-        sol[i] = Complex(host_x[i * 2 + 0], host_x[i * 2 + 1]);
-    }
+    CUDA_CHECK(cudaMemcpy(sol.data(), d_x, size_bytes, cudaMemcpyDeviceToHost));
     return sol;
 }

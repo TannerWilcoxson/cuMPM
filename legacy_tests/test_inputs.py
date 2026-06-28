@@ -18,10 +18,12 @@ def test_coordinate_length_mismatch():
     box = [10.0, 10.0, 10.0]
     eps_p = 4.0
     mpm = cuMPM.dipole_solver(box, eps_p)
+    # Different coordinate lengths
     x = [0.0, 1.0]
     y = [0.0]
     z = [0.0, 0.0]
     with pytest.raises(Exception):
+        # Passing mismatching coordinates
         mpm._solver.compute(x, y, z)
 
 def test_radii_count_mismatch():

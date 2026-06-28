@@ -1,6 +1,6 @@
 #include "near_field.h"
-#include "electric_field/ewald_electric_field.h"
-#include "electric_field/polydisperse_electric_field.h"
+#include "electric_field/monodisperse_ewald_electric_field.h"
+#include "electric_field/polydisperse_ewald_electric_field.h"
 #include "electric_field/direct_electric_field.h"
 #include <cuda_runtime.h>
 #include <stdexcept>
@@ -129,11 +129,11 @@ std::vector<double> Near_Field::calculate() {
         if (use_direct) {
             EF = std::make_unique<Direct_Electric_Field>(scaled_radius);
         } else if (use_polydisperse) {
-            EF = std::make_unique<Polydisperse_Electric_Field>(
+            EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(
                 scaled_box_x, scaled_box_y, scaled_box_z, errortol, xi, false, scaled_radius
             );
         } else {
-            EF = std::make_unique<Ewald_Electric_Field>(
+            EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(
                 scaled_box_x, scaled_box_y, scaled_box_z, errortol, xi, false
             );
         }
@@ -168,7 +168,7 @@ std::vector<double> Near_Field::calculate() {
         std::vector<double> self_i(num_particles, 0.0);
         derived->setSelfCoef(self_r, self_i);
     } else if (use_polydisperse) {
-        auto* derived = static_cast<Polydisperse_Electric_Field*>(EF.get());
+        auto* derived = static_cast<Polydisperse_Ewald_Electric_Field*>(EF.get());
         derived->updateFieldCoordinates(scaled_field_x, scaled_field_y, scaled_field_z);
         derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
         // set self coeff to 0 (near field has no self-interaction for arbitrary points)
@@ -176,7 +176,7 @@ std::vector<double> Near_Field::calculate() {
         std::vector<double> self_i(num_particles, 0.0);
         derived->setSelfCoef(self_r, self_i);
     } else {
-        auto* derived = static_cast<Ewald_Electric_Field*>(EF.get());
+        auto* derived = static_cast<Monodisperse_Ewald_Electric_Field*>(EF.get());
         derived->updateFieldCoordinates(scaled_field_x, scaled_field_y, scaled_field_z);
         derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
         // set self coeff to 0

@@ -31,6 +31,7 @@ dist/
 
 # Local testing and example outputs
 dev_testing/
+scratch/
 mixed_eps_polarizability.png
 
 # Benchmarking outputs

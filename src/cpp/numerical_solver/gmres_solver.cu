@@ -30,14 +30,14 @@ void GMRES_Solver::initialize(size_t vec_size) {
 
     free_buffers();
 
-    size_t size_bytes = vec_size * 2 * sizeof(double);
-    size_t restart = std::min(vec_size, static_cast<size_t>(10));
+    size_t size_bytes = vec_size * sizeof(Complex);
+    size_t active_restart = std::min(vec_size, this->restart);
 
     CUDA_CHECK(cudaMalloc(&d_x, size_bytes));
     CUDA_CHECK(cudaMalloc(&d_b, size_bytes));
     CUDA_CHECK(cudaMalloc(&d_r, size_bytes));
     CUDA_CHECK(cudaMalloc(&d_w, size_bytes));
-    CUDA_CHECK(cudaMalloc(&d_V, (restart + 1) * size_bytes));
+    CUDA_CHECK(cudaMalloc(&d_V, (active_restart + 1) * size_bytes));
     CUDA_CHECK(cudaMalloc(&d_reduce_buf, 2 * sizeof(double)));
 
     allocated_vec_size = vec_size;
@@ -64,74 +64,49 @@ std::vector<Complex> GMRES_Solver::solve(
 
     initialize(vec_size);
 
-    size_t restart = std::min(vec_size, static_cast<size_t>(10));
-    size_t maxiter = std::min(vec_size, static_cast<size_t>(100));
+    size_t active_restart = std::min(vec_size, this->restart);
+    size_t active_maxiter = this->maxiter;
 
-    // 1. Prepare RHS b and copy to GPU
-    std::vector<double> host_b(vec_size * 2, 0.0);
-    for (size_t i = 0; i < vec_size; ++i) {
-        host_b[i * 2 + 0] = b[i].real();
-        host_b[i * 2 + 1] = b[i].imag();
-    }
-    CUDA_CHECK(cudaMemcpy(d_b, host_b.data(), vec_size * 2 * sizeof(double), cudaMemcpyHostToDevice));
+    // 1. Copy RHS b directly to GPU
+    CUDA_CHECK(cudaMemcpy(d_b, b.data(), vec_size * sizeof(Complex), cudaMemcpyHostToDevice));
 
     double b_norm = gpu_norm(d_b, vec_size, d_reduce_buf);
     if (b_norm == 0.0) {
         return std::vector<Complex>(vec_size, 0.0);
     }
 
-    // 2. Prepare initial guess x0 and copy to GPU
-    std::vector<double> host_x(vec_size * 2, 0.0);
-    for (size_t i = 0; i < vec_size; ++i) {
-        host_x[i * 2 + 0] = x0[i].real();
-        host_x[i * 2 + 1] = x0[i].imag();
-    }
-    CUDA_CHECK(cudaMemcpy(d_x, host_x.data(), vec_size * 2 * sizeof(double), cudaMemcpyHostToDevice));
+    // 2. Copy initial guess x0 directly to GPU
+    CUDA_CHECK(cudaMemcpy(d_x, x0.data(), vec_size * sizeof(Complex), cudaMemcpyHostToDevice));
 
-    // 3. Compute initial residual r = b - A(x)
-    compute_Ax(d_x, d_r, EF, vec_size);
-    // d_r = d_b - d_r
-    gpu_vector_sub(d_r, d_b, d_r, vec_size);
-
-    double r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
-    if (r_norm / b_norm < tol) {
-        std::vector<Complex> sol(vec_size);
-        CUDA_CHECK(cudaMemcpy(host_x.data(), d_x, vec_size * 2 * sizeof(double), cudaMemcpyDeviceToHost));
-        for (size_t i = 0; i < vec_size; ++i) {
-            sol[i] = Complex(host_x[i * 2 + 0], host_x[i * 2 + 1]);
-        }
-        return sol;
-    }
-
-    // 4. Hessenberg and rotation buffers (Host-side)
-    std::vector<std::vector<Complex>> H(restart + 1, std::vector<Complex>(restart, 0.0));
-    std::vector<Complex> g(restart + 1, 0.0);
-    std::vector<double> c(restart, 0.0);
-    std::vector<Complex> s(restart, 0.0);
+    // 3. Hessenberg and rotation buffers (Host-side)
+    std::vector<std::vector<Complex>> H(active_restart + 1, std::vector<Complex>(active_restart, 0.0));
+    std::vector<Complex> g(active_restart + 1, 0.0);
+    std::vector<double> c(active_restart, 0.0);
+    std::vector<Complex> s(active_restart, 0.0);
 
     size_t iter = 0;
-    while (iter < maxiter) {
+    while (iter < active_maxiter) {
         // Compute current residual r = b - A(x)
         compute_Ax(d_x, d_r, EF, vec_size);
         // d_r = d_b - d_r
         gpu_vector_sub(d_r, d_b, d_r, vec_size);
 
-        r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
-        if (r_norm / b_norm < tol) {
+        double r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
+        if (r_norm < tol * b_norm) {
             break;
         }
 
         g[0] = r_norm;
-        for (size_t i = 1; i <= restart; ++i) {
+        for (size_t i = 1; i <= active_restart; ++i) {
             g[i] = 0.0;
         }
 
         // V_0 = d_r / r_norm
-        CUDA_CHECK(cudaMemcpy(d_V, d_r, vec_size * 2 * sizeof(double), cudaMemcpyDeviceToDevice));
+        CUDA_CHECK(cudaMemcpy(d_V, d_r, vec_size * sizeof(Complex), cudaMemcpyDeviceToDevice));
         gpu_vector_scale(d_V, 1.0 / r_norm, vec_size);
 
         size_t k = 0;
-        for (k = 0; k < restart && iter < maxiter; ++k, ++iter) {
+        for (k = 0; k < active_restart && iter < active_maxiter; ++k, ++iter) {
             double* d_Vk = d_V + k * vec_size * 2;
             double* d_Vk1 = d_V + (k + 1) * vec_size * 2;
 
@@ -149,7 +124,7 @@ std::vector<Complex> GMRES_Solver::solve(
             H[k + 1][k] = w_norm;
 
             if (w_norm > 0.0) {
-                CUDA_CHECK(cudaMemcpy(d_Vk1, d_w, vec_size * 2 * sizeof(double), cudaMemcpyDeviceToDevice));
+                CUDA_CHECK(cudaMemcpy(d_Vk1, d_w, vec_size * sizeof(Complex), cudaMemcpyDeviceToDevice));
                 gpu_vector_scale(d_Vk1, 1.0 / w_norm, vec_size);
             }
 
@@ -168,12 +143,17 @@ std::vector<Complex> GMRES_Solver::solve(
             Complex s_rot = 0.0;
             if (h2 != 0.0) {
                 double abs_h1 = std::abs(h1);
-                double scale_val = abs_h1 + std::abs(h2);
-                double norm_h1 = std::abs(h1 / scale_val);
-                double norm_h2 = std::abs(h2 / scale_val);
-                double h_hyp = scale_val * std::sqrt(norm_h1 * norm_h1 + norm_h2 * norm_h2);
-                c_rot = abs_h1 / h_hyp;
-                s_rot = (std::conj(h1) / abs_h1) * (h2 / h_hyp);
+                if (abs_h1 == 0.0) {
+                    c_rot = 0.0;
+                    s_rot = 1.0;
+                } else {
+                    double scale_val = abs_h1 + std::abs(h2);
+                    double norm_h1 = std::abs(h1 / scale_val);
+                    double norm_h2 = std::abs(h2 / scale_val);
+                    double h_hyp = scale_val * std::sqrt(norm_h1 * norm_h1 + norm_h2 * norm_h2);
+                    c_rot = abs_h1 / h_hyp;
+                    s_rot = (std::conj(h1) / abs_h1) * (h2 / h_hyp);
+                }
             }
             c[k] = c_rot;
             s[k] = s_rot;
@@ -188,8 +168,9 @@ std::vector<Complex> GMRES_Solver::solve(
             g[k + 1] = -s_rot * g1 + c_rot * g2;
 
             double resid = std::abs(g[k + 1]);
-            if (resid / b_norm < tol) {
+            if (resid < tol * b_norm) {
                 k++; // Include the k-th component
+                iter++; // Skip remainder of step count for this block
                 break;
             }
         }
@@ -213,9 +194,6 @@ std::vector<Complex> GMRES_Solver::solve(
 
     // Retrieve solution from GPU
     std::vector<Complex> sol(vec_size);
-    CUDA_CHECK(cudaMemcpy(host_x.data(), d_x, vec_size * 2 * sizeof(double), cudaMemcpyDeviceToHost));
-    for (size_t i = 0; i < vec_size; ++i) {
-        sol[i] = Complex(host_x[i * 2 + 0], host_x[i * 2 + 1]);
-    }
+    CUDA_CHECK(cudaMemcpy(sol.data(), d_x, vec_size * sizeof(Complex), cudaMemcpyDeviceToHost));
     return sol;
 }

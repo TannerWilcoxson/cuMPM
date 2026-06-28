@@ -1,4 +1,4 @@
-#include "polydisperse_electric_field.h"
+#include "polydisperse_ewald_electric_field.h"
 #include <cuda_runtime.h>
 #include <cufft.h>
 #include <cmath>
@@ -22,6 +22,133 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 // CUDA Kernels for Polydisperse Ewald Solver - incremental build comment updated
 // -----------------------------------------------------------------------------
 
+
+Polydisperse_Ewald_Electric_Field::Polydisperse_Ewald_Electric_Field(
+    double box_x, double box_y, double box_z,
+    double errortol,
+    double xi,
+    bool calc_inter_dipole,
+    const std::vector<double>& particle_radii,
+    bool solve_quadrupoles,
+    const std::vector<int>& quad_idxs)
+    : Ewald_Electric_Field_Base(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, solve_quadrupoles, quad_idxs),
+      h_radii(particle_radii)
+{
+    num_particles = h_radii.size();
+
+    // 1. Identify unique radii
+    for (double r : h_radii) {
+        bool exists = false;
+        for (double ur : unique_radii) {
+            if (std::abs(ur - r) < 1e-5) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            unique_radii.push_back(r);
+        }
+    }
+    std::sort(unique_radii.begin(), unique_radii.end());
+    num_unique_radii = unique_radii.size();
+    num_pairs_unique = num_unique_radii * (num_unique_radii + 1) / 2;
+
+    // 2. Build diagonal mappings
+    std::vector<int> h_col_ind(num_unique_radii * num_unique_radii, 0);
+    int lin = 0;
+    for (size_t i = 0; i < num_unique_radii; ++i) {
+        for (size_t j = i; j < num_unique_radii; ++j) {
+            h_col_ind[i * num_unique_radii + j] = lin;
+            h_col_ind[j * num_unique_radii + i] = lin;
+            lin++;
+        }
+    }
+
+    std::vector<int> h_radius_idx(num_particles, 0);
+    for (size_t i = 0; i < num_particles; ++i) {
+        double r = h_radii[i];
+        for (size_t k = 0; k < num_unique_radii; ++k) {
+            if (std::abs(unique_radii[k] - r) < 1e-5) {
+                h_radius_idx[i] = k;
+                break;
+            }
+        }
+    }
+
+    // 3. Allocate and copy metadata to GPU
+    CUDA_CHECK(cudaMalloc(&d_radii, num_particles * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_radius_idx, num_particles * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_col_ind, num_unique_radii * num_unique_radii * sizeof(int)));
+
+    CUDA_CHECK(cudaMemcpy(d_radii, h_radii.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_radius_idx, h_radius_idx.data(), num_particles * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_col_ind, h_col_ind.data(), num_unique_radii * num_unique_radii * sizeof(int), cudaMemcpyHostToDevice));
+
+    // 4. Compute Ewald parameters and tables
+    computePrecalculations();
+    computeRealSpaceTables();
+
+    // 5. Allocate scalar grids and FFT plan
+    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
+    CUDA_CHECK(cudaMalloc(&d_fE_grid, grid_voxels * 2 * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_fEs_grid, grid_voxels * 2 * sizeof(double)));
+
+    cufftResult plan_res = cufftPlan3d((cufftHandle*)&fft_plan, num_grid[0], num_grid[1], num_grid[2], CUFFT_Z2Z);
+    if (plan_res != CUFFT_SUCCESS) {
+        throw std::runtime_error("cuFFT 3D plan creation failed with code: " + std::to_string(plan_res));
+    }
+
+    if (solve_quadrupoles) {
+        CUDA_CHECK(cudaMalloc(&d_fG_grid, grid_voxels * 5 * 2 * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_fGs_grid, grid_voxels * 5 * 2 * sizeof(double)));
+
+        int n[3] = { num_grid[0], num_grid[1], num_grid[2] };
+        cufftResult plan_res_G = cufftPlanMany((cufftHandle*)&fft_plan_G, 3, n,
+                                              n, 5, 1, // inembed, istride, idist
+                                              n, 5, 1, // onembed, ostride, odist
+                                              CUFFT_Z2Z, 5);
+        if (plan_res_G != CUFFT_SUCCESS) {
+            throw std::runtime_error("cuFFT plan G creation failed with code: " + std::to_string(plan_res_G));
+        }
+    }
+}
+
+Polydisperse_Ewald_Electric_Field::~Polydisperse_Ewald_Electric_Field() {
+    if (d_radii) cudaFree(d_radii);
+    if (d_radius_idx) cudaFree(d_radius_idx);
+    if (d_col_ind) cudaFree(d_col_ind);
+    if (d_self_perp_uniq) cudaFree(d_self_perp_uniq);
+    if (d_self_G2_uniq) cudaFree(d_self_G2_uniq);
+    if (d_spread_coef_Q) cudaFree(d_spread_coef_Q);
+    if (d_contract_coef_Q) cudaFree(d_contract_coef_Q);
+}
+
+void Polydisperse_Ewald_Electric_Field::updateParticleCoordinates(
+    const std::vector<double>& x_part,
+    const std::vector<double>& y_part,
+    const std::vector<double>& z_part)
+{
+    Ewald_Electric_Field_Base::updateParticleCoordinates(x_part, y_part, z_part);
+}
+
+void Polydisperse_Ewald_Electric_Field::getPrecalculationsHost(std::vector<int>& host_offset,
+                                            std::vector<double>& host_offsetxyz,
+                                            std::vector<double>& host_scale_coef) const {
+    if (num_offsets == 0 || d_offset == nullptr || d_offsetxyz == nullptr || 
+        d_scale_coef == nullptr) {
+        throw std::runtime_error("Ewald precalculations have not been calculated/allocated on GPU yet.");
+    }
+
+    host_offset.resize(num_offsets * 3);
+    host_offsetxyz.resize(num_offsets * 3);
+    
+    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
+    host_scale_coef.resize(grid_voxels);
+
+    CUDA_CHECK(cudaMemcpy(host_offset.data(), d_offset, num_offsets * 3 * sizeof(int), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(host_offsetxyz.data(), d_offsetxyz, num_offsets * 3 * sizeof(double), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(host_scale_coef.data(), d_scale_coef, grid_voxels * sizeof(double), cudaMemcpyDeviceToHost));
+}
 __device__ static double interpolate_table_gpu_polydisperse(
     double r,
     const double* r_table,
@@ -97,7 +224,7 @@ __global__ void spread_precalcs_kernel_polydisperse(
     double oxyz_y = offsetxyz[o * 3 + 1];
     double oxyz_z = offsetxyz[o * 3 + 2];
 
-    spread_idxs[idx] = ((gix + ox + 256) << 20) | ((giy + oy + 256) << 10) | (giz + oz + 256);
+    spread_idxs[idx] = (((gix + ox + 256) & 0x3FF) << 20) | (((giy + oy + 256) & 0x3FF) << 10) | ((giz + oz + 256) & 0x3FF);
 
     double gdx = dx + oxyz_x;
     double gdy = dy + oxyz_y;
@@ -136,6 +263,7 @@ __global__ void contract_precalcs_kernel_polydisperse(
     int* __restrict__ contract_idxs,
     int* __restrict__ particle_index,
     size_t num_field_points,
+    size_t num_particles,
     size_t num_offsets,
     double grid_spacing_x,
     double grid_spacing_y,
@@ -155,7 +283,7 @@ __global__ void contract_precalcs_kernel_polydisperse(
     double px = x_field[i];
     double py = y_field[i];
     double pz = z_field[i];
-    double a_i = radii[i];
+    double a_i = (i < num_particles) ? radii[i] : radii[0];
 
     int gix = static_cast<int>(round(px / grid_spacing_x));
     int giy = static_cast<int>(round(py / grid_spacing_y));
@@ -278,7 +406,7 @@ __global__ void real_space_precalcs_kernel_polydisperse(
 
         if (d < rc) {
             double d_eff = d < 1.0 ? 1.0 : d;
-            int radius_idx_j = radius_idx[j];
+            int radius_idx_j = (j < num_particles) ? radius_idx[j] : 0;
             int col = col_ind[radius_idx_i * num_cols_unique + radius_idx_j];
             int num_cols_total = num_cols_unique * (num_cols_unique + 1) / 2;
 
@@ -590,9 +718,9 @@ __global__ void real_space_neighbor_kernel_polydisperse(
 
             // neighbor dipoles
             const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
-            double2 dip_x = d_dipoles_d2[j * 3 + 0];
-            double2 dip_y = d_dipoles_d2[j * 3 + 1];
-            double2 dip_z = d_dipoles_d2[j * 3 + 2];
+            double2 dip_x = d_dipoles_d2[i * 3 + 0];
+            double2 dip_y = d_dipoles_d2[i * 3 + 1];
+            double2 dip_z = d_dipoles_d2[i * 3 + 2];
 
             double dip_x_r = dip_x.x;
             double dip_x_i = dip_x.y;
@@ -616,14 +744,14 @@ __global__ void real_space_neighbor_kernel_polydisperse(
             double contrib_z_r = perp_val * (dip_z_r - delta_z * delta_dip_r) + para_val * delta_z * delta_dip_r;
             double contrib_z_i = perp_val * (dip_z_i - delta_z * delta_dip_i) + para_val * delta_z * delta_dip_i;
 
-            atomicAdd(&E_point[(i * 3 + 0) * 2 + 0], contrib_x_r);
-            atomicAdd(&E_point[(i * 3 + 0) * 2 + 1], contrib_x_i);
+            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], contrib_x_r);
+            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], contrib_x_i);
 
-            atomicAdd(&E_point[(i * 3 + 1) * 2 + 0], contrib_y_r);
-            atomicAdd(&E_point[(i * 3 + 1) * 2 + 1], contrib_y_i);
+            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], contrib_y_r);
+            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], contrib_y_i);
 
-            atomicAdd(&E_point[(i * 3 + 2) * 2 + 0], contrib_z_r);
-            atomicAdd(&E_point[(i * 3 + 2) * 2 + 1], contrib_z_i);
+            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], contrib_z_r);
+            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], contrib_z_i);
         }
     }
 }
@@ -809,11 +937,11 @@ __global__ void scale_kernel_joint_polydisperse(
         G_dot_Qdot_I += fG_grid[(v * 5 + c) * 2 + 1] * Qdot_c;
     }
 
-    double S_new_R = sc * S_R - sc_Q * G_dot_Qdot_I;
-    double S_new_I = sc * S_I + sc_Q * G_dot_Qdot_R;
+    double S_new_R = sc * S_R + sc_Q * G_dot_Qdot_R;
+    double S_new_I = sc * S_I + sc_Q * G_dot_Qdot_I;
 
-    double Gdot_G_R = -sc_GP * S_I + sc_GQ * G_dot_Qdot_R;
-    double Gdot_G_I =  sc_GP * S_R + sc_GQ * G_dot_Qdot_I;
+    double Gdot_G_R = -sc_GP * S_R - sc_GQ * G_dot_Qdot_R;
+    double Gdot_G_I = -sc_GP * S_I - sc_GQ * G_dot_Qdot_I;
 
     fE_grid[v * 2 + 0] = S_new_R;
     fE_grid[v * 2 + 1] = S_new_I;
@@ -1130,7 +1258,8 @@ __global__ void real_space_self_kernel_polydisperse_joint(
     const double* __restrict__ d_self_perp_uniq,
     const int* __restrict__ quad_idxs,
     const int* __restrict__ quad_map,
-    double self_G2_val,
+    const double* __restrict__ d_self_G2_uniq,
+    const double* __restrict__ d_radii,
     double* __restrict__ E_point,
     size_t num_particles,
     size_t num_quads,
@@ -1169,8 +1298,10 @@ __global__ void real_space_self_kernel_polydisperse_joint(
     if (solve_quadrupoles) {
         int q = quad_map[i];
         if (q >= 0 && q < num_quads) {
-            double q_sc_r = 2.5 * sc_r + 0.5 * self_G2_val;
-            double q_sc_i = 2.5 * sc_i;
+            double a_j = d_radii[i];
+            double self_G2_val = d_self_G2_uniq[radius_idx_i];
+            double q_sc_r = 2.5 * sc_r / (a_j * a_j) + self_G2_val;
+            double q_sc_i = 2.5 * sc_i / (a_j * a_j);
 
             const double2* d_quad_d2 = reinterpret_cast<const double2*>(d_dipoles + num_particles * 3 * 2);
             double2 q0 = d_quad_d2[q * 5 + 0];
@@ -1283,7 +1414,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
     }
 
     double* G_point = E_point + num_particles * 3 * 2;
-    const double I_arr[5] = {1.0, 0.0, 0.0, 1.0, 0.0};
+    const double I_arr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];
@@ -1370,7 +1501,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
 
             // 2. Contributions to G
             if (solve_quadrupoles) {
-                int q_field = quad_map[j];
+                int q_field = (j < num_particles) ? quad_map[j] : -1;
                 if (q_field >= 0 && q_field < num_quads) {
                     double Q1_val = perp_Q[start_idx + k];
                     double Q2_val = para_Q[start_idx + k];
@@ -1453,7 +1584,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
 }
 
 // -----------------------------------------------------------------------------
-// Polydisperse_Electric_Field Implementation
+// Polydisperse_Ewald_Electric_Field Implementation
 // -----------------------------------------------------------------------------
 
 static void helper_compute_pair_tables(double a_i, double a_j, double xi,
@@ -1646,183 +1777,13 @@ static void helper_compute_pair_tables(double a_i, double a_j, double xi,
         std::min(std::pow(a_i, 3), std::pow(a_j, 3)) / (4.0 * PI * std::pow(a_i, 3) * std::pow(a_j, 3));
 }
 
-Polydisperse_Electric_Field::Polydisperse_Electric_Field(
-    double box_x, double box_y, double box_z,
-    double errortol,
-    double xi,
-    bool calc_inter_dipole,
-    const std::vector<double>& particle_radii,
-    bool solve_quadrupoles,
-    const std::vector<int>& quad_idxs)
-    : box_x(box_x), box_y(box_y), box_z(box_z), errortol(errortol),
-      xi(xi), calc_inter_dipole(calc_inter_dipole),
-      h_radii(particle_radii),
-      particles_updated(false), field_points_updated(false),
-      dipoles_updated(false),
-      neighbor_list(std::make_unique<NeighborList>()),
-      solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs),
-      d_quad_idxs(nullptr), d_quad_map(nullptr), num_quads(0),
-      d_field_quad_1(nullptr), d_field_quad_2(nullptr), d_field_quad_3(nullptr),
-      d_grad_quad_1(nullptr), d_grad_quad_2(nullptr), d_grad_quad_3(nullptr), d_grad_quad_4(nullptr),
-      d_perp_Q(nullptr), d_para_Q(nullptr), d_Q3(nullptr), d_G1(nullptr), d_G2(nullptr), d_G3(nullptr), d_G4(nullptr),
-      d_fG_grid(nullptr), d_fGs_grid(nullptr), fft_plan_G(0),
-      d_scale_coef_Q_imag(nullptr), d_scale_coef_GP_imag(nullptr), d_scale_coef_GQ_real(nullptr),
-      d_Qfactor(nullptr), d_Qfactor_dot(nullptr), d_G_point(nullptr),
-      d_spread_coef_Q(nullptr), d_contract_coef_Q(nullptr)
-{
-    num_particles = h_radii.size();
 
-    // 1. Identify unique radii
-    for (double r : h_radii) {
-        bool exists = false;
-        for (double ur : unique_radii) {
-            if (std::abs(ur - r) < 1e-5) {
-                exists = true;
-                break;
-            }
-        }
-        if (!exists) {
-            unique_radii.push_back(r);
-        }
-    }
-    std::sort(unique_radii.begin(), unique_radii.end());
-    num_unique_radii = unique_radii.size();
-    num_pairs_unique = num_unique_radii * (num_unique_radii + 1) / 2;
 
-    // 2. Build diagonal mappings
-    std::vector<int> h_col_ind(num_unique_radii * num_unique_radii, 0);
-    int lin = 0;
-    for (size_t i = 0; i < num_unique_radii; ++i) {
-        for (size_t j = i; j < num_unique_radii; ++j) {
-            h_col_ind[i * num_unique_radii + j] = lin;
-            h_col_ind[j * num_unique_radii + i] = lin;
-            lin++;
-        }
-    }
 
-    std::vector<int> h_radius_idx(num_particles, 0);
-    for (size_t i = 0; i < num_particles; ++i) {
-        double r = h_radii[i];
-        for (size_t k = 0; k < num_unique_radii; ++k) {
-            if (std::abs(unique_radii[k] - r) < 1e-5) {
-                h_radius_idx[i] = k;
-                break;
-            }
-        }
-    }
 
-    // 3. Allocate and copy metadata to GPU
-    CUDA_CHECK(cudaMalloc(&d_radii, num_particles * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&d_radius_idx, num_particles * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&d_col_ind, num_unique_radii * num_unique_radii * sizeof(int)));
 
-    CUDA_CHECK(cudaMemcpy(d_radii, h_radii.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_radius_idx, h_radius_idx.data(), num_particles * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_col_ind, h_col_ind.data(), num_unique_radii * num_unique_radii * sizeof(int), cudaMemcpyHostToDevice));
 
-    // 4. Compute Ewald parameters and tables
-    computePrecalculations();
-    computeRealSpaceTables();
-
-    // 5. Allocate scalar grids and FFT plan
-    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
-    CUDA_CHECK(cudaMalloc(&d_fE_grid, grid_voxels * 2 * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&d_fEs_grid, grid_voxels * 2 * sizeof(double)));
-
-    cufftResult plan_res = cufftPlan3d((cufftHandle*)&fft_plan, num_grid[0], num_grid[1], num_grid[2], CUFFT_Z2Z);
-    if (plan_res != CUFFT_SUCCESS) {
-        throw std::runtime_error("cuFFT 3D plan creation failed with code: " + std::to_string(plan_res));
-    }
-
-    if (solve_quadrupoles) {
-        CUDA_CHECK(cudaMalloc(&d_fG_grid, grid_voxels * 5 * 2 * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_fGs_grid, grid_voxels * 5 * 2 * sizeof(double)));
-
-        int n[3] = { num_grid[0], num_grid[1], num_grid[2] };
-        cufftResult plan_res_G = cufftPlanMany((cufftHandle*)&fft_plan_G, 3, n,
-                                              n, 5, 1, // inembed, istride, idist
-                                              n, 5, 1, // onembed, ostride, odist
-                                              CUFFT_Z2Z, 5);
-        if (plan_res_G != CUFFT_SUCCESS) {
-            throw std::runtime_error("cuFFT plan G creation failed with code: " + std::to_string(plan_res_G));
-        }
-    }
-}
-
-Polydisperse_Electric_Field::~Polydisperse_Electric_Field() {
-    if (d_x_part) cudaFree(d_x_part);
-    if (d_y_part) cudaFree(d_y_part);
-    if (d_z_part) cudaFree(d_z_part);
-    if (d_x_field) cudaFree(d_x_field);
-    if (d_y_field) cudaFree(d_y_field);
-    if (d_z_field) cudaFree(d_z_field);
-    if (d_radii) cudaFree(d_radii);
-    if (d_radius_idx) cudaFree(d_radius_idx);
-    if (d_col_ind) cudaFree(d_col_ind);
-    if (d_self_perp_uniq) cudaFree(d_self_perp_uniq);
-    if (d_r_table) cudaFree(d_r_table);
-    if (d_field_dip_1) cudaFree(d_field_dip_1);
-    if (d_field_dip_2) cudaFree(d_field_dip_2);
-    if (d_offset) cudaFree(d_offset);
-    if (d_offsetxyz) cudaFree(d_offsetxyz);
-    if (d_scale_coef) cudaFree(d_scale_coef);
-    if (d_dipoles) cudaFree(d_dipoles);
-    if (d_self_coef_r) cudaFree(d_self_coef_r);
-    if (d_self_coef_i) cudaFree(d_self_coef_i);
-    if (d_spread_coef) cudaFree(d_spread_coef);
-    if (d_spread_idxs) cudaFree(d_spread_idxs);
-    if (d_E_point) cudaFree(d_E_point);
-    if (d_particle_index) cudaFree(d_particle_index);
-    if (d_contract_coef) cudaFree(d_contract_coef);
-    if (d_contract_idxs) cudaFree(d_contract_idxs);
-    if (d_perp) cudaFree(d_perp);
-    if (d_para) cudaFree(d_para);
-    if (d_fE_grid) cudaFree(d_fE_grid);
-    if (d_fEs_grid) cudaFree(d_fEs_grid);
-    if (fft_plan) cufftDestroy((cufftHandle)fft_plan);
-
-    // Free Quadrupole allocations
-    if (d_quad_idxs) cudaFree(d_quad_idxs);
-    if (d_quad_map) cudaFree(d_quad_map);
-    if (d_field_quad_1) cudaFree(d_field_quad_1);
-    if (d_field_quad_2) cudaFree(d_field_quad_2);
-    if (d_field_quad_3) cudaFree(d_field_quad_3);
-    if (d_grad_quad_1) cudaFree(d_grad_quad_1);
-    if (d_grad_quad_2) cudaFree(d_grad_quad_2);
-    if (d_grad_quad_3) cudaFree(d_grad_quad_3);
-    if (d_grad_quad_4) cudaFree(d_grad_quad_4);
-    if (d_perp_Q) cudaFree(d_perp_Q);
-    if (d_para_Q) cudaFree(d_para_Q);
-    if (d_Q3) cudaFree(d_Q3);
-    if (d_G1) cudaFree(d_G1);
-    if (d_G2) cudaFree(d_G2);
-    if (d_G3) cudaFree(d_G3);
-    if (d_G4) cudaFree(d_G4);
-    if (d_fG_grid) cudaFree(d_fG_grid);
-    if (d_fGs_grid) cudaFree(d_fGs_grid);
-    if (fft_plan_G) cufftDestroy((cufftHandle)fft_plan_G);
-    if (d_scale_coef_Q_imag) cudaFree(d_scale_coef_Q_imag);
-    if (d_scale_coef_GP_imag) cudaFree(d_scale_coef_GP_imag);
-    if (d_scale_coef_GQ_real) cudaFree(d_scale_coef_GQ_real);
-    if (d_Qfactor) cudaFree(d_Qfactor);
-    if (d_Qfactor_dot) cudaFree(d_Qfactor_dot);
-    if (d_G_point) cudaFree(d_G_point);
-    if (d_spread_coef_Q) cudaFree(d_spread_coef_Q);
-    if (d_contract_coef_Q) cudaFree(d_contract_coef_Q);
-}
-
-void Polydisperse_Electric_Field::computeNeighborList(int max_neighbors_per_particle) {
-    neighbor_list->build(
-        d_x_part, d_y_part, d_z_part,
-        d_x_field, d_y_field, d_z_field,
-        num_particles, num_field_points,
-        box_x, box_y, box_z,
-        rc, calc_inter_dipole,
-        max_neighbors_per_particle
-    );
-}
-
-void Polydisperse_Electric_Field::computeRealSpaceTables() {
+void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
     size_t num_r_steps = 9000;
     std::vector<double> r_vals(num_r_steps);
     for (size_t idx = 0; idx < num_r_steps; ++idx) {
@@ -1892,6 +1853,26 @@ void Polydisperse_Electric_Field::computeRealSpaceTables() {
     CUDA_CHECK(cudaMemcpy(d_self_perp_uniq, host_self_perp_uniq.data(), num_unique_radii * sizeof(double), cudaMemcpyHostToDevice));
 
     if (solve_quadrupoles) {
+        if (d_self_G2_uniq) CUDA_CHECK(cudaFree(d_self_G2_uniq));
+        CUDA_CHECK(cudaMalloc(&d_self_G2_uniq, num_unique_radii * sizeof(double)));
+
+        std::vector<double> host_self_G2_uniq(num_unique_radii, 0.0);
+        for (size_t i = 0; i < num_unique_radii; ++i) {
+            double a_j = unique_radii[i];
+            double xi_a = xi * a_j;
+            double xi_a_sq = xi_a * xi_a;
+            double xi_a_4 = xi_a_sq * xi_a_sq;
+            double xi_a_5 = xi_a_4 * xi_a;
+
+            double val_1 = 1.0 / (2.0 * PI) * (
+                3.0 * (3.0 - 10.0 * xi_a_sq + 20.0 * xi_a_4) / (8.0 * std::sqrt(PI) * xi_a_5) -
+                3.0 * (3.0 + 2.0 * xi_a_sq + 4.0 * xi_a_4) * std::exp(-4.0 * xi_a_sq) / (8.0 * std::sqrt(PI) * xi_a_5) +
+                3.0 * std::erfc(2.0 * xi_a)
+            );
+            host_self_G2_uniq[i] = val_1 / std::pow(a_j, 5.0);
+        }
+        CUDA_CHECK(cudaMemcpy(d_self_G2_uniq, host_self_G2_uniq.data(), num_unique_radii * sizeof(double), cudaMemcpyHostToDevice));
+
         std::vector<double> host_field_quad_1(table_size, 0.0);
         std::vector<double> host_field_quad_2(table_size, 0.0);
         std::vector<double> host_field_quad_3(table_size, 0.0);
@@ -2231,7 +2212,7 @@ void Polydisperse_Electric_Field::computeRealSpaceTables() {
     }
 }
 
-void Polydisperse_Electric_Field::computePrecalculations() {
+void Polydisperse_Ewald_Electric_Field::computePrecalculations() {
     rc = std::sqrt(-std::log(errortol)) / xi;
 
     if (rc > box_x / 2.0 || rc > box_y / 2.0 || rc > box_z / 2.0) {
@@ -2349,15 +2330,10 @@ void Polydisperse_Electric_Field::computePrecalculations() {
                     host_Qfactor_dot[linear_idx * 5 + 3] = kh1 * kh1 - kh2 * kh2;
                     host_Qfactor_dot[linear_idx * 5 + 4] = 2.0 * kh1 * kh2;
 
-                    double term = std::sin(kmag) / kmag - std::cos(kmag);
-                    double j1 = term / kmag;
-                    double j2 = (3.0 / ksqsm - 1.0) * std::sin(kmag) / kmag - 3.0 * std::cos(kmag) / ksqsm;
-                    double expk2 = exp_part / ksqsm;
-
-                    // Note: Pre-scale by kmag or 1.0/kmag for the scalar grid equations
-                    host_scale_coef_Q_imag[linear_idx] = -22.5 * j1 * j2 * expk2 * kmag;
-                    host_scale_coef_GP_imag[linear_idx] = 45.0 * j1 * j2 * expk2 / kmag;
-                    host_scale_coef_GQ_real[linear_idx] = 112.5 * j2 * j2 * expk2;
+                    // Analytical Fourier transform of Gaussian spread functions for scalar potential/fields
+                    host_scale_coef_Q_imag[linear_idx] = -0.5 * exp_part;
+                    host_scale_coef_GP_imag[linear_idx] = exp_part;
+                    host_scale_coef_GQ_real[linear_idx] = -0.5 * exp_part * ksqsm;
                 }
             }
         }
@@ -2401,179 +2377,19 @@ void Polydisperse_Electric_Field::computePrecalculations() {
     }
 }
 
-void Polydisperse_Electric_Field::updateParticleCoordinates(
-    const std::vector<double>& x_part,
-    const std::vector<double>& y_part,
-    const std::vector<double>& z_part)
-{
-    if (x_part.size() != y_part.size() || x_part.size() != z_part.size()) {
-        throw std::invalid_argument("Input coordinate vectors must have the exact same size.");
-    }
-    size_t prev_num_particles = num_particles;
-    num_particles = x_part.size();
-    if (num_particles == 0) return;
 
-    if (d_quad_idxs) { cudaFree(d_quad_idxs); d_quad_idxs = nullptr; }
-    if (d_quad_map) { cudaFree(d_quad_map); d_quad_map = nullptr; }
 
-    if (solve_quadrupoles) {
-        num_quads = quad_idxs.empty() ? num_particles : quad_idxs.size();
-        CUDA_CHECK(cudaMalloc(&d_quad_idxs, num_quads * sizeof(int)));
-        std::vector<int> host_quad_idxs(num_quads);
-        if (quad_idxs.empty()) {
-            for (size_t i = 0; i < num_quads; ++i) {
-                host_quad_idxs[i] = i;
-            }
-        } else {
-            host_quad_idxs = quad_idxs;
-        }
-        CUDA_CHECK(cudaMemcpy(d_quad_idxs, host_quad_idxs.data(), num_quads * sizeof(int), cudaMemcpyHostToDevice));
 
-        CUDA_CHECK(cudaMalloc(&d_quad_map, num_particles * sizeof(int)));
-        std::vector<int> host_quad_map(num_particles, -1);
-        for (size_t q = 0; q < num_quads; ++q) {
-            int p_idx = host_quad_idxs[q];
-            if (p_idx >= 0 && p_idx < static_cast<int>(num_particles)) {
-                host_quad_map[p_idx] = q;
-            }
-        }
-        CUDA_CHECK(cudaMemcpy(d_quad_map, host_quad_map.data(), num_particles * sizeof(int), cudaMemcpyHostToDevice));
-    } else {
-        num_quads = 0;
-    }
 
-    size_t size_bytes = num_particles * sizeof(double);
-    size_t size_dipoles_bytes = (num_particles * 3 + num_quads * 5) * 2 * sizeof(double);
 
-    if (num_particles != prev_num_particles || d_dipoles == nullptr) {
-        if (d_x_part) cudaFree(d_x_part);
-        if (d_y_part) cudaFree(d_y_part);
-        if (d_z_part) cudaFree(d_z_part);
-        if (d_dipoles) cudaFree(d_dipoles);
-        if (d_self_coef_r) { cudaFree(d_self_coef_r); d_self_coef_r = nullptr; }
-        if (d_self_coef_i) { cudaFree(d_self_coef_i); d_self_coef_i = nullptr; }
 
-        CUDA_CHECK(cudaMalloc(&d_x_part, size_bytes));
-        CUDA_CHECK(cudaMalloc(&d_y_part, size_bytes));
-        CUDA_CHECK(cudaMalloc(&d_z_part, size_bytes));
-        CUDA_CHECK(cudaMalloc(&d_dipoles, size_dipoles_bytes));
-        CUDA_CHECK(cudaMemset(d_dipoles, 0, size_dipoles_bytes));
-    }
 
-    CUDA_CHECK(cudaMemcpy(d_x_part, x_part.data(), size_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_y_part, y_part.data(), size_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_z_part, z_part.data(), size_bytes, cudaMemcpyHostToDevice));
 
-    particles_updated = true;
 
-    if (calc_inter_dipole) {
-        if (num_particles != prev_num_particles || d_x_field == nullptr) {
-            num_field_points = num_particles;
-            if (d_x_field) cudaFree(d_x_field);
-            if (d_y_field) cudaFree(d_y_field);
-            if (d_z_field) cudaFree(d_z_field);
 
-            CUDA_CHECK(cudaMalloc(&d_x_field, size_bytes));
-            CUDA_CHECK(cudaMalloc(&d_y_field, size_bytes));
-            CUDA_CHECK(cudaMalloc(&d_z_field, size_bytes));
-        }
 
-        CUDA_CHECK(cudaMemcpy(d_x_field, d_x_part, size_bytes, cudaMemcpyDeviceToDevice));
-        CUDA_CHECK(cudaMemcpy(d_y_field, d_y_part, size_bytes, cudaMemcpyDeviceToDevice));
-        CUDA_CHECK(cudaMemcpy(d_z_field, d_z_part, size_bytes, cudaMemcpyDeviceToDevice));
 
-        field_points_updated = true;
-    }
-}
-
-void Polydisperse_Electric_Field::updateFieldCoordinates(
-    const std::vector<double>& x_field,
-    const std::vector<double>& y_field,
-    const std::vector<double>& z_field)
-{
-    num_field_points = x_field.size();
-    size_t size_bytes = num_field_points * sizeof(double);
-
-    if (d_x_field) cudaFree(d_x_field);
-    if (d_y_field) cudaFree(d_y_field);
-    if (d_z_field) cudaFree(d_z_field);
-
-    CUDA_CHECK(cudaMalloc(&d_x_field, size_bytes));
-    CUDA_CHECK(cudaMalloc(&d_y_field, size_bytes));
-    CUDA_CHECK(cudaMalloc(&d_z_field, size_bytes));
-
-    CUDA_CHECK(cudaMemcpy(d_x_field, x_field.data(), size_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_y_field, y_field.data(), size_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_z_field, z_field.data(), size_bytes, cudaMemcpyHostToDevice));
-
-    field_points_updated = true;
-}
-
-void Polydisperse_Electric_Field::updateDipoles(
-    const std::vector<double>& dip_x,
-    const std::vector<double>& dip_y,
-    const std::vector<double>& dip_z)
-{
-    size_t size_bytes = num_particles * 3 * 2 * sizeof(double);
-    if (d_dipoles == nullptr) {
-        CUDA_CHECK(cudaMalloc(&d_dipoles, size_bytes));
-    }
-    CUDA_CHECK(cudaMemset(d_dipoles, 0, size_bytes));
-
-    std::vector<double> host_dip(num_particles * 3 * 2, 0.0);
-    for (size_t i = 0; i < num_particles; ++i) {
-        host_dip[(i * 3 + 0) * 2 + 0] = dip_x[i];
-        host_dip[(i * 3 + 1) * 2 + 0] = dip_y[i];
-        host_dip[(i * 3 + 2) * 2 + 0] = dip_z[i];
-    }
-    CUDA_CHECK(cudaMemcpy(d_dipoles, host_dip.data(), size_bytes, cudaMemcpyHostToDevice));
-    dipoles_updated = true;
-}
-
-void Polydisperse_Electric_Field::updateDipolesComplex(
-    const std::vector<double>& dip_xr, const std::vector<double>& dip_xi,
-    const std::vector<double>& dip_yr, const std::vector<double>& dip_yi,
-    const std::vector<double>& dip_zr, const std::vector<double>& dip_zi)
-{
-    size_t size_bytes = num_particles * 3 * 2 * sizeof(double);
-    if (d_dipoles == nullptr) {
-        CUDA_CHECK(cudaMalloc(&d_dipoles, size_bytes));
-    }
-
-    std::vector<double> host_dip(num_particles * 3 * 2, 0.0);
-    for (size_t i = 0; i < num_particles; ++i) {
-        host_dip[(i * 3 + 0) * 2 + 0] = dip_xr[i];
-        host_dip[(i * 3 + 0) * 2 + 1] = dip_xi[i];
-        host_dip[(i * 3 + 1) * 2 + 0] = dip_yr[i];
-        host_dip[(i * 3 + 1) * 2 + 1] = dip_yi[i];
-        host_dip[(i * 3 + 2) * 2 + 0] = dip_zr[i];
-        host_dip[(i * 3 + 2) * 2 + 1] = dip_zi[i];
-    }
-    CUDA_CHECK(cudaMemcpy(d_dipoles, host_dip.data(), size_bytes, cudaMemcpyHostToDevice));
-    dipoles_updated = true;
-}
-
-void Polydisperse_Electric_Field::setSelfCoef(const std::vector<double>& self_coef_r, const std::vector<double>& self_coef_i) {
-    if (d_self_coef_r == nullptr) {
-        CUDA_CHECK(cudaMalloc(&d_self_coef_r, num_particles * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_self_coef_i, num_particles * sizeof(double)));
-    }
-    CUDA_CHECK(cudaMemcpy(d_self_coef_r, self_coef_r.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_self_coef_i, self_coef_i.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-}
-
-void Polydisperse_Electric_Field::setSelfCoef(double val_r, double val_i) {
-    if (d_self_coef_r == nullptr) {
-        CUDA_CHECK(cudaMalloc(&d_self_coef_r, num_particles * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_self_coef_i, num_particles * sizeof(double)));
-    }
-    std::vector<double> host_sc_r(num_particles, val_r);
-    std::vector<double> host_sc_i(num_particles, val_i);
-    CUDA_CHECK(cudaMemcpy(d_self_coef_r, host_sc_r.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_self_coef_i, host_sc_i.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-}
-
-void Polydisperse_Electric_Field::spreadPrecalcs() {
+void Polydisperse_Ewald_Electric_Field::spreadPrecalcs() {
     if (num_particles == 0) return;
 
     num_spread = num_particles * num_offsets;
@@ -2621,7 +2437,7 @@ void Polydisperse_Electric_Field::spreadPrecalcs() {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Polydisperse_Electric_Field::contractPrecalcs() {
+void Polydisperse_Ewald_Electric_Field::contractPrecalcs() {
     if (num_field_points == 0) return;
 
     num_contract = num_field_points * num_offsets;
@@ -2659,7 +2475,7 @@ void Polydisperse_Electric_Field::contractPrecalcs() {
         d_radii, // using particle radii as field points are particle centers
         d_offset, d_offsetxyz,
         d_contract_coef, d_contract_idxs, d_particle_index,
-        num_field_points, num_offsets,
+        num_field_points, num_particles, num_offsets,
         grid_spacing[0], grid_spacing[1], grid_spacing[2],
         num_grid[0], num_grid[1], num_grid[2],
         eta_scalar, xi
@@ -2682,7 +2498,7 @@ void Polydisperse_Electric_Field::contractPrecalcs() {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Polydisperse_Electric_Field::realSpacePrecalcs() {
+void Polydisperse_Ewald_Electric_Field::realSpacePrecalcs() {
     computeNeighborList(128);
 
     size_t num_pairs = neighbor_list->get_num_pairs();
@@ -2740,7 +2556,7 @@ void Polydisperse_Electric_Field::realSpacePrecalcs() {
     }
 }
 
-void Polydisperse_Electric_Field::spread(double* d_fE_grid) {
+void Polydisperse_Ewald_Electric_Field::spread(double* d_fE_grid) {
     if (num_spread == 0 || d_spread_coef == nullptr || d_spread_idxs == nullptr || d_fE_grid == nullptr) {
         throw std::runtime_error("spread: Buffers/Precalcs are not allocated.");
     }
@@ -2762,7 +2578,7 @@ void Polydisperse_Electric_Field::spread(double* d_fE_grid) {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Polydisperse_Electric_Field::scale(double* d_fE_grid) {
+void Polydisperse_Ewald_Electric_Field::scale(double* d_fE_grid) {
     size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
     if (grid_voxels == 0 || d_scale_coef == nullptr || d_fE_grid == nullptr) {
         throw std::runtime_error("scale: Buffers/Precalcs are not allocated.");
@@ -2794,7 +2610,7 @@ void Polydisperse_Electric_Field::scale(double* d_fE_grid) {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Polydisperse_Electric_Field::contract(double* d_E_point, const double* d_Es_grid) {
+void Polydisperse_Ewald_Electric_Field::contract(double* d_E_point, const double* d_Es_grid) {
     if (num_contract == 0 || d_contract_coef == nullptr || d_contract_idxs == nullptr || d_particle_index == nullptr || d_E_point == nullptr) {
         throw std::runtime_error("contract: Buffers/Precalcs are not allocated.");
     }
@@ -2816,7 +2632,7 @@ void Polydisperse_Electric_Field::contract(double* d_E_point, const double* d_Es
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Polydisperse_Electric_Field::realSpace(double* d_E_point) {
+void Polydisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
     if (num_particles == 0 || d_E_point == nullptr) return;
 
     int threadsPerBlock = 256;
@@ -2824,21 +2640,12 @@ void Polydisperse_Electric_Field::realSpace(double* d_E_point) {
 
     if (calc_inter_dipole) {
         if (solve_quadrupoles) {
-            const double PI = 3.14159265358979323846;
-            double xi_sq = xi * xi;
-            double xi_4 = xi_sq * xi_sq;
-            double xi_5 = xi_4 * xi;
-            double self_G2_val = 1.0 / (2.0 * PI) * (
-                3.0 * (3.0 - 10.0 * xi_sq + 20.0 * xi_4) / (8.0 * std::sqrt(PI) * xi_5) -
-                3.0 * (3.0 + 2.0 * xi_sq + 4.0 * xi_4) * std::exp(-4.0 * xi_sq) / (8.0 * std::sqrt(PI) * xi_5) +
-                3.0 * std::erfc(2.0 * xi)
-            );
-
             real_space_self_kernel_polydisperse_joint<<<blocksPerGrid, threadsPerBlock>>>(
                 d_dipoles, d_self_coef_r, d_self_coef_i,
                 d_radius_idx, d_self_perp_uniq,
                 d_quad_idxs, d_quad_map,
-                self_G2_val,
+                d_self_G2_uniq,
+                d_radii,
                 d_E_point,
                 num_particles, num_quads,
                 solve_quadrupoles
@@ -2893,17 +2700,10 @@ void Polydisperse_Electric_Field::realSpace(double* d_E_point) {
     }
 }
 
-void Polydisperse_Electric_Field::electricField() {
+void Polydisperse_Ewald_Electric_Field::electricField() {
     size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
 
     spread(d_fE_grid);
-    {
-        double norm = 0.0;
-        std::vector<double> temp(grid_voxels * 1 * 2);
-        cudaMemcpy(temp.data(), d_fE_grid, grid_voxels * 1 * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-        for (double v : temp) norm += v * v;
-        std::cout << "[Diagnostic Poly] After spread, fE_grid norm: " << std::sqrt(norm) << std::endl;
-    }
 
     if (solve_quadrupoles && num_quads > 0 && d_fG_grid != nullptr) {
         CUDA_CHECK(cudaMemset(d_fG_grid, 0, grid_voxels * 5 * 2 * sizeof(double)));
@@ -2921,13 +2721,6 @@ void Polydisperse_Electric_Field::electricField() {
             num_grid[0], num_grid[1], num_grid[2]
         );
         CUDA_CHECK(cudaGetLastError());
-        {
-            double norm = 0.0;
-            std::vector<double> temp(grid_voxels * 5 * 2);
-            cudaMemcpy(temp.data(), d_fG_grid, grid_voxels * 5 * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-            for (double v : temp) norm += v * v;
-            std::cout << "[Diagnostic Poly] After spread Q, fG_grid norm: " << std::sqrt(norm) << std::endl;
-        }
 
         cufftResult plan_res_G = cufftExecZ2Z((cufftHandle)fft_plan_G,
                                              (cufftDoubleComplex*)d_fG_grid,
@@ -2962,20 +2755,6 @@ void Polydisperse_Electric_Field::electricField() {
     CUDA_CHECK(cudaDeviceSynchronize());
 
     scale(d_fEs_grid);
-    {
-        double norm = 0.0;
-        std::vector<double> temp(grid_voxels * 1 * 2);
-        cudaMemcpy(temp.data(), d_fEs_grid, grid_voxels * 1 * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-        for (double v : temp) norm += v * v;
-        std::cout << "[Diagnostic Poly] After scale, fEs_grid norm: " << std::sqrt(norm) << std::endl;
-    }
-    if (solve_quadrupoles && num_quads > 0 && d_fGs_grid != nullptr) {
-        double norm = 0.0;
-        std::vector<double> temp(grid_voxels * 5 * 2);
-        cudaMemcpy(temp.data(), d_fGs_grid, grid_voxels * 5 * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-        for (double v : temp) norm += v * v;
-        std::cout << "[Diagnostic Poly] After scale Q, fGs_grid norm: " << std::sqrt(norm) << std::endl;
-    }
 
     ifftshift_3d_kernel_polydisperse<<<blocksPerGridShift, threadsPerBlock>>>(
         d_fEs_grid, d_fE_grid, num_grid[0], num_grid[1], num_grid[2], 1
@@ -3049,7 +2828,7 @@ void Polydisperse_Electric_Field::electricField() {
     realSpace(d_E_point);
 }
 
-void Polydisperse_Electric_Field::calculate() {
+void Polydisperse_Ewald_Electric_Field::calculate() {
     if (particles_updated || field_points_updated || d_perp == nullptr || (solve_quadrupoles && d_perp_Q == nullptr)) {
         realSpacePrecalcs();
     }

@@ -1,4 +1,4 @@
-#include "ewald_electric_field.h"
+#include "monodisperse_ewald_electric_field.h"
 #include <cuda_runtime.h>
 #include <cufft.h>
 #include <cmath>
@@ -15,33 +15,22 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       if (abort) exit(code);
    }
 }
-Ewald_Electric_Field::Ewald_Electric_Field(double box_x, double box_y, double box_z,
-                               double errortol,
-                               double xi,
-                               bool calc_inter_dipole,
-                               bool solve_quadrupoles,
-                               const std::vector<int>& quad_idxs)
-    : box_x(box_x), box_y(box_y), box_z(box_z), errortol(errortol),
-      xi(xi), calc_inter_dipole(calc_inter_dipole),
-      particles_updated(false), field_points_updated(false),
-      dipoles_updated(false),
-      num_particles(0), num_field_points(0),
-      d_x_part(nullptr), d_y_part(nullptr), d_z_part(nullptr),
-      d_x_field(nullptr), d_y_field(nullptr), d_z_field(nullptr),
-      d_dipoles(nullptr),
-      d_self_coef_r(nullptr), d_self_coef_i(nullptr),
-      d_spread_coef(nullptr), d_spread_idxs(nullptr), num_spread(0),
-      d_E_point(nullptr), d_particle_index(nullptr), d_contract_coef(nullptr), d_contract_idxs(nullptr), num_contract(0),
-      d_self_perp(nullptr), d_perp(nullptr), d_para(nullptr),
-      self_coef(0.0), self_perp_val(0.0), self_G2_val(0.0), neighbor_list(std::make_unique<NeighborList>()),
-      solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs),
-      d_quad_idxs(nullptr), d_quad_map(nullptr), num_quads(0),
-      d_field_quad_1(nullptr), d_field_quad_2(nullptr), d_field_quad_3(nullptr),
-      d_grad_quad_1(nullptr), d_grad_quad_2(nullptr), d_grad_quad_3(nullptr), d_grad_quad_4(nullptr),
-      d_perp_Q(nullptr), d_para_Q(nullptr), d_Q3(nullptr), d_G1(nullptr), d_G2(nullptr), d_G3(nullptr), d_G4(nullptr),
-      d_fG_grid(nullptr), d_fGs_grid(nullptr), fft_plan_G(0),
-      d_scale_coef_Q_imag(nullptr), d_scale_coef_GP_imag(nullptr), d_scale_coef_GQ_real(nullptr),
-      d_Qfactor(nullptr), d_Qfactor_dot(nullptr), d_G_point(nullptr) {
+
+
+
+
+
+
+
+
+
+Monodisperse_Ewald_Electric_Field::Monodisperse_Ewald_Electric_Field(double box_x, double box_y, double box_z,
+                           double errortol,
+                           double xi,
+                           bool calc_inter_dipole,
+                           bool solve_quadrupoles,
+                           const std::vector<int>& quad_idxs)
+    : Ewald_Electric_Field_Base(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, solve_quadrupoles, quad_idxs) {
 
     const double PI_CONST = 3.14159265358979323846;
     self_coef = -4.0 * std::pow(xi, 3.0) / (3.0 * std::sqrt(PI_CONST));
@@ -80,166 +69,23 @@ Ewald_Electric_Field::Ewald_Electric_Field(double box_x, double box_y, double bo
     }
 }
 
-Ewald_Electric_Field::~Ewald_Electric_Field() {
-    if (d_x_part) {
-        cudaFree(d_x_part);
-        d_x_part = nullptr;
-    }
-    if (d_y_part) {
-        cudaFree(d_y_part);
-        d_y_part = nullptr;
-    }
-    if (d_z_part) {
-        cudaFree(d_z_part);
-        d_z_part = nullptr;
-    }
-    if (d_dipoles) {
-        cudaFree(d_dipoles);
-        d_dipoles = nullptr;
-    }
-    if (d_self_coef_r) {
-        cudaFree(d_self_coef_r);
-        d_self_coef_r = nullptr;
-    }
-    if (d_self_coef_i) {
-        cudaFree(d_self_coef_i);
-        d_self_coef_i = nullptr;
-    }
-    if (d_spread_coef) {
-        cudaFree(d_spread_coef);
-        d_spread_coef = nullptr;
-    }
-    if (d_spread_idxs) {
-        cudaFree(d_spread_idxs);
-        d_spread_idxs = nullptr;
-    }
-    if (d_E_point) {
-        cudaFree(d_E_point);
-        d_E_point = nullptr;
-    }
-    if (d_particle_index) {
-        cudaFree(d_particle_index);
-        d_particle_index = nullptr;
-    }
-    if (d_contract_coef) {
-        cudaFree(d_contract_coef);
-        d_contract_coef = nullptr;
-    }
-    if (d_contract_idxs) {
-        cudaFree(d_contract_idxs);
-        d_contract_idxs = nullptr;
-    }
+Monodisperse_Ewald_Electric_Field::~Monodisperse_Ewald_Electric_Field() {
     if (d_self_perp) {
         cudaFree(d_self_perp);
         d_self_perp = nullptr;
-    }
-    if (d_perp) {
-        cudaFree(d_perp);
-        d_perp = nullptr;
-    }
-    if (d_para) {
-        cudaFree(d_para);
-        d_para = nullptr;
-    }
-    if (!calc_inter_dipole) {
-        if (d_x_field) {
-            cudaFree(d_x_field);
-            d_x_field = nullptr;
-        }
-        if (d_y_field) {
-            cudaFree(d_y_field);
-            d_y_field = nullptr;
-        }
-        if (d_z_field) {
-            cudaFree(d_z_field);
-            d_z_field = nullptr;
-        }
-    }
-    if (d_r_table) {
-        cudaFree(d_r_table);
-        d_r_table = nullptr;
-    }
-    if (d_field_dip_1) {
-        cudaFree(d_field_dip_1);
-        d_field_dip_1 = nullptr;
-    }
-    if (d_field_dip_2) {
-        cudaFree(d_field_dip_2);
-        d_field_dip_2 = nullptr;
-    }
-    if (d_offset) {
-        cudaFree(d_offset);
-        d_offset = nullptr;
-    }
-    if (d_offsetxyz) {
-        cudaFree(d_offsetxyz);
-        d_offsetxyz = nullptr;
-    }
-    if (d_scale_coef) {
-        cudaFree(d_scale_coef);
-        d_scale_coef = nullptr;
     }
     if (d_khat) {
         cudaFree(d_khat);
         d_khat = nullptr;
     }
-
-    if (d_fE_grid) {
-        cudaFree(d_fE_grid);
-        d_fE_grid = nullptr;
-    }
-    if (d_fEs_grid) {
-        cudaFree(d_fEs_grid);
-        d_fEs_grid = nullptr;
-    }
-    if (fft_plan) {
-        cufftDestroy((cufftHandle)fft_plan);
-        fft_plan = 0;
-    }
-
-    if (d_quad_idxs) { cudaFree(d_quad_idxs); d_quad_idxs = nullptr; }
-    if (d_quad_map) { cudaFree(d_quad_map); d_quad_map = nullptr; }
-    if (d_field_quad_1) { cudaFree(d_field_quad_1); d_field_quad_1 = nullptr; }
-    if (d_field_quad_2) { cudaFree(d_field_quad_2); d_field_quad_2 = nullptr; }
-    if (d_field_quad_3) { cudaFree(d_field_quad_3); d_field_quad_3 = nullptr; }
-    if (d_grad_quad_1) { cudaFree(d_grad_quad_1); d_grad_quad_1 = nullptr; }
-    if (d_grad_quad_2) { cudaFree(d_grad_quad_2); d_grad_quad_2 = nullptr; }
-    if (d_grad_quad_3) { cudaFree(d_grad_quad_3); d_grad_quad_3 = nullptr; }
-    if (d_grad_quad_4) { cudaFree(d_grad_quad_4); d_grad_quad_4 = nullptr; }
-    if (d_perp_Q) { cudaFree(d_perp_Q); d_perp_Q = nullptr; }
-    if (d_para_Q) { cudaFree(d_para_Q); d_para_Q = nullptr; }
-    if (d_Q3) { cudaFree(d_Q3); d_Q3 = nullptr; }
-    if (d_G1) { cudaFree(d_G1); d_G1 = nullptr; }
-    if (d_G2) { cudaFree(d_G2); d_G2 = nullptr; }
-    if (d_G3) { cudaFree(d_G3); d_G3 = nullptr; }
-    if (d_G4) { cudaFree(d_G4); d_G4 = nullptr; }
-    if (d_fG_grid) { cudaFree(d_fG_grid); d_fG_grid = nullptr; }
-    if (d_fGs_grid) { cudaFree(d_fGs_grid); d_fGs_grid = nullptr; }
-    if (d_scale_coef_Q_imag) { cudaFree(d_scale_coef_Q_imag); d_scale_coef_Q_imag = nullptr; }
-    if (d_scale_coef_GP_imag) { cudaFree(d_scale_coef_GP_imag); d_scale_coef_GP_imag = nullptr; }
-    if (d_scale_coef_GQ_real) { cudaFree(d_scale_coef_GQ_real); d_scale_coef_GQ_real = nullptr; }
-    if (d_Qfactor) { cudaFree(d_Qfactor); d_Qfactor = nullptr; }
-    if (d_Qfactor_dot) { cudaFree(d_Qfactor_dot); d_Qfactor_dot = nullptr; }
-    if (d_G_point) { cudaFree(d_G_point); d_G_point = nullptr; }
-    if (fft_plan_G) { cufftDestroy((cufftHandle)fft_plan_G); fft_plan_G = 0; }
 }
 
-void Ewald_Electric_Field::computeNeighborList(int max_neighbors_per_particle) {
-    neighbor_list->build(
-        d_x_part, d_y_part, d_z_part,
-        d_x_field, d_y_field, d_z_field,
-        num_particles, num_field_points,
-        box_x, box_y, box_z,
-        rc, calc_inter_dipole,
-        max_neighbors_per_particle
-    );
+void Monodisperse_Ewald_Electric_Field::updateParticleCoordinates(const std::vector<double>& x_part,
+                                             const std::vector<double>& y_part,
+                                             const std::vector<double>& z_part) {
+    Ewald_Electric_Field_Base::updateParticleCoordinates(x_part, y_part, z_part);
 }
-
-void Ewald_Electric_Field::getNeighborListHost(std::vector<int>& host_list, std::vector<int>& host_counts) const {
-    neighbor_list->get_host(host_list, host_counts);
-}
-
-void Ewald_Electric_Field::computeRealSpaceTables() {
+void Monodisperse_Ewald_Electric_Field::computeRealSpaceTables() {
     size_t num_r_steps = 9000;
     std::vector<double> r_vals(num_r_steps);
     for (size_t idx = 0; idx < num_r_steps; ++idx) {
@@ -718,24 +564,9 @@ void Ewald_Electric_Field::computeRealSpaceTables() {
     CUDA_CHECK(cudaMemcpy(d_grad_quad_4, host_grad_quad_4.data(), size_in_bytes, cudaMemcpyHostToDevice));
 }
 
-void Ewald_Electric_Field::getRealSpaceTablesHost(std::vector<double>& host_r_table,
-                                            std::vector<double>& host_field_dip_1,
-                                            std::vector<double>& host_field_dip_2) const {
-    if (table_size == 0 || d_r_table == nullptr || d_field_dip_1 == nullptr || d_field_dip_2 == nullptr) {
-        throw std::runtime_error("Real space tables have not been calculated/allocated on the GPU yet.");
-    }
 
-    host_r_table.resize(table_size);
-    host_field_dip_1.resize(table_size);
-    host_field_dip_2.resize(table_size);
 
-    size_t size_in_bytes = table_size * sizeof(double);
-    CUDA_CHECK(cudaMemcpy(host_r_table.data(), d_r_table, size_in_bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_field_dip_1.data(), d_field_dip_1, size_in_bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_field_dip_2.data(), d_field_dip_2, size_in_bytes, cudaMemcpyDeviceToHost));
-}
-
-void Ewald_Electric_Field::computePrecalculations() {
+void Monodisperse_Ewald_Electric_Field::computePrecalculations() {
     // 1. Calculate rc
     rc = std::sqrt(-std::log(errortol)) / xi;
 
@@ -938,7 +769,7 @@ void Ewald_Electric_Field::computePrecalculations() {
     }
 }
 
-void Ewald_Electric_Field::getPrecalculationsHost(std::vector<int>& host_offset,
+void Monodisperse_Ewald_Electric_Field::getPrecalculationsHost(std::vector<int>& host_offset,
                                             std::vector<double>& host_offsetxyz,
                                             std::vector<double>& host_scale_coef,
                                             std::vector<double>& host_khat) const {
@@ -960,236 +791,21 @@ void Ewald_Electric_Field::getPrecalculationsHost(std::vector<int>& host_offset,
     CUDA_CHECK(cudaMemcpy(host_khat.data(), d_khat, grid_voxels * 3 * sizeof(double), cudaMemcpyDeviceToHost));
 }
 
-void Ewald_Electric_Field::updateParticleCoordinates(const std::vector<double>& x_part,
-                                               const std::vector<double>& y_part,
-                                               const std::vector<double>& z_part) {
-    if (x_part.size() != y_part.size() || x_part.size() != z_part.size()) {
-        throw std::invalid_argument("Input coordinate vectors must have the exact same size.");
-    }
-    size_t new_num_particles = x_part.size();
-    if (new_num_particles == 0) return;
 
-    if (d_quad_idxs) { cudaFree(d_quad_idxs); d_quad_idxs = nullptr; }
-    if (d_quad_map) { cudaFree(d_quad_map); d_quad_map = nullptr; }
 
-    if (solve_quadrupoles) {
-        num_quads = quad_idxs.empty() ? new_num_particles : quad_idxs.size();
-        CUDA_CHECK(cudaMalloc(&d_quad_idxs, num_quads * sizeof(int)));
-        std::vector<int> host_quad_idxs(num_quads);
-        if (quad_idxs.empty()) {
-            for (size_t i = 0; i < num_quads; ++i) {
-                host_quad_idxs[i] = i;
-            }
-        } else {
-            host_quad_idxs = quad_idxs;
-        }
-        CUDA_CHECK(cudaMemcpy(d_quad_idxs, host_quad_idxs.data(), num_quads * sizeof(int), cudaMemcpyHostToDevice));
 
-        CUDA_CHECK(cudaMalloc(&d_quad_map, new_num_particles * sizeof(int)));
-        std::vector<int> host_quad_map(new_num_particles, -1);
-        for (size_t q = 0; q < num_quads; ++q) {
-            int p_idx = host_quad_idxs[q];
-            if (p_idx >= 0 && p_idx < static_cast<int>(new_num_particles)) {
-                host_quad_map[p_idx] = q;
-            }
-        }
-        CUDA_CHECK(cudaMemcpy(d_quad_map, host_quad_map.data(), new_num_particles * sizeof(int), cudaMemcpyHostToDevice));
-    } else {
-        num_quads = 0;
-    }
 
-    if (new_num_particles != num_particles) {
-        if (d_x_part) cudaFree(d_x_part);
-        if (d_y_part) cudaFree(d_y_part);
-        if (d_z_part) cudaFree(d_z_part);
-        if (d_dipoles) cudaFree(d_dipoles);
-        if (d_self_coef_r) cudaFree(d_self_coef_r);
-        if (d_self_coef_i) cudaFree(d_self_coef_i);
 
-        num_particles = new_num_particles;
-        size_t size_part_bytes = num_particles * sizeof(double);
-        size_t size_dipoles_bytes = (num_particles * 3 + num_quads * 5) * 2 * sizeof(double);
 
-        CUDA_CHECK(cudaMalloc(&d_x_part, size_part_bytes));
-        CUDA_CHECK(cudaMalloc(&d_y_part, size_part_bytes));
-        CUDA_CHECK(cudaMalloc(&d_z_part, size_part_bytes));
-        CUDA_CHECK(cudaMalloc(&d_dipoles, size_dipoles_bytes));
-        CUDA_CHECK(cudaMalloc(&d_self_coef_r, size_part_bytes));
-        CUDA_CHECK(cudaMalloc(&d_self_coef_i, size_part_bytes));
 
-        CUDA_CHECK(cudaMemset(d_dipoles, 0, size_dipoles_bytes));
-    }
 
-    std::vector<double> host_sc_r(num_particles, self_coef);
-    std::vector<double> host_sc_i(num_particles, 0.0);
-    CUDA_CHECK(cudaMemcpy(d_self_coef_r, host_sc_r.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_self_coef_i, host_sc_i.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
 
-    size_t size_part_bytes = num_particles * sizeof(double);
-    CUDA_CHECK(cudaMemcpy(d_x_part, x_part.data(), size_part_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_y_part, y_part.data(), size_part_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_z_part, z_part.data(), size_part_bytes, cudaMemcpyHostToDevice));
 
-    particles_updated = true;
 
-    if (calc_inter_dipole) {
-        d_x_field = d_x_part;
-        d_y_field = d_y_part;
-        d_z_field = d_z_part;
-        num_field_points = num_particles;
-        field_points_updated = true;
-    }
-}
 
-void Ewald_Electric_Field::updateFieldCoordinates(const std::vector<double>& x_field,
-                                            const std::vector<double>& y_field,
-                                            const std::vector<double>& z_field) {
-    if (calc_inter_dipole) {
-        updateParticleCoordinates(x_field, y_field, z_field);
-        return;
-    }
 
-    if (x_field.size() != y_field.size() || x_field.size() != z_field.size()) {
-        throw std::invalid_argument("Input coordinate vectors must have the exact same size.");
-    }
-    size_t new_num_field = x_field.size();
-    if (new_num_field == 0) return;
 
-    if (new_num_field != num_field_points) {
-        if (d_x_field) cudaFree(d_x_field);
-        if (d_y_field) cudaFree(d_y_field);
-        if (d_z_field) cudaFree(d_z_field);
 
-        num_field_points = new_num_field;
-        size_t size_field_bytes = num_field_points * sizeof(double);
-
-        CUDA_CHECK(cudaMalloc(&d_x_field, size_field_bytes));
-        CUDA_CHECK(cudaMalloc(&d_y_field, size_field_bytes));
-        CUDA_CHECK(cudaMalloc(&d_z_field, size_field_bytes));
-    }
-
-    size_t size_field_bytes = num_field_points * sizeof(double);
-    CUDA_CHECK(cudaMemcpy(d_x_field, x_field.data(), size_field_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_y_field, y_field.data(), size_field_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_z_field, z_field.data(), size_field_bytes, cudaMemcpyHostToDevice));
-
-    field_points_updated = true;
-}
-
-void Ewald_Electric_Field::updateDipoles(const std::vector<double>& dip_x,
-                                   const std::vector<double>& dip_y,
-                                   const std::vector<double>& dip_z) {
-    if (dip_x.size() != num_particles || dip_y.size() != num_particles || dip_z.size() != num_particles) {
-        throw std::invalid_argument("Input dipole vectors must match the allocated number of particles.");
-    }
-    if (num_particles == 0) return;
-
-    std::vector<double> host_dips(num_particles * 3 * 2, 0.0);
-    for (size_t p = 0; p < num_particles; ++p) {
-        host_dips[(p * 3 + 0) * 2 + 0] = dip_x[p];
-        host_dips[(p * 3 + 1) * 2 + 0] = dip_y[p];
-        host_dips[(p * 3 + 2) * 2 + 0] = dip_z[p];
-    }
-
-    size_t size_dipoles_bytes = num_particles * 3 * 2 * sizeof(double);
-    CUDA_CHECK(cudaMemcpy(d_dipoles, host_dips.data(), size_dipoles_bytes, cudaMemcpyHostToDevice));
-
-    dipoles_updated = true;
-}
-
-void Ewald_Electric_Field::updateDipolesComplex(const std::vector<double>& dip_xr, const std::vector<double>& dip_xi,
-                                          const std::vector<double>& dip_yr, const std::vector<double>& dip_yi,
-                                          const std::vector<double>& dip_zr, const std::vector<double>& dip_zi) {
-    if (dip_xr.size() != num_particles || dip_xi.size() != num_particles ||
-        dip_yr.size() != num_particles || dip_yi.size() != num_particles ||
-        dip_zr.size() != num_particles || dip_zi.size() != num_particles) {
-        throw std::invalid_argument("Input complex dipole component vectors must match the allocated number of particles.");
-    }
-    if (num_particles == 0) return;
-
-    std::vector<double> host_dips(num_particles * 3 * 2);
-    for (size_t p = 0; p < num_particles; ++p) {
-        host_dips[(p * 3 + 0) * 2 + 0] = dip_xr[p];
-        host_dips[(p * 3 + 0) * 2 + 1] = dip_xi[p];
-        host_dips[(p * 3 + 1) * 2 + 0] = dip_yr[p];
-        host_dips[(p * 3 + 1) * 2 + 1] = dip_yi[p];
-        host_dips[(p * 3 + 2) * 2 + 0] = dip_zr[p];
-        host_dips[(p * 3 + 2) * 2 + 1] = dip_zi[p];
-    }
-
-    size_t size_dipoles_bytes = num_particles * 3 * 2 * sizeof(double);
-    CUDA_CHECK(cudaMemcpy(d_dipoles, host_dips.data(), size_dipoles_bytes, cudaMemcpyHostToDevice));
-
-    dipoles_updated = true;
-}
-
-void Ewald_Electric_Field::getDipolesHost(std::vector<double>& host_dip_x,
-                                    std::vector<double>& host_dip_y,
-                                    std::vector<double>& host_dip_z) const {
-    if (num_particles == 0 || d_dipoles == nullptr) {
-        throw std::runtime_error("Dipoles have not been allocated on GPU yet.");
-    }
-
-    host_dip_x.resize(num_particles);
-    host_dip_y.resize(num_particles);
-    host_dip_z.resize(num_particles);
-
-    std::vector<double> host_dips(num_particles * 3 * 2);
-    size_t size_dipoles_bytes = num_particles * 3 * 2 * sizeof(double);
-    CUDA_CHECK(cudaMemcpy(host_dips.data(), d_dipoles, size_dipoles_bytes, cudaMemcpyDeviceToHost));
-
-    for (size_t p = 0; p < num_particles; ++p) {
-        host_dip_x[p] = host_dips[(p * 3 + 0) * 2 + 0];
-        host_dip_y[p] = host_dips[(p * 3 + 1) * 2 + 0];
-        host_dip_z[p] = host_dips[(p * 3 + 2) * 2 + 0];
-    }
-}
-
-void Ewald_Electric_Field::getDipolesComplexHost(std::vector<double>& host_dip_xr, std::vector<double>& host_dip_xi,
-                                           std::vector<double>& host_dip_yr, std::vector<double>& host_dip_yi,
-                                           std::vector<double>& host_dip_zr, std::vector<double>& host_dip_zi) const {
-    if (num_particles == 0 || d_dipoles == nullptr) {
-        throw std::runtime_error("Dipoles have not been allocated on GPU yet.");
-    }
-
-    host_dip_xr.resize(num_particles);
-    host_dip_xi.resize(num_particles);
-    host_dip_yr.resize(num_particles);
-    host_dip_yi.resize(num_particles);
-    host_dip_zr.resize(num_particles);
-    host_dip_zi.resize(num_particles);
-
-    std::vector<double> host_dips(num_particles * 3 * 2);
-    size_t size_dipoles_bytes = num_particles * 3 * 2 * sizeof(double);
-    CUDA_CHECK(cudaMemcpy(host_dips.data(), d_dipoles, size_dipoles_bytes, cudaMemcpyDeviceToHost));
-
-    for (size_t p = 0; p < num_particles; ++p) {
-        host_dip_xr[p] = host_dips[(p * 3 + 0) * 2 + 0];
-        host_dip_xi[p] = host_dips[(p * 3 + 0) * 2 + 1];
-        host_dip_yr[p] = host_dips[(p * 3 + 1) * 2 + 0];
-        host_dip_yi[p] = host_dips[(p * 3 + 1) * 2 + 1];
-        host_dip_zr[p] = host_dips[(p * 3 + 2) * 2 + 0];
-        host_dip_zi[p] = host_dips[(p * 3 + 2) * 2 + 1];
-    }
-}
-
-void Ewald_Electric_Field::setSelfCoef(const std::vector<double>& self_coef_r, const std::vector<double>& self_coef_i) {
-    if (self_coef_r.size() != num_particles || self_coef_i.size() != num_particles) {
-        throw std::invalid_argument("Self coefficient vectors must match the number of particles.");
-    }
-    if (num_particles == 0) return;
-
-    CUDA_CHECK(cudaMemcpy(d_self_coef_r, self_coef_r.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_self_coef_i, self_coef_i.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-}
-
-void Ewald_Electric_Field::setSelfCoef(double val_r, double val_i) {
-    if (num_particles == 0) return;
-    std::vector<double> host_sc_r(num_particles, val_r);
-    std::vector<double> host_sc_i(num_particles, val_i);
-    CUDA_CHECK(cudaMemcpy(d_self_coef_r, host_sc_r.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_self_coef_i, host_sc_i.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-}
 
 __device__ static double interpolate_table_gpu(double r, const double* r_table, const double* y_table, size_t table_size) {
     if (r <= 0.0) return y_table[0];
@@ -1262,7 +878,7 @@ __global__ void spread_precalcs_kernel(
     int geiy = ((giy + oy) % num_grid_y + num_grid_y) % num_grid_y;
     int geiz = ((giz + oz) % num_grid_z + num_grid_z) % num_grid_z;
 
-    spread_idxs[idx] = ((gix + ox + 256) << 20) | ((giy + oy + 256) << 10) | (giz + oz + 256);
+    spread_idxs[idx] = (((gix + ox + 256) & 0x3FF) << 20) | (((giy + oy + 256) & 0x3FF) << 10) | ((giz + oz + 256) & 0x3FF);
 
     double gdx = dx + oxyz_x;
     double gdy = dy + oxyz_y;
@@ -1485,7 +1101,7 @@ __global__ void real_space_precalcs_kernel_joint(
     }
 }
 
-void Ewald_Electric_Field::spreadPrecalcs() {
+void Monodisperse_Ewald_Electric_Field::spreadPrecalcs() {
     if (num_particles == 0) return;
 
     num_spread = num_particles * num_offsets;
@@ -1519,7 +1135,7 @@ void Ewald_Electric_Field::spreadPrecalcs() {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Ewald_Electric_Field::contractPrecalcs() {
+void Monodisperse_Ewald_Electric_Field::contractPrecalcs() {
     if (num_field_points == 0) return;
 
     num_contract = num_field_points * num_offsets;
@@ -1568,7 +1184,7 @@ void Ewald_Electric_Field::contractPrecalcs() {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Ewald_Electric_Field::realSpacePrecalcs() {
+void Monodisperse_Ewald_Electric_Field::realSpacePrecalcs() {
     computeNeighborList(128);
 
     size_t num_pairs = neighbor_list->get_num_pairs();
@@ -1631,40 +1247,11 @@ void Ewald_Electric_Field::realSpacePrecalcs() {
     }
 }
 
-void Ewald_Electric_Field::getSpreadPrecalcsHost(std::vector<double>& host_spread_coef,
-                                           std::vector<int>& host_spread_idxs) const {
-    if (num_spread == 0 || d_spread_coef == nullptr || d_spread_idxs == nullptr) {
-        throw std::runtime_error("Spread precalcs have not been allocated on GPU yet.");
-    }
 
-    host_spread_coef.resize(num_spread);
-    host_spread_idxs.resize(num_spread);
 
-    CUDA_CHECK(cudaMemcpy(host_spread_coef.data(), d_spread_coef, num_spread * sizeof(double), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_spread_idxs.data(), d_spread_idxs, num_spread * sizeof(int), cudaMemcpyDeviceToHost));
-}
 
-void Ewald_Electric_Field::getContractPrecalcsHost(std::vector<double>& host_E_point,
-                                             std::vector<int>& host_particle_index,
-                                             std::vector<double>& host_contract_coef,
-                                             std::vector<int>& host_contract_idxs) const {
-    if (num_contract == 0 || d_E_point == nullptr || d_particle_index == nullptr ||
-        d_contract_coef == nullptr || d_contract_idxs == nullptr) {
-        throw std::runtime_error("Contract precalcs have not been allocated on GPU yet.");
-    }
 
-    host_E_point.resize(num_field_points * 3 * 2);
-    host_particle_index.resize(num_contract);
-    host_contract_coef.resize(num_contract);
-    host_contract_idxs.resize(num_contract);
-
-    CUDA_CHECK(cudaMemcpy(host_E_point.data(), d_E_point, num_field_points * 3 * 2 * sizeof(double), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_particle_index.data(), d_particle_index, num_contract * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_contract_coef.data(), d_contract_coef, num_contract * sizeof(double), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_contract_idxs.data(), d_contract_idxs, num_contract * sizeof(int), cudaMemcpyDeviceToHost));
-}
-
-void Ewald_Electric_Field::getRealSpacePrecalcsHost(double& host_self_perp,
+void Monodisperse_Ewald_Electric_Field::getRealSpacePrecalcsHost(double& host_self_perp,
                                               std::vector<double>& host_perp,
                                               std::vector<double>& host_para) const {
     if (d_self_perp == nullptr) {
@@ -2087,7 +1674,7 @@ __global__ void real_space_self_kernel_joint(
     if (solve_quadrupoles) {
         int q = quad_map[i];
         if (q >= 0 && q < num_quads) {
-            double q_sc_r = 2.5 * sc_r + 0.5 * self_G2;
+            double q_sc_r = 2.5 * sc_r + self_G2;
             double q_sc_i = 2.5 * sc_i;
 
             const double2* d_quad_d2 = reinterpret_cast<const double2*>(d_dipoles + num_particles * 3 * 2);
@@ -2201,7 +1788,7 @@ __global__ void real_space_neighbor_kernel_joint(
     }
 
     double* G_point = E_point + num_particles * 3 * 2;
-    const double I_arr[5] = {1.0, 0.0, 0.0, 1.0, 0.0};
+    const double I_arr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];
@@ -2288,7 +1875,7 @@ __global__ void real_space_neighbor_kernel_joint(
 
             // 2. Contributions to G
             if (solve_quadrupoles) {
-                int q_field = quad_map[j];
+                int q_field = (j < num_particles) ? quad_map[j] : -1;
                 if (q_field >= 0 && q_field < num_quads) {
                     double Q1_val = perp_Q[start_idx + k];
                     double Q2_val = para_Q[start_idx + k];
@@ -2538,7 +2125,7 @@ __global__ void spread_quadrupoles_kernel(
     }
 }
 
-void Ewald_Electric_Field::spread(double* d_fE_grid) {
+void Monodisperse_Ewald_Electric_Field::spread(double* d_fE_grid) {
     if (num_spread == 0 || d_spread_coef == nullptr || d_spread_idxs == nullptr || d_fE_grid == nullptr) {
         throw std::runtime_error("spread: Buffers/Precalcs are not allocated.");
     }
@@ -2560,7 +2147,7 @@ void Ewald_Electric_Field::spread(double* d_fE_grid) {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Ewald_Electric_Field::scale(double* d_fE_grid) {
+void Monodisperse_Ewald_Electric_Field::scale(double* d_fE_grid) {
     size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
     if (grid_voxels == 0 || d_scale_coef == nullptr || d_khat == nullptr || d_fE_grid == nullptr) {
         throw std::runtime_error("scale: Buffers/Precalcs are not allocated.");
@@ -2594,7 +2181,7 @@ void Ewald_Electric_Field::scale(double* d_fE_grid) {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Ewald_Electric_Field::contract(double* d_E_point, const double* d_Es_grid) {
+void Monodisperse_Ewald_Electric_Field::contract(double* d_E_point, const double* d_Es_grid) {
     if (num_contract == 0 || d_particle_index == nullptr || d_contract_coef == nullptr ||
         d_contract_idxs == nullptr || d_E_point == nullptr || d_Es_grid == nullptr) {
         throw std::runtime_error("contract: Buffers/Precalcs are not allocated.");
@@ -2617,7 +2204,7 @@ void Ewald_Electric_Field::contract(double* d_E_point, const double* d_Es_grid) 
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Ewald_Electric_Field::realSpace(double* d_E_point) {
+void Monodisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
     if (num_particles == 0 || d_E_point == nullptr) return;
 
     if (calc_inter_dipole) {
@@ -2728,17 +2315,11 @@ __global__ void ifftshift_3d_kernel(
     }
 }
 
-void Ewald_Electric_Field::electricField() {
+void Monodisperse_Ewald_Electric_Field::electricField() {
     size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
     
     spread(d_fE_grid);
-    {
-        double norm = 0.0;
-        std::vector<double> temp(grid_voxels * 3 * 2);
-        cudaMemcpy(temp.data(), d_fE_grid, grid_voxels * 3 * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-        for (double v : temp) norm += v * v;
-        std::cout << "[Diagnostic Ewald] After spread, fE_grid norm: " << std::sqrt(norm) << std::endl;
-    }
+    
     
     cufftResult plan_res = cufftExecZ2Z((cufftHandle)fft_plan,
                                        (cufftDoubleComplex*)d_fE_grid,
@@ -2765,13 +2346,6 @@ void Ewald_Electric_Field::electricField() {
             num_grid[0], num_grid[1], num_grid[2]
         );
         CUDA_CHECK(cudaGetLastError());
-        {
-            double norm = 0.0;
-            std::vector<double> temp(grid_voxels * 5 * 2);
-            cudaMemcpy(temp.data(), d_fG_grid, grid_voxels * 5 * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-            for (double v : temp) norm += v * v;
-            std::cout << "[Diagnostic Ewald] After spread Q, fG_grid norm: " << std::sqrt(norm) << std::endl;
-        }
         
         plan_res = cufftExecZ2Z((cufftHandle)fft_plan_G,
                                (cufftDoubleComplex*)d_fG_grid,
@@ -2798,20 +2372,6 @@ void Ewald_Electric_Field::electricField() {
     CUDA_CHECK(cudaDeviceSynchronize());
     
     scale(d_fEs_grid);
-    {
-        double norm = 0.0;
-        std::vector<double> temp(grid_voxels * 3 * 2);
-        cudaMemcpy(temp.data(), d_fEs_grid, grid_voxels * 3 * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-        for (double v : temp) norm += v * v;
-        std::cout << "[Diagnostic Ewald] After scale, fEs_grid norm: " << std::sqrt(norm) << std::endl;
-    }
-    if (solve_quadrupoles && num_quads > 0 && d_fGs_grid != nullptr) {
-        double norm = 0.0;
-        std::vector<double> temp(grid_voxels * 5 * 2);
-        cudaMemcpy(temp.data(), d_fGs_grid, grid_voxels * 5 * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-        for (double v : temp) norm += v * v;
-        std::cout << "[Diagnostic Ewald] After scale Q, fGs_grid norm: " << std::sqrt(norm) << std::endl;
-    }
     
     ifftshift_3d_kernel<<<blocksPerGridShift, threadsPerBlock>>>(
         d_fEs_grid, d_fE_grid, num_grid[0], num_grid[1], num_grid[2], 3
@@ -2885,7 +2445,7 @@ void Ewald_Electric_Field::electricField() {
     realSpace(d_E_point);
 }
 
-void Ewald_Electric_Field::calculate() {
+void Monodisperse_Ewald_Electric_Field::calculate() {
     if (particles_updated || field_points_updated || d_self_perp == nullptr) {
         realSpacePrecalcs();
     }
@@ -2901,15 +2461,5 @@ void Ewald_Electric_Field::calculate() {
     electricField();
 }
 
-std::vector<Complex> Ewald_Electric_Field::getEPointHost() const {
-    size_t size = num_field_points * 3 + num_quads * 5;
-    if (size == 0 || d_E_point == nullptr) return {};
-    std::vector<double> temp(size * 2);
-    CUDA_CHECK(cudaMemcpy(temp.data(), d_E_point, size * 2 * sizeof(double), cudaMemcpyDeviceToHost));
-    std::vector<Complex> res(size);
-    for (size_t i = 0; i < size; ++i) {
-        res[i] = Complex(temp[i * 2], temp[i * 2 + 1]);
-    }
-    return res;
-}
+
 

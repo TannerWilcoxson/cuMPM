@@ -1,6 +1,6 @@
 #include "eels_solver.h"
-#include "electric_field/ewald_electric_field.h"
-#include "electric_field/polydisperse_electric_field.h"
+#include "electric_field/monodisperse_ewald_electric_field.h"
+#include "electric_field/polydisperse_ewald_electric_field.h"
 #include "electric_field/direct_electric_field.h"
 #include "numerical_solver/gmres_solver.h"
 #include "numerical_solver/bicgstab_solver.h"
@@ -389,11 +389,11 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             }
 
             if (use_polydisperse) {
-                EF = std::make_unique<Polydisperse_Electric_Field>(box[0], box[1], box[2], tol, xi, true, radius);
-                eels_EF = std::make_unique<Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, false);
+                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true, radius);
+                eels_EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, false);
             } else {
-                EF = std::make_unique<Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true);
-                eels_EF = std::make_unique<Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, false);
+                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true);
+                eels_EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, false);
             }
         }
     } else if (num_particles != num_p) {
@@ -439,11 +439,11 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
     if (field_type == "direct") {
         static_cast<Direct_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
-    } else if (dynamic_cast<Polydisperse_Electric_Field*>(eels_EF.get()) != nullptr) {
-        static_cast<Polydisperse_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
+    } else if (dynamic_cast<Polydisperse_Ewald_Electric_Field*>(eels_EF.get()) != nullptr) {
+        static_cast<Polydisperse_Ewald_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
     } else {
         // Ewald
-        static_cast<Ewald_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
+        static_cast<Monodisperse_Ewald_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
     }
 
     // Allocate results for this frame
@@ -566,13 +566,13 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
             std::vector<double> self_r(num_particles, 0.0), self_i(num_particles, 0.0);
             derived->setSelfCoef(self_r, self_i);
-        } else if (dynamic_cast<Polydisperse_Electric_Field*>(eels_EF.get()) != nullptr) {
-            auto* derived = static_cast<Polydisperse_Electric_Field*>(eels_EF.get());
+        } else if (dynamic_cast<Polydisperse_Ewald_Electric_Field*>(eels_EF.get()) != nullptr) {
+            auto* derived = static_cast<Polydisperse_Ewald_Electric_Field*>(eels_EF.get());
             derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
             std::vector<double> self_r(num_particles, 0.0), self_i(num_particles, 0.0);
             derived->setSelfCoef(self_r, self_i);
         } else {
-            auto* derived = static_cast<Ewald_Electric_Field*>(eels_EF.get());
+            auto* derived = static_cast<Monodisperse_Ewald_Electric_Field*>(eels_EF.get());
             derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
             std::vector<double> self_r(num_particles, 0.0), self_i(num_particles, 0.0);
             derived->setSelfCoef(self_r, self_i);
@@ -589,7 +589,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         for (size_t j = 0; j < num_field_points; ++j) {
             double Ez_r = host_E_point[(j * 3 + 2) * 2 + 0];
             double Ez_i = host_E_point[(j * 3 + 2) * 2 + 1];
-            Complex Eind_z = -Complex(Ez_r, Ez_i); // Negative sign matches Eind = -eels_EF.calculate()
+            Complex Eind_z = Complex(Ez_r, Ez_i);
 
             double phase = -2.0 * M_PI * omega_val * Z_pts[j] / v;
             Complex exp_factor = std::exp(Complex(0.0, phase));

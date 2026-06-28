@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import cuMPM
 
 def drude_dielectric(omega, gamma, omega_p, eps_inf):

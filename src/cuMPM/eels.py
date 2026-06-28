@@ -343,7 +343,7 @@ class EELS:
                 
                 # Retrieve EELS spectrum and dipoles
                 frame_eels = np.squeeze(frame_solver.get_eels())
-                frame_dips = np.squeeze(frame_solver.get_dipoles())
+                frame_dips = np.squeeze(frame_solver.get_dipoles(physical=False))
                 
                 if frame_eels.ndim == 0:
                     frame_eels = np.array([frame_eels.item()])
@@ -356,6 +356,9 @@ class EELS:
                 self._eels_results.append(frame_eels)
                 self._dips_results.append(frame_dips)
                 self._split_poss.append(split_pos)
+                if not hasattr(self, '_dips_scale_factors'):
+                    self._dips_scale_factors = []
+                self._dips_scale_factors.append(self.eps_m * (split_R[0] ** 3))
         else:
             x_part = positions[:, 0].tolist()
             y_part = positions[:, 1].tolist()
@@ -381,9 +384,14 @@ class EELS:
         else:
             return np.squeeze(self._solver.get_eels())
 
-    def get_dipoles(self):
+    def get_dipoles(self, physical=True):
         """
         Returns the computed induced dipoles.
+
+        Parameters
+        ----------
+        physical : bool, optional
+            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.
 
         Returns
         -------
@@ -397,15 +405,27 @@ class EELS:
         if self.split_dist > 0.0 and self.N_split > 1:
             if not self._dips_results:
                 return []
-            if len(self._dips_results) == 1:
-                return np.squeeze(self._dips_results[0])
-            try:
-                stacked = np.stack(self._dips_results)
-                return np.squeeze(stacked)
-            except ValueError:
-                return [np.squeeze(d) for d in self._dips_results]
+            if physical:
+                scaled_results = []
+                for dips_arr, factor in zip(self._dips_results, self._dips_scale_factors):
+                    scaled_results.append(dips_arr * factor)
+                if len(scaled_results) == 1:
+                    return np.squeeze(scaled_results[0])
+                try:
+                    stacked = np.stack(scaled_results)
+                    return np.squeeze(stacked)
+                except ValueError:
+                    return [np.squeeze(d) for d in scaled_results]
+            else:
+                if len(self._dips_results) == 1:
+                    return np.squeeze(self._dips_results[0])
+                try:
+                    stacked = np.stack(self._dips_results)
+                    return np.squeeze(stacked)
+                except ValueError:
+                    return [np.squeeze(d) for d in self._dips_results]
         else:
-            return np.squeeze(self._solver.get_dipoles())
+            return np.squeeze(self._solver.get_dipoles(physical))
 
     def get_positions(self):
         """

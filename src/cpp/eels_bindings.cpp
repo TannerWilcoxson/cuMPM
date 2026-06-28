@@ -19,8 +19,8 @@ py::array_t<double> get_eels_numpy(const EELS_Solver& self) {
     return result;
 }
 
-py::array_t<std::complex<double>> get_dipoles_numpy(const EELS_Solver& self) {
-    std::vector<std::complex<double>> vec = self.get_dipoles();
+py::array_t<std::complex<double>> get_dipoles_numpy(const EELS_Solver& self, bool physical = true) {
+    std::vector<std::complex<double>> vec = self.get_dipoles(physical);
     size_t num_frames = self.get_num_frames();
     size_t num_waves = self.get_num_wavevectors();
     size_t num_particles = self.get_num_particles();
@@ -127,7 +127,7 @@ void register_eels(py::module_& m) {
              py::arg("y_part"),
              py::arg("z_part"))
         .def("get_eels", &get_eels_numpy)
-        .def("get_dipoles", &get_dipoles_numpy)
+        .def("get_dipoles", &get_dipoles_numpy, py::arg("physical") = true)
         .def("get_num_frames", &EELS_Solver::get_num_frames)
         .def("get_num_particles", &EELS_Solver::get_num_particles)
         .def("get_num_wavevectors", &EELS_Solver::get_num_wavevectors);

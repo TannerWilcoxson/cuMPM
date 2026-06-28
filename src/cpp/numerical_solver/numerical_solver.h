@@ -14,6 +14,7 @@ protected:
     void gpu_vector_scale(double* d_y, Complex alpha, size_t size);
     void gpu_vector_sub(double* d_y, const double* d_x, const double* d_z, size_t size);
     Complex gpu_dot_product(const double* d_a, const double* d_b, size_t size, double* d_reduce_buf);
+    Complex gpu_dot_product_unconjugated(const double* d_a, const double* d_b, size_t size, double* d_reduce_buf);
     double gpu_norm(const double* d_a, size_t size, double* d_reduce_buf);
     void compute_Ax(double* d_x, double* d_Ax, Electric_Field* EF, size_t vec_size);
 

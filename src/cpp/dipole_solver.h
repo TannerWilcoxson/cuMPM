@@ -60,10 +60,10 @@ private:
     void decrease_indent() { if (indent_level > 0) indent_level--; }
 
     // Guess calculation
-    std::vector<Complex> calc_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx) const;
+    std::vector<Complex> calc_guess(const std::vector<Complex>& prev_dip, const std::vector<Complex>& prev_quad, size_t wavevec_idx) const;
     std::vector<Complex> calc_mean_field_guess(size_t wavevec_idx) const;
-    std::vector<Complex> calc_previous_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx) const;
-    std::vector<Complex> calc_derivative_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx) const;
+    std::vector<Complex> calc_previous_guess(const std::vector<Complex>& prev_dip, const std::vector<Complex>& prev_quad, size_t wavevec_idx) const;
+    std::vector<Complex> calc_derivative_guess(const std::vector<Complex>& prev_dip, const std::vector<Complex>& prev_quad, size_t wavevec_idx) const;
 
     // System solve (delegates to Numerical_Solver)
     std::vector<Complex> compute_spectrum(const std::vector<Complex>& initial_guess, std::vector<Complex>& frame_quad);
@@ -135,15 +135,15 @@ public:
     // Getters for results
     // Returns average effective polarizability over all processed frames
     // shape: num_wavevectors * K * 3
-    std::vector<Complex> get_eff_polarizability() const;
+    std::vector<Complex> get_eff_polarizability(bool physical = true) const;
 
     // Returns all calculated dipoles
     // shape: num_frames * num_wavevectors * num_particles * K * 3
-    std::vector<Complex> get_dipoles() const;
+    std::vector<Complex> get_dipoles(bool physical = true) const;
 
     // Returns all calculated quadrupoles
     // shape: num_frames * num_wavevectors * num_quads * K * 5
-    std::vector<Complex> get_quadrupoles() const;
+    std::vector<Complex> get_quadrupoles(bool physical = true) const;
 
     size_t get_num_frames() const { return num_frames; }
     size_t get_num_particles() const { return num_particles; }

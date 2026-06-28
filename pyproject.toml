@@ -24,3 +24,7 @@ doc = [
 [tool.scikit-build]
 cmake.version = ">=3.18"
 wheel.packages = ["src/cuMPM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

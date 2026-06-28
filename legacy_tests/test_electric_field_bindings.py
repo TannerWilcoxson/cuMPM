@@ -32,7 +32,7 @@ def test_ewald_electric_field_bindings():
     xi = 0.5
     calc_inter_dipole = True
     
-    ef = _cuMPM.Ewald_Electric_Field(box_x, box_y, box_z, errortol, xi, calc_inter_dipole)
+    ef = _cuMPM.Monodisperse_Ewald_Electric_Field(box_x, box_y, box_z, errortol, xi, calc_inter_dipole)
     
     # Getters for configuration
     assert ef.getBoxX() == box_x
@@ -104,7 +104,7 @@ def test_polydisperse_electric_field_bindings():
     calc_inter_dipole = True
     radii = [1.0, 2.0]
     
-    ef = _cuMPM.Polydisperse_Electric_Field(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, radii)
+    ef = _cuMPM.Polydisperse_Ewald_Electric_Field(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, radii)
     
     assert ef.getBoxX() == box_x
     assert ef.getXi() == xi

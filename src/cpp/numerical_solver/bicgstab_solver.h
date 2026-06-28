@@ -16,11 +16,13 @@ private:
     double* d_tmp = nullptr;
     double* d_reduce_buf = nullptr;
     size_t allocated_vec_size = 0;
+    size_t maxiter = 1000;
 
     void free_buffers();
 
 public:
-    BiCGSTAB_Solver() = default;
+    BiCGSTAB_Solver(size_t maxiter = 1000)
+        : maxiter(maxiter) {}
     ~BiCGSTAB_Solver() override;
 
     BiCGSTAB_Solver(const BiCGSTAB_Solver&) = delete;

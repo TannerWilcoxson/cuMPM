@@ -125,7 +125,15 @@ public:
                  const std::vector<double>& z_part);
 
     std::vector<double> get_eels() const { return eels; }
-    std::vector<Complex> get_dipoles() const { return dips; }
+    std::vector<Complex> get_dipoles(bool physical = true) const {
+        if (!physical) return dips;
+        double factor = eps_scale * std::pow(length_scale, 3.0);
+        std::vector<Complex> scaled_dips = dips;
+        for (auto& val : scaled_dips) {
+            val *= factor;
+        }
+        return scaled_dips;
+    }
     size_t get_num_frames() const { return num_frames; }
     size_t get_num_particles() const { return num_particles; }
     size_t get_num_wavevectors() const { return num_wavevectors; }

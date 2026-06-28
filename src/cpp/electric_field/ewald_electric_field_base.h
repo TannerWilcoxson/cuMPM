@@ -1,15 +1,17 @@
-#ifndef POLYDISPERSE_ELECTRIC_FIELD_H
-#define POLYDISPERSE_ELECTRIC_FIELD_H
+#ifndef EWALD_ELECTRIC_FIELD_BASE_H
+#define EWALD_ELECTRIC_FIELD_BASE_H
 
 #include "electric_field.h"
 #include <vector>
 #include <cstddef>
-#include <string>
 #include <memory>
+#include <complex>
 #include "neighbor_list.h"
 
-class Polydisperse_Electric_Field : public Electric_Field {
-private:
+using Complex = std::complex<double>;
+
+class Ewald_Electric_Field_Base : public Electric_Field {
+protected:
     double* d_x_part = nullptr;
     double* d_y_part = nullptr;
     double* d_z_part = nullptr;
@@ -20,7 +22,6 @@ private:
     double* d_z_field = nullptr;
     size_t num_field_points = 0;
 
-    // Box dimensions and Ewald parameters
     double box_x = 0.0;
     double box_y = 0.0;
     double box_z = 0.0;
@@ -29,88 +30,63 @@ private:
     double xi = 0.5;
     bool calc_inter_dipole = true;
 
-    // Radii properties
-    std::vector<double> h_radii;
-    double* d_radii = nullptr; // GPU pointer for particle radii
-    std::vector<double> unique_radii;
-    size_t num_unique_radii = 0;
-    size_t num_pairs_unique = 0; // M*(M+1)/2
-    int* d_radius_idx = nullptr; // GPU pointer for each particle's radius index
-    int* d_col_ind = nullptr;    // GPU pointer for M x M column index map
-    double* d_self_perp_uniq = nullptr; // GPU pointer for self perp for each unique radius
-
-    // Grid properties
     int num_grid[3] = {0, 0, 0};
     double grid_spacing[3] = {0.0, 0.0, 0.0};
-    double eta_scalar = 0.0;
-    int P_support = 0;
+    double spectral_split[3] = {0.0, 0.0, 0.0};
 
-    // Neighbor list manager
     std::unique_ptr<NeighborList> neighbor_list;
 
-    // Device pointers for real space tables
     double* d_r_table = nullptr;
-    double* d_field_dip_1 = nullptr; // Ep_perp (table_size x num_pairs_unique)
-    double* d_field_dip_2 = nullptr; // Ep_para (table_size x num_pairs_unique)
+    double* d_field_dip_1 = nullptr;
+    double* d_field_dip_2 = nullptr;
     size_t table_size = 0;
 
-    // Device pointers for Ewald precalculations
     int* d_offset = nullptr;
     double* d_offsetxyz = nullptr;
-    double* d_scale_coef = nullptr; // Scalar grid scale factors
+    double* d_scale_coef = nullptr;
     size_t num_offsets = 0;
 
-    // Coordinate update tracking flags
     bool particles_updated = false;
     bool field_points_updated = false;
 
-    // GPU device pointer for contiguous complex dipoles
-    // Layout: num_particles * 3 components * 2 (real, imag)
     double* d_dipoles = nullptr;
     bool dipoles_updated = false;
 
-    // GPU device pointers for complex self coefficients
     double* d_self_coef_r = nullptr;
     double* d_self_coef_i = nullptr;
 
-    // GPU device pointers for spread precalcs
-    double* d_spread_coef = nullptr; // Stores 3-vector coefficients (num_spread * 3)
-    int* d_spread_idxs = nullptr;     // Stores grid indices (num_spread * 3)
+    double* d_spread_coef = nullptr;
+    int* d_spread_idxs = nullptr;
     size_t num_spread = 0;
 
-    // GPU device pointers for contract precalcs
     double* d_E_point = nullptr;
     int* d_particle_index = nullptr;
-    double* d_contract_coef = nullptr; // Stores 3-vector coefficients (num_contract * 3)
-    int* d_contract_idxs = nullptr;     // Stores grid indices (num_contract * 3)
+    double* d_contract_coef = nullptr;
+    int* d_contract_idxs = nullptr;
     size_t num_contract = 0;
 
-    // GPU device pointers for real space precalcs
     double* d_perp = nullptr;
     double* d_para = nullptr;
+    double self_coef = 0.0;
 
-    // Grid and FFT members
-    double* d_fE_grid = nullptr;  // Scalar grid of size grid_voxels (complex, Z2Z format)
-    double* d_fEs_grid = nullptr; // Shuffled scalar grid
+    double* d_fE_grid = nullptr;
+    double* d_fEs_grid = nullptr;
     int fft_plan = 0;
 
-    // Quadrupole member variables
     bool solve_quadrupoles = false;
     std::vector<int> quad_idxs;
     int* d_quad_idxs = nullptr;
     int* d_quad_map = nullptr;
     size_t num_quads = 0;
 
-    // Device pointers for quadrupole real space tables
-    double* d_field_quad_1 = nullptr; // F_quad_1 (table_size x num_pairs_unique)
-    double* d_field_quad_2 = nullptr; // F_quad_2
-    double* d_field_quad_3 = nullptr; // F_quad_3
-    double* d_grad_quad_1 = nullptr;  // G_quad_1
-    double* d_grad_quad_2 = nullptr;  // G_quad_2
-    double* d_grad_quad_3 = nullptr;  // G_quad_3
-    double* d_grad_quad_4 = nullptr;  // G_quad_4
+    double* d_field_quad_1 = nullptr;
+    double* d_field_quad_2 = nullptr;
+    double* d_field_quad_3 = nullptr;
+    double* d_grad_quad_1 = nullptr;
+    double* d_grad_quad_2 = nullptr;
+    double* d_grad_quad_3 = nullptr;
+    double* d_grad_quad_4 = nullptr;
 
-    // Device pointers for quadrupole neighbor interpolation
     double* d_perp_Q = nullptr;
     double* d_para_Q = nullptr;
     double* d_Q3 = nullptr;
@@ -119,41 +95,34 @@ private:
     double* d_G3 = nullptr;
     double* d_G4 = nullptr;
 
-    // Quadrupole grid and FFT members
     double* d_fG_grid = nullptr;
     double* d_fGs_grid = nullptr;
     int fft_plan_G = 0;
 
-    // Reciprocal scaling coefficients
     double* d_scale_coef_Q_imag = nullptr;
     double* d_scale_coef_GP_imag = nullptr;
     double* d_scale_coef_GQ_real = nullptr;
     double* d_Qfactor = nullptr;
     double* d_Qfactor_dot = nullptr;
 
-    // Temporary gradient buffer
     double* d_G_point = nullptr;
 
-    double* d_spread_coef_Q = nullptr;
-    double* d_contract_coef_Q = nullptr;
-
-    void electricField();
+    virtual void electricField() = 0;
 
 public:
-    Polydisperse_Electric_Field(double box_x, double box_y, double box_z,
-                                double errortol,
-                                double xi,
-                                bool calc_inter_dipole,
-                                const std::vector<double>& particle_radii,
-                                bool solve_quadrupoles = false,
-                                const std::vector<int>& quad_idxs = {});
+    Ewald_Electric_Field_Base(double box_x, double box_y, double box_z,
+                              double errortol,
+                              double xi,
+                              bool calc_inter_dipole,
+                              bool solve_quadrupoles = false,
+                              const std::vector<int>& quad_idxs = {});
 
-    ~Polydisperse_Electric_Field();
+    virtual ~Ewald_Electric_Field_Base();
 
-    Polydisperse_Electric_Field(const Polydisperse_Electric_Field&) = delete;
-    Polydisperse_Electric_Field& operator=(const Polydisperse_Electric_Field&) = delete;
+    Ewald_Electric_Field_Base(const Ewald_Electric_Field_Base&) = delete;
+    Ewald_Electric_Field_Base& operator=(const Ewald_Electric_Field_Base&) = delete;
 
-    // Getters
+    // Getters / Setters
     double* getDevXPart() const { return d_x_part; }
     double* getDevYPart() const { return d_y_part; }
     double* getDevZPart() const { return d_z_part; }
@@ -171,6 +140,7 @@ public:
     double getRc() const { return rc; }
     double getXi() const { return xi; }
     bool getCalcInterDipole() const { return calc_inter_dipole; }
+    double getSelfCoef() const { return self_coef; }
 
     bool getParticlesUpdated() const { return particles_updated; }
     bool getFieldPointsUpdated() const { return field_points_updated; }
@@ -199,10 +169,9 @@ public:
 
     const int* getNumGrid() const { return num_grid; }
     const double* getGridSpacing() const { return grid_spacing; }
+    const double* getSpectralSplit() const { return spectral_split; }
     double* getDevFEGrid() const { return d_fE_grid; }
     double* getDevFEsGrid() const { return d_fEs_grid; }
-    double getEta() const { return eta_scalar; }
-    int getP() const { return P_support; }
 
     int* getDevNeighborList() const { return neighbor_list ? neighbor_list->get_list() : nullptr; }
     int* getDevNeighborCounts() const { return neighbor_list ? neighbor_list->get_counts() : nullptr; }
@@ -218,9 +187,34 @@ public:
     double* getDevScaleCoef() const { return d_scale_coef; }
     size_t getNumOffsets() const { return num_offsets; }
 
+    bool getSolveQuadrupoles() const { return solve_quadrupoles; }
+    size_t getNumQuads() const { return num_quads; }
+
+    // Verification methods
+    void getNeighborListHost(std::vector<int>& host_list, std::vector<int>& host_counts) const;
+    void getRealSpaceTablesHost(std::vector<double>& host_r_table,
+                                std::vector<double>& host_field_dip_1,
+                                std::vector<double>& host_field_dip_2) const;
+    void getDipolesHost(std::vector<double>& host_dip_x,
+                        std::vector<double>& host_dip_y,
+                        std::vector<double>& host_dip_z) const;
+    void getDipolesComplexHost(std::vector<double>& host_dip_xr, std::vector<double>& host_dip_xi,
+                               std::vector<double>& host_dip_yr, std::vector<double>& host_dip_yi,
+                               std::vector<double>& host_dip_zr, std::vector<double>& host_dip_zi) const;
+    void getSpreadPrecalcsHost(std::vector<double>& host_spread_coef,
+                               std::vector<int>& host_spread_idxs) const;
+    void getContractPrecalcsHost(std::vector<double>& host_E_point,
+                                 std::vector<int>& host_particle_index,
+                                 std::vector<double>& host_contract_coef,
+                                 std::vector<int>& host_contract_idxs) const;
+    void getRealSpacePrecalcsHost(double& host_self_perp,
+                                  std::vector<double>& host_perp,
+                                  std::vector<double>& host_para) const;
+    std::vector<Complex> getEPointHost() const;
+    void clearEPoint();
+
+    // Coordinate update methods
     void computeNeighborList(int max_neighbors_per_particle = 128);
-    void computeRealSpaceTables();
-    void computePrecalculations();
 
     void updateParticleCoordinates(const std::vector<double>& x_part,
                                    const std::vector<double>& y_part,
@@ -238,27 +232,31 @@ public:
                               const std::vector<double>& dip_yr, const std::vector<double>& dip_yi,
                               const std::vector<double>& dip_zr, const std::vector<double>& dip_zi);
 
+    void updateQuadrupoles(const std::vector<double>& quad_1,
+                           const std::vector<double>& quad_2,
+                           const std::vector<double>& quad_3,
+                           const std::vector<double>& quad_4,
+                           const std::vector<double>& quad_5);
+
+    void updateQuadrupolesComplex(const std::vector<double>& quad_1r, const std::vector<double>& quad_1i,
+                                  const std::vector<double>& quad_2r, const std::vector<double>& quad_2i,
+                                  const std::vector<double>& quad_3r, const std::vector<double>& quad_3i,
+                                  const std::vector<double>& quad_4r, const std::vector<double>& quad_4i,
+                                  const std::vector<double>& quad_5r, const std::vector<double>& quad_5i);
+
     void setSelfCoef(const std::vector<double>& self_coef_r, const std::vector<double>& self_coef_i) override;
     void setSelfCoef(double val_r, double val_i = 0.0);
 
-    void spreadPrecalcs();
-    void contractPrecalcs();
-    void realSpacePrecalcs();
+    virtual void spreadPrecalcs() = 0;
+    virtual void contractPrecalcs() = 0;
+    virtual void realSpacePrecalcs() = 0;
 
-    void spread(double* d_fE_grid);
-    void scale(double* d_fE_grid);
-    void contract(double* d_E_point, const double* d_Es_grid);
-    void realSpace(double* d_E_point);
+    virtual void spread(double* d_fE_grid) = 0;
+    virtual void scale(double* d_fE_grid) = 0;
+    virtual void contract(double* d_E_point, const double* d_Es_grid) = 0;
+    virtual void realSpace(double* d_E_point) = 0;
 
-    bool getSolveQuadrupoles() const { return solve_quadrupoles; }
-    size_t getNumQuads() const { return num_quads; }
-    double* getDevGPoint() const { return d_G_point; }
-    int* getDevQuadIdxs() const { return d_quad_idxs; }
-    int* getDevQuadMap() const { return d_quad_map; }
-    double* getDevSpreadCoefQ() const { return d_spread_coef_Q; }
-    double* getDevContractCoefQ() const { return d_contract_coef_Q; }
-
-    void calculate() override;
+    void calculate() override = 0;
 };
 
-#endif // POLYDISPERSE_ELECTRIC_FIELD_H
+#endif // EWALD_ELECTRIC_FIELD_BASE_H

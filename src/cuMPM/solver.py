@@ -139,38 +139,53 @@ class dipole_solver:
             z_part = positions[frame_idx, :, 2].tolist()
             self._solver.compute(x_part, y_part, z_part)
 
-    def get_eff_polarizability(self):
+    def get_eff_polarizability(self, physical=True):
         """
-        Returns the effective polarizability by averaging all particle dipoles over all frames.
+        Returns the effective polarizability by averaging all particle dipoles over all frames
         
+        Parameters
+        ----------
+        physical : bool, optional
+            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.
+
         Returns
         -------
         alpha_eff : numpy.ndarray
             Average polarizability with shape (num_wavelengths, 3, 3) (squeezed)
         """
-        return np.squeeze(self._solver.get_eff_polarizability())
+        return np.squeeze(self._solver.get_eff_polarizability(physical))
 
-    def get_dipoles(self):
+    def get_dipoles(self, physical=True):
         """
         Returns the dipoles calculated for all frames.
         
+        Parameters
+        ----------
+        physical : bool, optional
+            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.
+
         Returns
         -------
         p : numpy.ndarray
             Dipoles of each particle with shape (num_frames, num_wavelengths, num_particles, 3, 3) (squeezed)
         """
-        return np.squeeze(self._solver.get_dipoles())
+        return np.squeeze(self._solver.get_dipoles(physical))
 
-    def get_quadrupoles(self):
+    def get_quadrupoles(self, physical=True):
         """
         Returns the quadrupoles calculated for all frames.
         
+        Parameters
+        ----------
+        physical : bool, optional
+            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.
+
         Returns
         -------
         Q : numpy.ndarray
             Quadrupoles of each particle in the quadrupole subset with shape (num_frames, num_wavelengths, num_quads, 3, 5) (squeezed)
         """
-        return np.squeeze(self._solver.get_quadrupoles())
+        return np.squeeze(self._solver.get_quadrupoles(physical))
 
     def get_cap_dip(self):
         """

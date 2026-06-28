@@ -1,207 +1,230 @@
 import numpy as np
-import cuMPM
+import pytest
+from cuMPM.dev import DirectElectricField, MonodisperseEwaldElectricField, PolydisperseEwaldElectricField
 
-def drude_dielectric(omega, gamma, omega_p, eps_inf):
-    return eps_inf - omega_p**2 / (omega**2 + 1j * omega * gamma)
-
-def test_monodisperse_equivalence():
-    d = 11.7
-    d_opt = 10.0
-    eps_m = 2.13
-    omega = np.linspace(1000, 7000, 10)
-
-    omega_p1, gamma1, eps_inf1 = 12313, 681, 4
-    eps_p1 = drude_dielectric(omega, gamma1, omega_p1, eps_inf1)
-
-    N = 10  # 100 particles
-    L = d * N
-    A = np.arange(0, L, d)
-    y, x = np.meshgrid(A, A)
-    pos = np.array([x, y, np.zeros_like(x)]).T.reshape(N**2, 3)
-    box = np.array([L, L, 50 * d])
-
-    num_particles = N**2
-    eps_p_mixed = np.zeros((len(omega), num_particles), dtype=complex)
-    for i in range(num_particles):
-        eps_p_mixed[:, i] = eps_p1
-
-    # Monodisperse solver (Option 1)
-    mpm_mono = cuMPM.dipole_solver(
-        box, eps_p_mixed, radius=d_opt/2, eps_m=eps_m, tol=1e-9, field_type="monodisperse"
-    )
-    mpm_mono.compute(pos)
-    alpha_mono = mpm_mono.get_eff_polarizability()
-    dips_mono = mpm_mono.get_dipoles()
-
-    # Polydisperse solver on identical sizes (Option 2)
-    mpm_poly_on_mono = cuMPM.dipole_solver(
-        box, eps_p_mixed, radius=d_opt/2, eps_m=eps_m, tol=1e-9, field_type="polydisperse"
-    )
-    mpm_poly_on_mono.compute(pos)
-    alpha_poly_on_mono = mpm_poly_on_mono.get_eff_polarizability()
-    dips_poly_on_mono = mpm_poly_on_mono.get_dipoles()
-
-    diff_alpha = np.abs(alpha_mono - alpha_poly_on_mono)
-    max_diff_alpha = np.max(diff_alpha)
-
-    diff_dips = np.abs(dips_mono - dips_poly_on_mono)
-    max_diff_dips = np.max(diff_dips)
-
-    assert max_diff_alpha < 1e-4, f"Option 1 and Option 2 eff polarizabilities do not match! Max diff: {max_diff_alpha}"
-    assert max_diff_dips < 1e-4, f"Option 1 and Option 2 particle dipoles do not match! Max diff: {max_diff_dips}"
-
-
-def test_polydisperse_mixed_sizes():
-    d = 11.7
-    eps_m = 2.13
-    omega = np.linspace(1000, 7000, 10)
-
-    omega_p1, gamma1, eps_inf1 = 12313, 681, 4
-    eps_p1 = drude_dielectric(omega, gamma1, omega_p1, eps_inf1)
-
-    N = 10  # 100 particles
-    L = d * N
-    A = np.arange(0, L, d)
-    y, x = np.meshgrid(A, A)
-    pos = np.array([x, y, np.zeros_like(x)]).T.reshape(N**2, 3)
-    box = np.array([L, L, 50 * d])
-
-    num_particles = N**2
-    eps_p_mixed = np.zeros((len(omega), num_particles), dtype=complex)
-    for i in range(num_particles):
-        eps_p_mixed[:, i] = eps_p1
-
-    # Mixed sizes: alternating 4.0 and 6.0 nm radius
-    radii = np.zeros(num_particles)
-    for i in range(num_particles):
-        radii[i] = 4.0 if i % 2 == 0 else 6.0
-
-    mpm_poly = cuMPM.dipole_solver(
-        box, eps_p_mixed, radius=radii, eps_m=eps_m, tol=1e-6, field_type="auto"
-    )
-    mpm_poly.compute(pos)
-    alpha_poly = mpm_poly.get_eff_polarizability()
-
-    assert alpha_poly.shape == (len(omega), 3, 3)
-    assert not np.any(np.isnan(alpha_poly))
-
-
-def test_direct_vs_ewald_large_box():
-    """
-    Verify that field_type='direct' (open BC) agrees with the Ewald-based
-    monodisperse solver when the box is very large relative to the cluster,
-    so that periodic images contribute negligibly.
+def test_direct_electric_field():
+    radius = np.array([1.0, 1.2, 1.5])
+    ef = DirectElectricField(radius)
     
-    We use a small cluster (5 particles) in a very large box and compare
-    the effective polarizabilities from both methods.
-    """
-    # A small cluster of 5 particles
-    d = 5.0          # inter-particle distance (nm)
-    radius = 2.0     # particle radius (nm)
-    eps_p = 4.0 + 0.2j
-    eps_m = 1.0
+    x = np.array([0.0, 2.0, 4.0])
+    y = np.array([0.0, 0.0, 0.0])
+    z = np.array([0.0, 0.0, 0.0])
+    ef.update_particle_coordinates(x, y, z)
+    ef.update_field_coordinates([1.0, 3.0], [0.0, 0.0], [0.0, 0.0])
+    
+    ef.update_dipoles_complex(
+        np.ones(3), np.zeros(3),
+        np.zeros(3), np.zeros(3),
+        np.zeros(3), np.zeros(3)
+    )
+    ef.set_self_coef(np.ones(3), np.zeros(3))
+    
+    assert ef.num_particles == 3
+    assert ef.num_field_points == 2
+    
+    ef.calculate()
+    epoint = ef.get_epoint_host()
+    assert epoint.shape == (2, 3)
+    assert not np.any(np.isnan(epoint))
 
-    # Simple 5-particle cross arrangement
-    pos = np.array([
-        [0.0,  0.0,  0.0],
-        [d,    0.0,  0.0],
-        [-d,   0.0,  0.0],
-        [0.0,  d,    0.0],
-        [0.0, -d,    0.0],
-    ])
-
-    # Box >> cluster size: periodic images are ~100 nm away
-    L = 30.0
-    box = [L, L, L]
-
-    solver_ewald = cuMPM.dipole_solver(box, eps_p, radius=radius, eps_m=eps_m,
-                                       tol=1e-5, field_type='monodisperse', quiet=True)
-    solver_ewald.compute(pos)
-    alpha_ewald = solver_ewald.get_eff_polarizability()
-
-    solver_direct = cuMPM.dipole_solver(box, eps_p, radius=radius, eps_m=eps_m,
-                                        tol=1e-5, field_type='direct', quiet=True)
-    solver_direct.compute(pos)
-    alpha_direct = solver_direct.get_eff_polarizability()
-
-    # In the large-box limit, the two methods should agree within ~0.5%
-    np.testing.assert_allclose(alpha_ewald, alpha_direct, rtol=5e-3, atol=1e-5)
-
-
-def test_quadrupoles():
-    """
-    Verify that the joint dipole-quadrupole solver in C++ matches
-    a Python implementation built from the reference quadrupole_field.py equations.
-    """
-    import sys
-    sys.path.append("/home/tanner/cuMPM")
-    from quadrupole_field import Electric_Field as PyElectric_Field
-
-    box = np.array([100.0, 100.0, 100.0])
-    xi = 0.4
+def test_ewald_equivalence_and_splits():
+    box_x, box_y, box_z = 20.0, 20.0, 20.0
     errortol = 1e-6
-    eps_p = 4.5 + 0.2j
-    radius = 1.0
-    eps_m = 1.0
+    xi = 0.5
+    calc_inter_dipole = True
 
     pos = np.array([
-        [10.0, 10.0, 10.0],
-        [20.0, 20.0, 20.0]
+        [0.0, 0.0, 0.0],
+        [5.0, 0.0, 0.0],
+        [10.0, 0.0, 0.0],
+        [15.0, 0.0, 0.0]
     ])
     num_particles = len(pos)
+    x, y, z = pos[:, 0], pos[:, 1], pos[:, 2]
 
-    # C++ Solver
-    solver_cpp = cuMPM.dipole_solver(
-        box, eps_p, radius=radius, eps_m=eps_m, xi=xi, tol=1e-8,
-        field_type='monodisperse', quiet=True, quadrupoles=True
+    # Non-zero dipoles and self-coefficients
+    dip_x = np.array([1.0, 1.0, 1.0, 1.0])
+    dip_y = np.zeros(num_particles)
+    dip_z = np.zeros(num_particles)
+    self_coef_r = np.ones(num_particles)
+    self_coef_i = np.zeros(num_particles)
+
+    # 1. Monodisperse Ewald
+    ef_mono = MonodisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole)
+    ef_mono.update_particle_coordinates(x, y, z)
+    ef_mono.update_field_coordinates(x, y, z)
+    ef_mono.update_dipoles(dip_x, dip_y, dip_z)
+    ef_mono.set_self_coef(self_coef_r, self_coef_i)
+
+    # 2. Polydisperse Ewald (initialized with radius = 1.0 for monodisperse equivalence)
+    ef_poly = PolydisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles)
+    ef_poly.update_particle_coordinates(x, y, z)
+    ef_poly.update_field_coordinates(x, y, z)
+    ef_poly.update_dipoles(dip_x, dip_y, dip_z)
+    ef_poly.set_self_coef(self_coef_r, self_coef_i)
+
+    # Calculate fields
+    ef_mono.calculate()
+    E_tot_mono = ef_mono.get_epoint_host()
+
+    ef_poly.calculate()
+    E_tot_poly = ef_poly.get_epoint_host()
+
+    # Assert mono vs poly total field equivalence
+    # Due to different FFT grid size rules and spectral representations, tolerance is 1e-5
+    np.testing.assert_allclose(E_tot_mono, E_tot_poly, rtol=1e-5, atol=1e-5)
+
+    # Test split fields consistency: E_tot = E_real + E_inv
+    E_real_mono = ef_mono.compute_real_field()
+    E_inv_mono = ef_mono.compute_inverse_field()
+    np.testing.assert_allclose(E_tot_mono, E_real_mono + E_inv_mono, rtol=1e-12, atol=1e-12)
+
+    E_real_poly = ef_poly.compute_real_field()
+    E_inv_poly = ef_poly.compute_inverse_field()
+    np.testing.assert_allclose(E_tot_poly, E_real_poly + E_inv_poly, rtol=1e-12, atol=1e-12)
+
+def test_ewald_quadrupoles_equivalence_and_splits():
+    box_x, box_y, box_z = 20.0, 20.0, 20.0
+    errortol = 1e-6
+    xi = 0.5
+    calc_inter_dipole = True
+
+    pos = np.array([
+        [0.0, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+        [8.0, 0.0, 0.0],
+        [12.0, 0.0, 0.0]
+    ])
+    num_particles = len(pos)
+    x, y, z = pos[:, 0], pos[:, 1], pos[:, 2]
+
+    dip_x = np.ones(num_particles)
+    dip_y = np.zeros(num_particles)
+    dip_z = np.zeros(num_particles)
+    self_coef_r = np.ones(num_particles)
+    self_coef_i = np.zeros(num_particles)
+
+    # Quadrupoles setup
+    quad_idxs = [0, 2]
+    quad_1 = np.ones(len(quad_idxs))
+    quad_2 = np.zeros(len(quad_idxs))
+    quad_3 = np.zeros(len(quad_idxs))
+    quad_4 = np.zeros(len(quad_idxs))
+    quad_5 = np.zeros(len(quad_idxs))
+
+    # 1. Monodisperse Ewald with Quadrupoles
+    ef_mono = MonodisperseEwaldElectricField(
+        box_x, box_y, box_z, errortol, xi, calc_inter_dipole,
+        solve_quadrupoles=True, quad_idxs=quad_idxs
     )
-    solver_cpp.compute(pos)
-    dips_cpp = solver_cpp.get_dipoles()
-    quads_cpp = solver_cpp.get_quadrupoles()
+    ef_mono.update_particle_coordinates(x, y, z)
+    ef_mono.update_field_coordinates(x, y, z)
+    ef_mono.update_dipoles(dip_x, dip_y, dip_z)
+    ef_mono.update_quadrupoles(quad_1, quad_2, quad_3, quad_4, quad_5)
+    ef_mono.set_self_coef(self_coef_r, self_coef_i)
 
-    # Squeezed C++ solution vectors
-    assert dips_cpp.shape == (num_particles, 3, 3)
-    assert quads_cpp.shape == (num_particles, 3, 5)
+    # 2. Polydisperse Ewald with Quadrupoles (radius = 1.0)
+    ef_poly = PolydisperseEwaldElectricField(
+        box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles,
+        solve_quadrupoles=True, quad_idxs=quad_idxs
+    )
+    ef_poly.update_particle_coordinates(x, y, z)
+    ef_poly.update_field_coordinates(x, y, z)
+    ef_poly.update_dipoles(dip_x, dip_y, dip_z)
+    ef_poly.update_quadrupoles(quad_1, quad_2, quad_3, quad_4, quad_5)
+    ef_poly.set_self_coef(self_coef_r, self_coef_i)
 
-    # Let's build the joint Python system matrix A_py to compare
-    N_dofs = 3 * num_particles + 5 * num_particles
-    A_py = np.zeros((N_dofs, N_dofs), dtype=complex)
-    
-    ef_py = PyElectric_Field(box, xi, errortol, eps_p=eps_p)
-    ef_py.set_points(pos)
-    ef_py.set_dip_pos(pos)
+    # Calculate fields
+    ef_mono.calculate()
+    E_tot_mono, G_tot_mono = ef_mono.get_epoint_host()
 
-    for col in range(N_dofs):
-        P_in = np.zeros((num_particles, 3), dtype=complex)
-        Q_in = np.zeros((num_particles, 5), dtype=complex)
-        if col < 3 * num_particles:
-            p_idx = col // 3
-            p_dim = col % 3
-            P_in[p_idx, p_dim] = 1.0
-        else:
-            q_col = col - 3 * num_particles
-            q_idx = q_col // 5
-            q_dim = q_col % 5
-            Q_in[q_idx, q_dim] = 1.0
-        
-        ef_py.set_dipoles(P_in, Q_in)
-        E_out, G_out = ef_py.calculate()
-        
-        col_vec = np.zeros(N_dofs, dtype=complex)
-        col_vec[:3*num_particles] = E_out.ravel()
-        col_vec[3*num_particles:] = G_out.ravel()
-        A_py[:, col] = col_vec
+    ef_poly.calculate()
+    E_tot_poly, G_tot_poly = ef_poly.get_epoint_host()
 
-    for dim in range(3):
-        b = np.zeros(N_dofs, dtype=complex)
-        for p in range(num_particles):
-            b[p * 3 + dim] = 1.0
-            
-        sol_py = np.linalg.solve(A_py, b)
-        
-        dips_py = sol_py[:3*num_particles].reshape(num_particles, 3)
-        quads_py = sol_py[3*num_particles:].reshape(num_particles, 5)
-        
-        np.testing.assert_allclose(dips_cpp[:, dim], dips_py, rtol=1e-5, atol=1e-5)
-        np.testing.assert_allclose(quads_cpp[:, dim], quads_py, rtol=1e-5, atol=1e-5)
+    # Compare E_tot (dipole field) and G_tot (quadrupole gradient field)
+    # The real-space fields are identical, but minor reciprocal space differences exist due to different FFT/divergence grid formulations
+    np.testing.assert_allclose(E_tot_mono, E_tot_poly, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(G_tot_mono, G_tot_poly, rtol=5e-3, atol=5e-3)
+
+
+    # Test split fields consistency: E_tot = E_real + E_inv
+    E_real_mono_dip, E_real_mono_quad = ef_mono.compute_real_field()
+    E_inv_mono_dip, E_inv_mono_quad = ef_mono.compute_inverse_field()
+    np.testing.assert_allclose(E_tot_mono, E_real_mono_dip + E_inv_mono_dip, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(G_tot_mono, E_real_mono_quad + E_inv_mono_quad, rtol=1e-12, atol=1e-12)
+
+    E_real_poly_dip, E_real_poly_quad = ef_poly.compute_real_field()
+    E_inv_poly_dip, E_inv_poly_quad = ef_poly.compute_inverse_field()
+    np.testing.assert_allclose(E_tot_poly, E_real_poly_dip + E_inv_poly_dip, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(G_tot_poly, E_real_poly_quad + E_inv_poly_quad, rtol=1e-12, atol=1e-12)
+
+
+def test_polydisperse_quadrupole_subset_electric_fields():
+    """
+    Directly compare the Monodisperse and Polydisperse Ewald electric field
+    wrappers when a quadrupole subset (quad_idxs) is specified.
+    """
+    d = 10.0
+    xi = 0.4
+    tol = 1e-6
+    radius = 1.0
+
+    # 4 particles in a line
+    pos = np.array([
+        [0.0, 0.0, 0.0],
+        [d, 0.0, 0.0],
+        [2*d, 0.0, 0.0],
+        [3*d, 0.0, 0.0]
+    ])
+    num_particles = len(pos)
+    box = np.array([5*d, 5*d, 5*d])
+
+    quad_idxs = [0, 2]
+    solve_quadrupoles = True
+
+    # Initialize field classes
+    ef_mono = MonodisperseEwaldElectricField(
+        box[0], box[1], box[2], tol, xi, True, solve_quadrupoles, quad_idxs
+    )
+    ef_poly = PolydisperseEwaldElectricField(
+        box[0], box[1], box[2], tol, xi, True, [radius] * num_particles, solve_quadrupoles, quad_idxs
+    )
+
+    # Set coordinates
+    x = pos[:, 0]
+    y = pos[:, 1]
+    z = pos[:, 2]
+    ef_mono.update_particle_coordinates(x, y, z)
+    ef_mono.update_field_coordinates(x, y, z)
+    ef_poly.update_particle_coordinates(x, y, z)
+    ef_poly.update_field_coordinates(x, y, z)
+
+    # Set self coefficients
+    self_coef_r = np.ones(num_particles) * 1.5
+    self_coef_i = np.ones(num_particles) * 0.1
+    ef_mono.set_self_coef(self_coef_r, self_coef_i)
+    ef_poly.set_self_coef(self_coef_r, self_coef_i)
+
+    # Set dipoles & quadrupoles (random complex arrays)
+    np.random.seed(42)
+    P = np.random.rand(num_particles, 3) + 1j * np.random.rand(num_particles, 3)
+    Q = np.random.rand(len(quad_idxs), 5) + 1j * np.random.rand(len(quad_idxs), 5)
+
+    ef_mono.update_dipoles_complex(P[:, 0].real, P[:, 0].imag, P[:, 1].real, P[:, 1].imag, P[:, 2].real, P[:, 2].imag)
+    ef_mono.update_quadrupoles_complex(Q[:, 0].real, Q[:, 0].imag, Q[:, 1].real, Q[:, 1].imag, Q[:, 2].real, Q[:, 2].imag, Q[:, 3].real, Q[:, 3].imag, Q[:, 4].real, Q[:, 4].imag)
+
+    ef_poly.update_dipoles_complex(P[:, 0].real, P[:, 0].imag, P[:, 1].real, P[:, 1].imag, P[:, 2].real, P[:, 2].imag)
+    ef_poly.update_quadrupoles_complex(Q[:, 0].real, Q[:, 0].imag, Q[:, 1].real, Q[:, 1].imag, Q[:, 2].real, Q[:, 2].imag, Q[:, 3].real, Q[:, 3].imag, Q[:, 4].real, Q[:, 4].imag)
+
+    # Calculate
+    ef_mono.calculate()
+    ef_poly.calculate()
+
+    # Get results
+    E_mono, G_mono = ef_mono.get_epoint_host()
+    E_poly, G_poly = ef_poly.get_epoint_host()
+
+    # Assert matching
+    np.testing.assert_allclose(E_mono, E_poly, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(G_mono, G_poly, rtol=1e-3, atol=1e-3)
 

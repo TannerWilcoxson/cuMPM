@@ -12,11 +12,14 @@ private:
     double* d_V = nullptr;
     double* d_reduce_buf = nullptr;
     size_t allocated_vec_size = 0;
+    size_t restart = 50;
+    size_t maxiter = 1000;
 
     void free_buffers();
 
 public:
-    GMRES_Solver() = default;
+    GMRES_Solver(size_t restart = 50, size_t maxiter = 1000)
+        : restart(restart), maxiter(maxiter) {}
     ~GMRES_Solver() override;
 
     GMRES_Solver(const GMRES_Solver&) = delete;

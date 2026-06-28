@@ -7,8 +7,8 @@
 namespace py = pybind11;
 
 // Helper to convert std::vector<Complex> to a shaped NumPy array for eff_polarizability
-py::array_t<std::complex<double>> get_eff_polarizability_numpy(const Dipole_Solver& self) {
-    std::vector<std::complex<double>> vec = self.get_eff_polarizability();
+py::array_t<std::complex<double>> get_eff_polarizability_numpy(const Dipole_Solver& self, bool physical = true) {
+    std::vector<std::complex<double>> vec = self.get_eff_polarizability(physical);
     size_t num_waves = self.get_num_wavevectors();
     size_t K = self.get_num_incident_polarizations();
     
@@ -21,8 +21,8 @@ py::array_t<std::complex<double>> get_eff_polarizability_numpy(const Dipole_Solv
 }
 
 // Helper to convert std::vector<Complex> to a shaped NumPy array for dipoles
-py::array_t<std::complex<double>> get_dipoles_numpy(const Dipole_Solver& self) {
-    std::vector<std::complex<double>> vec = self.get_dipoles();
+py::array_t<std::complex<double>> get_dipoles_numpy(const Dipole_Solver& self, bool physical = true) {
+    std::vector<std::complex<double>> vec = self.get_dipoles(physical);
     size_t num_frames = self.get_num_frames();
     size_t num_waves = self.get_num_wavevectors();
     size_t num_particles = self.get_num_particles();
@@ -43,8 +43,8 @@ py::array_t<std::complex<double>> get_dipoles_numpy(const Dipole_Solver& self) {
 }
 
 // Helper to convert std::vector<Complex> to a shaped NumPy array for quadrupoles
-py::array_t<std::complex<double>> get_quadrupoles_numpy(const Dipole_Solver& self) {
-    std::vector<std::complex<double>> vec = self.get_quadrupoles();
+py::array_t<std::complex<double>> get_quadrupoles_numpy(const Dipole_Solver& self, bool physical = true) {
+    std::vector<std::complex<double>> vec = self.get_quadrupoles(physical);
     size_t num_frames = self.get_num_frames();
     size_t num_waves = self.get_num_wavevectors();
     size_t num_quads = self.get_num_quads();
@@ -150,9 +150,9 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("x_part"),
              py::arg("y_part"),
              py::arg("z_part"))
-        .def("get_eff_polarizability", &get_eff_polarizability_numpy)
-        .def("get_dipoles", &get_dipoles_numpy)
-        .def("get_quadrupoles", &get_quadrupoles_numpy)
+        .def("get_eff_polarizability", &get_eff_polarizability_numpy, py::arg("physical") = true)
+        .def("get_dipoles", &get_dipoles_numpy, py::arg("physical") = true)
+        .def("get_quadrupoles", &get_quadrupoles_numpy, py::arg("physical") = true)
         .def("get_num_frames", &Dipole_Solver::get_num_frames)
         .def("get_num_particles", &Dipole_Solver::get_num_particles)
         .def("get_num_quads", &Dipole_Solver::get_num_quads)
