@@ -77,3 +77,55 @@ Example:
 
    # Calculate electric field intensity at target points
    intensity = nf.calculate()
+
+Electron Energy Loss Spectroscopy (EELS) with Quadrupoles
+-----------------------------------------------------------
+cuMPM supports calculating the EELS probability spectrum and induced dipoles/quadrupoles of particle systems under electron beam excitation using the :class:`cuMPM.EELS` class.
+
+Example:
+
+.. code-block:: python
+
+   import numpy as np
+   import cuMPM
+
+   # Define box dimensions [Lx, Ly, Lz] in nm
+   box = [150.0, 150.0, 150.0]
+
+   # Complex permittivity of the particles
+   eps_p = 4.5 + 0.2j
+
+   # Wavenumbers to solve (in 1/nm)
+   omega = [0.15]
+
+   # Velocity fraction of speed of light
+   v = 0.35
+
+   # Initialize EELS solver with quadrupole contributions enabled
+   solver = cuMPM.EELS(
+       box=box,
+       eps_p=eps_p,
+       omega=omega,
+       v=v,
+       radius=1.2,
+       field_type='direct',
+       solve_quadrupoles=True
+   )
+
+   # Particle positions
+   positions = np.array([
+       [0.0, 0.0, -10.0],
+       [0.0, 0.0, 0.0],
+       [0.0, 0.0, 10.0]
+   ])
+
+   # Electron beam impact coordinates [x_beam, y_beam] in nm
+   epos = np.array([12.0, 0.0])
+
+   # Compute the EELS spectrum and induced fields
+   solver.compute(epos, positions)
+
+   # Retrieve computed EELS loss probability, dipoles, and quadrupoles
+   eels_loss = solver.get_eels()
+   dipoles = solver.get_dipoles()
+   quadrupoles = solver.get_quadrupoles()

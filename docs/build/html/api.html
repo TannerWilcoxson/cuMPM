@@ -52,6 +52,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#cuMPM.dipole_solver.compute"><code class="docutils literal notranslate"><span class="pre">dipole_solver.compute()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#cuMPM.dipole_solver.get_eff_polarizability"><code class="docutils literal notranslate"><span class="pre">dipole_solver.get_eff_polarizability()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#cuMPM.dipole_solver.get_dipoles"><code class="docutils literal notranslate"><span class="pre">dipole_solver.get_dipoles()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cuMPM.dipole_solver.get_quadrupoles"><code class="docutils literal notranslate"><span class="pre">dipole_solver.get_quadrupoles()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#cuMPM.dipole_solver.get_cap_dip"><code class="docutils literal notranslate"><span class="pre">dipole_solver.get_cap_dip()</span></code></a></li>
 </ul>
 </li>
@@ -62,6 +63,15 @@
 <li class="toctree-l3"><a class="reference internal" href="#cuMPM.Near_Field.calculate"><code class="docutils literal notranslate"><span class="pre">Near_Field.calculate()</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#cuMPM.EELS"><code class="docutils literal notranslate"><span class="pre">EELS</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#cuMPM.EELS.compute"><code class="docutils literal notranslate"><span class="pre">EELS.compute()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cuMPM.EELS.get_eels"><code class="docutils literal notranslate"><span class="pre">EELS.get_eels()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cuMPM.EELS.get_dipoles"><code class="docutils literal notranslate"><span class="pre">EELS.get_dipoles()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cuMPM.EELS.get_quadrupoles"><code class="docutils literal notranslate"><span class="pre">EELS.get_quadrupoles()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cuMPM.EELS.get_positions"><code class="docutils literal notranslate"><span class="pre">EELS.get_positions()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#cuMPM.drude_dielectric"><code class="docutils literal notranslate"><span class="pre">drude_dielectric()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -94,7 +104,7 @@
 <span id="api-reference"></span><h1>API Reference<a class="headerlink" href="#module-cuMPM" title="Link to this heading"></a></h1>
 <dl class="py class">
 <dt class="sig sig-object py" id="cuMPM.dipole_solver">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">cuMPM.</span></span><span class="sig-name descname"><span class="pre">dipole_solver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">box</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps_p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps_m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">quiet</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">guess_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'derivative'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'gmres'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">field_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">E0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/solver.html#dipole_solver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.dipole_solver" title="Link to this definition"></a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">cuMPM.</span></span><span class="sig-name descname"><span class="pre">dipole_solver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">box</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps_p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps_m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">quiet</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">guess_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'derivative'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'gmres'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">field_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">E0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">quadrupoles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/solver.html#dipole_solver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.dipole_solver" title="Link to this definition"></a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>Python wrapper for the CUDA-accelerated C++ Dipole_Solver class.</p>
 <p>This class computes the self-consistent induced dipoles of a system of particles
@@ -132,28 +142,51 @@ to evaluate the dipole-dipole interactions efficiently.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="cuMPM.dipole_solver.get_eff_polarizability">
-<span class="sig-name descname"><span class="pre">get_eff_polarizability</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/solver.html#dipole_solver.get_eff_polarizability"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.dipole_solver.get_eff_polarizability" title="Link to this definition"></a></dt>
-<dd><p>Returns the effective polarizability by averaging all particle dipoles over all frames.</p>
+<span class="sig-name descname"><span class="pre">get_eff_polarizability</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">physical</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/solver.html#dipole_solver.get_eff_polarizability"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.dipole_solver.get_eff_polarizability" title="Link to this definition"></a></dt>
+<dd><p>Returns the effective polarizability by averaging all particle dipoles over all frames</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>alpha_eff</strong> – Average polarizability with shape (num_wavelengths, 3, 3) (squeezed)</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>physical</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</p>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)">numpy.ndarray</a></p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>alpha_eff</strong> – Average polarizability with shape (num_wavelengths, 3, 3) (squeezed)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a></p>
 </dd>
 </dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="cuMPM.dipole_solver.get_dipoles">
-<span class="sig-name descname"><span class="pre">get_dipoles</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/solver.html#dipole_solver.get_dipoles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.dipole_solver.get_dipoles" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">get_dipoles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">physical</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/solver.html#dipole_solver.get_dipoles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.dipole_solver.get_dipoles" title="Link to this definition"></a></dt>
 <dd><p>Returns the dipoles calculated for all frames.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>p</strong> – Dipoles of each particle with shape (num_frames, num_wavelengths, num_particles, 3, 3) (squeezed)</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>physical</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</p>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)">numpy.ndarray</a></p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>p</strong> – Dipoles of each particle with shape (num_frames, num_wavelengths, num_particles, 3, 3) (squeezed)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="cuMPM.dipole_solver.get_quadrupoles">
+<span class="sig-name descname"><span class="pre">get_quadrupoles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">physical</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/solver.html#dipole_solver.get_quadrupoles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.dipole_solver.get_quadrupoles" title="Link to this definition"></a></dt>
+<dd><p>Returns the quadrupoles calculated for all frames.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>physical</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Q</strong> – Quadrupoles of each particle in the quadrupole subset with shape (num_frames, num_wavelengths, num_quads, 3, 5) (squeezed)</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -234,11 +267,159 @@ It supports both monodisperse and polydisperse systems.</p>
 intensity <code class="docutils literal notranslate"><span class="pre">|-E_ind</span> <span class="pre">+</span> <span class="pre">E0|^2</span></code> at each evaluation coordinate.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)">numpy.ndarray</a></p>
+<dd class="field-even"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a></p>
 </dd>
 </dl>
 </dd></dl>
 
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="cuMPM.EELS">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">cuMPM.</span></span><span class="sig-name descname"><span class="pre">EELS</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">box</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps_p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">omega</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps_m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">quiet</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">guess_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'derivative'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'gmres'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">field_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">split_dist</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">N_split</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">integration_step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">split_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cubic'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solve_quadrupoles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">quad_idxs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/eels.html#EELS"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.EELS" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Python wrapper for the CUDA-accelerated C++ EELS_Solver class.</p>
+<p>This class computes the Electron Energy Loss Spectroscopy (EELS) probability
+spectrum and self-consistent induced dipoles for a collection of particles
+subject to the relativistic incident field of a moving electron beam.</p>
+<p>Initialize the EELS solver with system, electron, and solver parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>box</strong> (<em>array_like</em>) – The dimensions of the boundary box [L_x, L_y, L_z] in nanometers.</p></li>
+<li><p><strong>eps_p</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#complex" title="(in Python v3.14)"><em>complex</em></a><em>, </em><em>array_like</em><em> or </em><em>nested lists</em>) – The complex relative permittivity (dielectric constant) of the particles.</p></li>
+<li><p><strong>omega</strong> (<em>array_like</em>) – The wavenumbers at which to calculate EELS in 1/nm.</p></li>
+<li><p><strong>v</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – The velocity of the electron beam as a fraction of the speed of light c (0 &lt; v &lt; 1).</p></li>
+<li><p><strong>eps_m</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – The relative permittivity of the surrounding medium. Defaults to 1.0.</p></li>
+<li><p><strong>radius</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – The radii of the particles in nanometers. Defaults to 1.0.</p></li>
+<li><p><strong>xi</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – The Ewald splitting parameter. Defaults to 0.5.</p></li>
+<li><p><strong>tol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – The numerical solver tolerance for relative error convergence. Defaults to 1e-3.</p></li>
+<li><p><strong>quiet</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, suppresses solver debug output. Defaults to False.</p></li>
+<li><p><strong>guess_type</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Initial guess type: “zero”, “static”, or “derivative”. Defaults to “derivative”.</p></li>
+<li><p><strong>solver_type</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Krylov solver type: “gmres” or “bicgstab”. Defaults to “gmres”.</p></li>
+<li><p><strong>field_type</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Field evaluation type: “auto”, “monodisperse”, “polydisperse”, or “direct” (open BCs). Defaults to “auto”.</p></li>
+<li><p><strong>split_dist</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – The cutoff distance from the electron beam within which to split particles. Defaults to None.</p></li>
+<li><p><strong>N_split</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – The target number of sub-dipoles to split each close particle into. Defaults to None.</p></li>
+<li><p><strong>integration_step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Step size along the electron beam trajectory in nanometers. Defaults to 0.05.</p></li>
+<li><p><strong>split_method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – <p>Algorithm used to distribute sub-dipoles inside the NC volume.</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">&quot;cubic&quot;</span></code></dt><dd><p>uniform cubic lattice truncated at the NC radius (default).
+N_split is rounded up to the next perfect cube n³; the actual
+sub-dipole count M ≈ (π/6)·n³ after truncation.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">&quot;fibonacci&quot;</span></code></dt><dd><p>Fibonacci/golden-angle spiral on the unit sphere with
+cube-root-spaced shells decoupled by a fixed random shuffle.
+The actual count equals exactly N_split.</p>
+</dd>
+</dl>
+<p>In both cases sub-dipole radii are set so that the total sub-dipole volume
+equals the original NC volume.</p>
+</p></li>
+<li><p><strong>solve_quadrupoles</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – Whether to solve for quadrupoles as well. Defaults to False.</p></li>
+<li><p><strong>quad_idxs</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – A list of particle indices for which quadrupoles should be solved. If None or empty, all particles are solved.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="cuMPM.EELS.compute">
+<span class="sig-name descname"><span class="pre">compute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">epos</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">positions</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/eels.html#EELS.compute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.EELS.compute" title="Link to this definition"></a></dt>
+<dd><p>Calculate the EELS probability and induced dipoles for the given configurations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>epos</strong> (<em>array_like</em>) – The 2D electron beam impact coordinates, shape (2,) or (num_epos, 2).</p></li>
+<li><p><strong>positions</strong> (<em>array_like</em>) – The spatial coordinates of the particles, shape (num_particles, 3).</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="cuMPM.EELS.get_eels">
+<span class="sig-name descname"><span class="pre">get_eels</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/eels.html#EELS.get_eels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.EELS.get_eels" title="Link to this definition"></a></dt>
+<dd><p>Returns the computed EELS probability spectrum.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>eels</strong> – EELS probability spectrum with shape (num_epos, num_wavelengths) (squeezed if single epos)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="cuMPM.EELS.get_dipoles">
+<span class="sig-name descname"><span class="pre">get_dipoles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">physical</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/eels.html#EELS.get_dipoles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.EELS.get_dipoles" title="Link to this definition"></a></dt>
+<dd><p>Returns the computed induced dipoles.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>physical</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>p</strong> – Induced dipoles of each particle. If split, returns a list of arrays (one per epos)
+of shape (num_wavelengths, num_split_particles, 3).
+If shapes across all epos are identical, they are stacked into a single array of shape
+(num_epos, num_wavelengths, num_split_particles, 3).
+Squeezed if single epos.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a> or <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)">list</a> of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="cuMPM.EELS.get_quadrupoles">
+<span class="sig-name descname"><span class="pre">get_quadrupoles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">physical</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/eels.html#EELS.get_quadrupoles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.EELS.get_quadrupoles" title="Link to this definition"></a></dt>
+<dd><p>Returns the computed induced quadrupoles.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>physical</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Q</strong> – Induced quadrupoles of each particle. If split, returns a list of arrays (one per epos)
+of shape (num_wavelengths, num_split_particles, 5).
+If shapes across all epos are identical, they are stacked into a single array of shape
+(num_epos, num_wavelengths, num_split_particles, 5).
+Squeezed if single epos.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a> or <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)">list</a> of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)">numpy.ndarray</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="cuMPM.EELS.get_positions">
+<span class="sig-name descname"><span class="pre">get_positions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/eels.html#EELS.get_positions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.EELS.get_positions" title="Link to this definition"></a></dt>
+<dd><p>Returns the particle positions used in the calculation.
+If splitting was enabled, returns a list of positions arrays (one per epos)
+or a single stacked/squeezed array.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="cuMPM.drude_dielectric">
+<span class="sig-prename descclassname"><span class="pre">cuMPM.</span></span><span class="sig-name descname"><span class="pre">drude_dielectric</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">omega</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">omega_p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps_inf</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/cuMPM/solver.html#drude_dielectric"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#cuMPM.drude_dielectric" title="Link to this definition"></a></dt>
+<dd><p>Calculate the complex relative permittivity of a Drude metal.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>omega</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> or </em><em>array_like</em>) – Wavenumbers or frequencies.</p></li>
+<li><p><strong>gamma</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Damping constant.</p></li>
+<li><p><strong>omega_p</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Plasma frequency.</p></li>
+<li><p><strong>eps_inf</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – High-frequency permittivity limit.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The calculated complex relative permittivity.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#complex" title="(in Python v3.14)">complex</a> or ndarray</p>
+</dd>
+</dl>
 </dd></dl>
 
 </section>

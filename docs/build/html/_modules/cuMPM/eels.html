@@ -1,0 +1,661 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cuMPM.eels &mdash; cuMPM 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            cuMPM
+              <img src="../../_static/cumpm_logo.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Usage Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">cuMPM</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">cuMPM.eels</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for cuMPM.eels</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cuMPM</span>
+
+<div class="viewcode-block" id="EELS">
+<a class="viewcode-back" href="../../api.html#cuMPM.EELS">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EELS</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Python wrapper for the CUDA-accelerated C++ EELS_Solver class.</span>
+
+<span class="sd">    This class computes the Electron Energy Loss Spectroscopy (EELS) probability </span>
+<span class="sd">    spectrum and self-consistent induced dipoles for a collection of particles </span>
+<span class="sd">    subject to the relativistic incident field of a moving electron beam.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">box</span><span class="p">,</span> <span class="n">eps_p</span><span class="p">,</span> <span class="n">omega</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">eps_m</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">xi</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">quiet</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">guess_type</span><span class="o">=</span><span class="s2">&quot;derivative&quot;</span><span class="p">,</span> <span class="n">solver_type</span><span class="o">=</span><span class="s2">&quot;gmres&quot;</span><span class="p">,</span> <span class="n">field_type</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="n">split_dist</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">N_split</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">integration_step</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">split_method</span><span class="o">=</span><span class="s2">&quot;cubic&quot;</span><span class="p">,</span> <span class="n">solve_quadrupoles</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">quad_idxs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the EELS solver with system, electron, and solver parameters.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        box : array_like</span>
+<span class="sd">            The dimensions of the boundary box [L_x, L_y, L_z] in nanometers.</span>
+<span class="sd">        eps_p : complex, array_like or nested lists</span>
+<span class="sd">            The complex relative permittivity (dielectric constant) of the particles.</span>
+<span class="sd">        omega : array_like</span>
+<span class="sd">            The wavenumbers at which to calculate EELS in 1/nm.</span>
+<span class="sd">        v : float</span>
+<span class="sd">            The velocity of the electron beam as a fraction of the speed of light c (0 &lt; v &lt; 1).</span>
+<span class="sd">        eps_m : float, optional</span>
+<span class="sd">            The relative permittivity of the surrounding medium. Defaults to 1.0.</span>
+<span class="sd">        radius : float or array_like, optional</span>
+<span class="sd">            The radii of the particles in nanometers. Defaults to 1.0.</span>
+<span class="sd">        xi : float, optional</span>
+<span class="sd">            The Ewald splitting parameter. Defaults to 0.5.</span>
+<span class="sd">        tol : float, optional</span>
+<span class="sd">            The numerical solver tolerance for relative error convergence. Defaults to 1e-3.</span>
+<span class="sd">        quiet : bool, optional</span>
+<span class="sd">            If True, suppresses solver debug output. Defaults to False.</span>
+<span class="sd">        guess_type : str, optional</span>
+<span class="sd">            Initial guess type: &quot;zero&quot;, &quot;static&quot;, or &quot;derivative&quot;. Defaults to &quot;derivative&quot;.</span>
+<span class="sd">        solver_type : str, optional</span>
+<span class="sd">            Krylov solver type: &quot;gmres&quot; or &quot;bicgstab&quot;. Defaults to &quot;gmres&quot;.</span>
+<span class="sd">        field_type : str, optional</span>
+<span class="sd">            Field evaluation type: &quot;auto&quot;, &quot;monodisperse&quot;, &quot;polydisperse&quot;, or &quot;direct&quot; (open BCs). Defaults to &quot;auto&quot;.</span>
+<span class="sd">        split_dist : float, optional</span>
+<span class="sd">            The cutoff distance from the electron beam within which to split particles. Defaults to None.</span>
+<span class="sd">        N_split : int, optional</span>
+<span class="sd">            The target number of sub-dipoles to split each close particle into. Defaults to None.</span>
+<span class="sd">        integration_step : float, optional</span>
+<span class="sd">            Step size along the electron beam trajectory in nanometers. Defaults to 0.05.</span>
+<span class="sd">        split_method : str, optional</span>
+<span class="sd">            Algorithm used to distribute sub-dipoles inside the NC volume.</span>
+
+<span class="sd">            ``&quot;cubic&quot;``</span>
+<span class="sd">                uniform cubic lattice truncated at the NC radius (default).</span>
+<span class="sd">                N_split is rounded up to the next perfect cube n³; the actual</span>
+<span class="sd">                sub-dipole count M ≈ (π/6)·n³ after truncation.</span>
+<span class="sd">            ``&quot;fibonacci&quot;``</span>
+<span class="sd">                Fibonacci/golden-angle spiral on the unit sphere with</span>
+<span class="sd">                cube-root-spaced shells decoupled by a fixed random shuffle.</span>
+<span class="sd">                The actual count equals exactly N_split.</span>
+
+<span class="sd">            In both cases sub-dipole radii are set so that the total sub-dipole volume</span>
+<span class="sd">            equals the original NC volume.</span>
+<span class="sd">        solve_quadrupoles : bool, optional</span>
+<span class="sd">            Whether to solve for quadrupoles as well. Defaults to False.</span>
+<span class="sd">        quad_idxs : list of int, optional</span>
+<span class="sd">            A list of particle indices for which quadrupoles should be solved. If None or empty, all particles are solved.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">split_method</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;cubic&quot;</span><span class="p">,</span> <span class="s2">&quot;fibonacci&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;split_method must be &#39;cubic&#39; or &#39;fibonacci&#39;, got &quot;</span> <span class="o">+</span> <span class="nb">repr</span><span class="p">(</span><span class="n">split_method</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">split_method</span> <span class="o">=</span> <span class="n">split_method</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">split_dist</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="n">N_split</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Both split_dist and N_split must be specified, or both left as None.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">split_dist</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">split_dist</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">N_split</span><span class="p">)</span>
+
+        <span class="c1"># Store parameters for dynamic solver instantiation in compute() if splitting is enabled</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">box</span> <span class="o">=</span> <span class="n">box</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eps_p</span> <span class="o">=</span> <span class="n">eps_p</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">omega</span> <span class="o">=</span> <span class="n">omega</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">v</span> <span class="o">=</span> <span class="n">v</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eps_m</span> <span class="o">=</span> <span class="n">eps_m</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">radius</span> <span class="o">=</span> <span class="n">radius</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xi</span> <span class="o">=</span> <span class="n">xi</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tol</span> <span class="o">=</span> <span class="n">tol</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">quiet</span> <span class="o">=</span> <span class="n">quiet</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">guess_type</span> <span class="o">=</span> <span class="n">guess_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">solver_type</span> <span class="o">=</span> <span class="n">solver_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">field_type</span> <span class="o">=</span> <span class="n">field_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">integration_step</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">integration_step</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">solve_quadrupoles</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">solve_quadrupoles</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">quad_idxs</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">quad_idxs</span><span class="p">]</span> <span class="k">if</span> <span class="n">quad_idxs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span>
+
+        <span class="c1"># Initialize results lists for splitting mode</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_eels_results</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_quads_results</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_split_poss</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">positions</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">field_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;monodisperse&quot;</span><span class="p">,</span> <span class="s2">&quot;polydisperse&quot;</span><span class="p">,</span> <span class="s2">&quot;direct&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;field_type must be &#39;auto&#39;, &#39;monodisperse&#39;, &#39;polydisperse&#39;, or &#39;direct&#39;, got </span><span class="si">{</span><span class="n">field_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">box_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">box</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">box_list</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;box must have length 3&quot;</span><span class="p">)</span>
+
+        <span class="n">omega_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">o</span><span class="p">)</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">omega</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iterable</span><span class="p">(</span><span class="n">radius</span><span class="p">):</span>
+            <span class="n">radius_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">radius</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">radius_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">radius</span><span class="p">)]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Convert eps_p based on dimension</span>
+            <span class="n">eps_p_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">eps_p</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">eps_p_scalar</span> <span class="o">=</span> <span class="nb">complex</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">EELS_Solver</span><span class="p">(</span>
+                    <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_scalar</span><span class="p">,</span> <span class="n">omega_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">integration_step</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">quad_idxs</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">eps_p_scalar</span> <span class="o">=</span> <span class="nb">complex</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">EELS_Solver</span><span class="p">(</span>
+                        <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_scalar</span><span class="p">,</span> <span class="n">omega_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">integration_step</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">quad_idxs</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">eps_p_1d</span> <span class="o">=</span> <span class="p">[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">eps_p_arr</span><span class="p">]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">EELS_Solver</span><span class="p">(</span>
+                        <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_1d</span><span class="p">,</span> <span class="n">omega_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">integration_step</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">quad_idxs</span>
+                    <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">eps_p_2d</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">eps_p_arr</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">EELS_Solver</span><span class="p">(</span>
+                    <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_2d</span><span class="p">,</span> <span class="n">omega_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">integration_step</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">quad_idxs</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;eps_p must be a scalar, 1D array, or 2D array&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Sub-dipole lattice generators</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_make_cubic_offsets</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return unit-sphere offsets on a cubic lattice truncated at r=1.</span>
+
+<span class="sd">        N_split is rounded up to the next perfect cube n³ to determine grid</span>
+<span class="sd">        resolution n.  Points in [-1,1]³ whose distance from the origin</span>
+<span class="sd">        exceeds 1 are discarded.  The retained count M ≈ (π/6)·n³.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">**</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="mf">3.0</span><span class="p">)))</span>
+        <span class="k">while</span> <span class="n">n</span> <span class="o">**</span> <span class="mi">3</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span><span class="p">:</span>
+            <span class="n">n</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">h</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">/</span> <span class="n">n</span>
+        <span class="n">coords_1d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">h</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">h</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+        <span class="n">gx</span><span class="p">,</span> <span class="n">gy</span><span class="p">,</span> <span class="n">gz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">coords_1d</span><span class="p">,</span> <span class="n">coords_1d</span><span class="p">,</span> <span class="n">coords_1d</span><span class="p">,</span> <span class="n">indexing</span><span class="o">=</span><span class="s1">&#39;ij&#39;</span><span class="p">)</span>
+        <span class="n">grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">gx</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span> <span class="n">gy</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span> <span class="n">gz</span><span class="o">.</span><span class="n">ravel</span><span class="p">()])</span>
+        <span class="n">inside</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mf">1.0</span>
+        <span class="k">return</span> <span class="n">grid</span><span class="p">[</span><span class="n">inside</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_make_fibonacci_offsets</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return N_split unit-sphere offsets using a Fibonacci/golden-angle spiral.</span>
+
+<span class="sd">        Directions are drawn from the Fibonacci sphere algorithm (uniform surface</span>
+<span class="sd">        coverage).  Shell radii use cube-root spacing for uniform volume density.</span>
+<span class="sd">        The two are decoupled by a fixed random shuffle so that no particular shell</span>
+<span class="sd">        radius is tied to a particular latitude.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">N</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span>
+        <span class="n">phi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="p">(</span><span class="mf">3.0</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">5.0</span><span class="p">))</span>
+
+        <span class="n">directions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+            <span class="n">y_unit</span>  <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="p">(</span><span class="n">i</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">N</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="mf">2.0</span>
+            <span class="n">theta</span>   <span class="o">=</span> <span class="n">phi</span> <span class="o">*</span> <span class="n">i</span>
+            <span class="n">sin_lat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">y_unit</span> <span class="o">*</span> <span class="n">y_unit</span><span class="p">))</span>
+            <span class="n">directions</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin_lat</span><span class="p">,</span> <span class="n">y_unit</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">*</span> <span class="n">sin_lat</span><span class="p">]</span>
+
+        <span class="n">r_fracs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([((</span><span class="n">i</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">/</span> <span class="n">N</span><span class="p">)</span> <span class="o">**</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="mf">3.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">)])</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">rng</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">r_fracs</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">r_fracs</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">*</span> <span class="n">directions</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_split_close_dipoles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">e_pos</span><span class="p">,</span> <span class="n">radii</span><span class="p">,</span> <span class="n">eps_p_2d</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Split particles close to the electron beam into sub-dipoles.</span>
+
+<span class="sd">        The distribution method is controlled by ``self.split_method``:</span>
+<span class="sd">        - ``&quot;cubic&quot;``     – cubic lattice truncated at the NC sphere boundary.</span>
+<span class="sd">        - ``&quot;fibonacci&quot;`` – Fibonacci volume lattice (golden-angle directions +</span>
+<span class="sd">                            cube-root shells, radially decoupled).</span>
+
+<span class="sd">        In both cases sub-dipole radii are chosen to conserve the total NC volume:</span>
+<span class="sd">            M × (4π/3) sub_R³ = (4π/3) R³  ⟹  sub_R = R / M^(1/3)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">dists_2d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">positions</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="n">e_pos</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">to_split</span> <span class="o">=</span> <span class="n">dists_2d</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">to_split</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">positions</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">radii</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">eps_p_2d</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="n">new_positions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">new_radii</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">new_eps_p</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Keep unsplit particles</span>
+        <span class="n">unsplit_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="o">~</span><span class="n">to_split</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">unsplit_indices</span><span class="p">:</span>
+            <span class="n">new_positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">positions</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span>
+            <span class="n">new_radii</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">radii</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span>
+            <span class="n">new_eps_p</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">eps_p_2d</span><span class="p">[:,</span> <span class="n">idx</span><span class="p">])</span>
+
+        <span class="c1"># Build the unit-sphere offsets using the chosen method</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_method</span> <span class="o">==</span> <span class="s2">&quot;cubic&quot;</span><span class="p">:</span>
+            <span class="n">unit_offsets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_cubic_offsets</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">unit_offsets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_fibonacci_offsets</span><span class="p">()</span>
+
+        <span class="c1"># Number of sub-dipoles (exact for Fibonacci; ≈π/6·n³ for cubic)</span>
+        <span class="n">M</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">unit_offsets</span><span class="p">)</span>
+
+        <span class="c1"># Sub-dipole radius conserves total NC volume:</span>
+        <span class="c1">#   M × (4π/3) sub_R³ = (4π/3) R³  →  sub_R = R / M^(1/3)</span>
+        <span class="n">sub_R_frac</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">M</span> <span class="o">**</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="mf">3.0</span><span class="p">))</span>
+
+        <span class="c1"># Split close particles</span>
+        <span class="n">split_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">to_split</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">split_indices</span><span class="p">:</span>
+            <span class="n">R</span>   <span class="o">=</span> <span class="n">radii</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+            <span class="n">pos</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+            <span class="n">eps</span> <span class="o">=</span> <span class="n">eps_p_2d</span><span class="p">[:,</span> <span class="n">idx</span><span class="p">]</span>
+
+            <span class="n">sub_pos</span> <span class="o">=</span> <span class="n">pos</span> <span class="o">+</span> <span class="n">unit_offsets</span> <span class="o">*</span> <span class="n">R</span>
+            <span class="n">sub_R</span>   <span class="o">=</span> <span class="n">R</span> <span class="o">*</span> <span class="n">sub_R_frac</span>
+
+            <span class="k">for</span> <span class="n">sp</span> <span class="ow">in</span> <span class="n">sub_pos</span><span class="p">:</span>
+                <span class="n">new_positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sp</span><span class="p">)</span>
+                <span class="n">new_radii</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sub_R</span><span class="p">)</span>
+                <span class="n">new_eps_p</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">eps</span><span class="p">)</span>
+
+        <span class="n">final_positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">new_positions</span><span class="p">)</span>
+        <span class="n">final_radii</span>     <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">new_radii</span><span class="p">)</span>
+        <span class="n">final_eps_p</span>     <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">(</span><span class="n">new_eps_p</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">final_positions</span><span class="p">,</span> <span class="n">final_radii</span><span class="p">,</span> <span class="n">final_eps_p</span>
+
+<div class="viewcode-block" id="EELS.compute">
+<a class="viewcode-back" href="../../api.html#cuMPM.EELS.compute">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">epos</span><span class="p">,</span> <span class="n">positions</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Calculate the EELS probability and induced dipoles for the given configurations.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        epos : array_like</span>
+<span class="sd">            The 2D electron beam impact coordinates, shape (2,) or (num_epos, 2).</span>
+<span class="sd">        positions : array_like</span>
+<span class="sd">            The spatial coordinates of the particles, shape (num_particles, 3).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">positions</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">positions</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">positions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;positions must be of shape (num_particles, 3)&quot;</span><span class="p">)</span>
+
+        <span class="n">epos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">epos</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">epos</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">epos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;epos must be of shape (2,) or (num_epos, 2)&quot;</span><span class="p">)</span>
+            <span class="n">epos</span> <span class="o">=</span> <span class="n">epos</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="k">elif</span> <span class="n">epos</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">epos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;epos must be of shape (2,) or (num_epos, 2)&quot;</span><span class="p">)</span>
+
+        <span class="n">num_epos</span> <span class="o">=</span> <span class="n">epos</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">num_particles</span> <span class="o">=</span> <span class="n">positions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">positions</span> <span class="o">=</span> <span class="n">positions</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="c1"># Clear previous results from this compute call</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_eels_results</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_split_poss</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="c1"># We must standardize radii and eps_p to map to individual particles</span>
+            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iterable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">radius</span><span class="p">):</span>
+                <span class="n">radii</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">radius</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">radii</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">radii</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">radii</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">num_particles</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">radii</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">radii</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">radii</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">num_particles</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">radii</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="n">num_particles</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;The number of particles is inconsistent with the number of radii provided.&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">radii</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">radius</span><span class="p">),</span> <span class="n">num_particles</span><span class="p">)</span>
+
+            <span class="n">eps_p_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">eps_p</span><span class="p">)</span>
+            <span class="n">num_wavevectors</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">omega</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">eps_p_2d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">num_wavevectors</span><span class="p">,</span> <span class="n">num_particles</span><span class="p">),</span> <span class="nb">complex</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="o">.</span><span class="n">item</span><span class="p">()))</span>
+            <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">eps_p_2d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="n">num_wavevectors</span><span class="p">,</span> <span class="n">num_particles</span><span class="p">),</span> <span class="nb">complex</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="o">.</span><span class="n">item</span><span class="p">()))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="n">num_wavevectors</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;1D eps_p must have length equal to num_wavevectors&quot;</span><span class="p">)</span>
+                    <span class="n">eps_p_2d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">],</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">num_particles</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">num_wavevectors</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;First dimension of 2D eps_p must be equal to num_wavevectors&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">eps_p_2d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">num_particles</span><span class="p">))</span>
+                <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">num_particles</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Second dimension of 2D eps_p must be equal to num_particles&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">eps_p_2d</span> <span class="o">=</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;eps_p must be a scalar, 1D array, or 2D array&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Loop over all electron beam impact coordinates</span>
+            <span class="k">for</span> <span class="n">epos_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_epos</span><span class="p">):</span>
+                <span class="n">e_pos</span> <span class="o">=</span> <span class="n">epos</span><span class="p">[</span><span class="n">epos_idx</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">quiet</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [EELS] Processing impact parameter </span><span class="si">{</span><span class="n">epos_idx</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">num_epos</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+                
+                <span class="c1"># Split particles that are within split_dist from the ebeam</span>
+                <span class="n">split_pos</span><span class="p">,</span> <span class="n">split_R</span><span class="p">,</span> <span class="n">split_eps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_split_close_dipoles</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">e_pos</span><span class="p">,</span> <span class="n">radii</span><span class="p">,</span> <span class="n">eps_p_2d</span><span class="p">)</span>
+                
+                <span class="c1"># Setup a fresh _cuMPM.EELS_Solver for this split system</span>
+                <span class="n">box_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">box</span><span class="p">]</span>
+                <span class="n">omega_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">o</span><span class="p">)</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">omega</span><span class="p">]</span>
+                
+                <span class="c1"># Convert split_eps to nested lists</span>
+                <span class="n">split_eps_2d</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">split_eps</span><span class="p">]</span>
+                
+                <span class="c1"># Map quad_idxs to the split system</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_quadrupoles</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">quad_idxs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">split_quad_idxs</span> <span class="o">=</span> <span class="p">[]</span>
+                    <span class="n">dists_2d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">positions</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="n">e_pos</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                    <span class="n">to_split</span> <span class="o">=</span> <span class="n">dists_2d</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span>
+                    
+                    <span class="n">unsplit_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="o">~</span><span class="n">to_split</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                    <span class="n">split_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">to_split</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                    
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_method</span> <span class="o">==</span> <span class="s2">&quot;cubic&quot;</span><span class="p">:</span>
+                        <span class="n">M</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_make_cubic_offsets</span><span class="p">())</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">M</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_make_fibonacci_offsets</span><span class="p">())</span>
+                        
+                    <span class="k">for</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">quad_idxs</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="n">unsplit_indices</span><span class="p">:</span>
+                            <span class="n">new_idx</span> <span class="o">=</span> <span class="n">unsplit_indices</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">q_idx</span><span class="p">)</span>
+                            <span class="n">split_quad_idxs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_idx</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="n">q_idx</span> <span class="ow">in</span> <span class="n">split_indices</span><span class="p">:</span>
+                            <span class="n">pos_in_split_indices</span> <span class="o">=</span> <span class="n">split_indices</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">q_idx</span><span class="p">)</span>
+                            <span class="n">start_idx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">unsplit_indices</span><span class="p">)</span> <span class="o">+</span> <span class="n">pos_in_split_indices</span> <span class="o">*</span> <span class="n">M</span>
+                            <span class="n">split_quad_idxs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">start_idx</span><span class="p">,</span> <span class="n">start_idx</span> <span class="o">+</span> <span class="n">M</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">split_quad_idxs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quad_idxs</span>
+                
+                <span class="n">frame_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">EELS_Solver</span><span class="p">(</span>
+                    <span class="n">box_list</span><span class="p">,</span> <span class="n">split_eps_2d</span><span class="p">,</span> <span class="n">omega_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">v</span><span class="p">),</span> <span class="n">split_R</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+                    <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">quiet</span><span class="p">),</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">guess_type</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">solver_type</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">field_type</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">integration_step</span><span class="p">),</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="n">split_quad_idxs</span>
+                <span class="p">)</span>
+                
+                <span class="c1"># Run the solver</span>
+                <span class="n">x_part</span> <span class="o">=</span> <span class="n">split_pos</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="n">y_part</span> <span class="o">=</span> <span class="n">split_pos</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="n">z_part</span> <span class="o">=</span> <span class="n">split_pos</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="n">frame_solver</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">e_pos</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">x_part</span><span class="p">,</span> <span class="n">y_part</span><span class="p">,</span> <span class="n">z_part</span><span class="p">)</span>
+                
+                <span class="c1"># Retrieve EELS spectrum and dipoles</span>
+                <span class="n">frame_eels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">frame_solver</span><span class="o">.</span><span class="n">get_eels</span><span class="p">())</span>
+                <span class="n">frame_dips</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">frame_solver</span><span class="o">.</span><span class="n">get_dipoles</span><span class="p">(</span><span class="n">physical</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+                
+                <span class="k">if</span> <span class="n">frame_eels</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">frame_eels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">frame_eels</span><span class="o">.</span><span class="n">item</span><span class="p">()])</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">omega_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">frame_dips</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                        <span class="n">frame_dips</span> <span class="o">=</span> <span class="n">frame_dips</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+                    <span class="k">elif</span> <span class="n">frame_dips</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="n">frame_dips</span> <span class="o">=</span> <span class="n">frame_dips</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+                
+                <span class="bp">self</span><span class="o">.</span><span class="n">_eels_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame_eels</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame_dips</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_split_poss</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">split_pos</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_dips_scale_factors&#39;</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_dips_scale_factors</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_dips_scale_factors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">eps_m</span> <span class="o">*</span> <span class="p">(</span><span class="n">split_R</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mi">3</span><span class="p">))</span>
+
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_quadrupoles</span><span class="p">:</span>
+                    <span class="n">frame_quads</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">frame_solver</span><span class="o">.</span><span class="n">get_quadrupoles</span><span class="p">(</span><span class="n">physical</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">omega_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">frame_quads</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                            <span class="n">frame_quads</span> <span class="o">=</span> <span class="n">frame_quads</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+                        <span class="k">elif</span> <span class="n">frame_quads</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                            <span class="n">frame_quads</span> <span class="o">=</span> <span class="n">frame_quads</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_quads_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame_quads</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;_quads_scale_factors&#39;</span><span class="p">):</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_quads_scale_factors</span> <span class="o">=</span> <span class="p">[]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_quads_scale_factors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">eps_m</span> <span class="o">*</span> <span class="p">(</span><span class="n">split_R</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">**</span> <span class="mi">4</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">x_part</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">y_part</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">z_part</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">epos_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_epos</span><span class="p">):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">quiet</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [EELS] Processing impact parameter </span><span class="si">{</span><span class="n">epos_idx</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">num_epos</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">epos</span><span class="p">[</span><span class="n">epos_idx</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">x_part</span><span class="p">,</span> <span class="n">y_part</span><span class="p">,</span> <span class="n">z_part</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="EELS.get_eels">
+<a class="viewcode-back" href="../../api.html#cuMPM.EELS.get_eels">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_eels</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the computed EELS probability spectrum.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        eels : numpy.ndarray</span>
+<span class="sd">            EELS probability spectrum with shape (num_epos, num_wavelengths) (squeezed if single epos)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eels_results</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_eels_results</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_eels</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="EELS.get_dipoles">
+<a class="viewcode-back" href="../../api.html#cuMPM.EELS.get_dipoles">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_dipoles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">physical</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the computed induced dipoles.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        physical : bool, optional</span>
+<span class="sd">            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        p : numpy.ndarray or list of numpy.ndarray</span>
+<span class="sd">            Induced dipoles of each particle. If split, returns a list of arrays (one per epos)</span>
+<span class="sd">            of shape (num_wavelengths, num_split_particles, 3).</span>
+<span class="sd">            If shapes across all epos are identical, they are stacked into a single array of shape </span>
+<span class="sd">            (num_epos, num_wavelengths, num_split_particles, 3).</span>
+<span class="sd">            Squeezed if single epos.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">physical</span><span class="p">:</span>
+                <span class="n">scaled_results</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">dips_arr</span><span class="p">,</span> <span class="n">factor</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dips_scale_factors</span><span class="p">):</span>
+                    <span class="n">scaled_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dips_arr</span> <span class="o">*</span> <span class="n">factor</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">scaled_results</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">scaled_results</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">stacked</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">scaled_results</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">stacked</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">scaled_results</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">stacked</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">stacked</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dips_results</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_dipoles</span><span class="p">(</span><span class="n">physical</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="EELS.get_quadrupoles">
+<a class="viewcode-back" href="../../api.html#cuMPM.EELS.get_quadrupoles">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_quadrupoles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">physical</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the computed induced quadrupoles.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        physical : bool, optional</span>
+<span class="sd">            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Q : numpy.ndarray or list of numpy.ndarray</span>
+<span class="sd">            Induced quadrupoles of each particle. If split, returns a list of arrays (one per epos)</span>
+<span class="sd">            of shape (num_wavelengths, num_split_particles, 5).</span>
+<span class="sd">            If shapes across all epos are identical, they are stacked into a single array of shape </span>
+<span class="sd">            (num_epos, num_wavelengths, num_split_particles, 5).</span>
+<span class="sd">            Squeezed if single epos.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quads_results</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">physical</span><span class="p">:</span>
+                <span class="n">scaled_results</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">quads_arr</span><span class="p">,</span> <span class="n">factor</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_quads_results</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quads_scale_factors</span><span class="p">):</span>
+                    <span class="n">scaled_results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">quads_arr</span> <span class="o">*</span> <span class="n">factor</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">scaled_results</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">scaled_results</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">stacked</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">scaled_results</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">stacked</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="n">scaled_results</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_quads_results</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_quads_results</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">stacked</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_quads_results</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">stacked</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">q</span><span class="p">)</span> <span class="k">for</span> <span class="n">q</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quads_results</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_quadrupoles</span><span class="p">(</span><span class="n">physical</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="EELS.get_positions">
+<a class="viewcode-back" href="../../api.html#cuMPM.EELS.get_positions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_positions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the particle positions used in the calculation.</span>
+<span class="sd">        If splitting was enabled, returns a list of positions arrays (one per epos)</span>
+<span class="sd">        or a single stacked/squeezed array.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">split_dist</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">N_split</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_split_poss</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_split_poss</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_split_poss</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">stacked</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_split_poss</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">stacked</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_split_poss</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">positions</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Tanner.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

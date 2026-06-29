@@ -1,6 +1,55 @@
 import numpy as np
 from . import _cuMPM
 
+def drude_dielectric(omega, gamma, omega_p, eps_inf):
+    """
+    Calculate the complex relative permittivity of a Drude metal.
+
+    Parameters
+    ----------
+    omega : float or array_like
+        Wavenumbers or frequencies.
+    gamma : float or array_like
+        Damping constant. If an array, size must match omega_p and eps_inf.
+    omega_p : float or array_like
+        Plasma frequency. If an array, size must match gamma and eps_inf.
+    eps_inf : float or array_like
+        High-frequency permittivity limit. If an array, size must match omega_p and gamma.
+
+    Returns
+    -------
+    complex or ndarray
+        The calculated complex relative permittivity. Axes of size one are removed.
+    """
+    if not np.iterable(omega):
+        omega = np.asarray([omega])
+    if len(omega.shape) != 1:
+        raise ValueError("omega must be a scalar or a 1-D array of wavenumbers")
+    num_wavenumbers = len(omega)
+
+    if not np.iterable(gamma):
+        gamma = np.asarray([gamma])
+    if len(gamma.shape) != 1:
+        raise ValueError("gamma must be a scalar or a 1-D array of damping coefficients")
+
+    if not np.iterable(omega_p):
+        omega_p = np.asarray([omega_p])
+    if len(omega_p.shape) != 1:
+        raise ValueError("omega_p must be a scalar or a 1-D array of plasma frequencies")
+
+    if not np.iterable(eps_inf):
+        eps_inf = np.asarray([eps_inf])
+    if len(eps_inf.shape) != 1:
+        raise ValueError("eps_inf must be a scalar or a 1-D array of high frequency permitivities")
+
+    if np.any(len(eps_inf) != np.array([len(gamma), len(omega_p)])):
+        raise ValueError("eps_inf, gamma, and omega_p must all have the same number of values applied")
+    num_particles = len(eps_inf)
+
+    eps_p = np.zeros([num_wavenumbers, num_particles], dtype=np.complex128)
+    eps_p[...] = eps_inf[None, :] - omega_p[None, :]**2 / (omega[:, None]**2 + 1j * omega[:, None] * gamma[None, :])
+    return np.squeeze(eps_p)
+
 class dipole_solver:
     """
     Python wrapper for the CUDA-accelerated C++ Dipole_Solver class.

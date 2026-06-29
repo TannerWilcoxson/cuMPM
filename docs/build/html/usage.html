@@ -49,6 +49,7 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Usage Guide</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#solving-for-dipoles">Solving for Dipoles</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#calculating-near-fields">Calculating Near Fields</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#electron-energy-loss-spectroscopy-eels-with-quadrupoles">Electron Energy Loss Spectroscopy (EELS) with Quadrupoles</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
@@ -150,6 +151,56 @@
 
 <span class="c1"># Calculate electric field intensity at target points</span>
 <span class="n">intensity</span> <span class="o">=</span> <span class="n">nf</span><span class="o">.</span><span class="n">calculate</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="electron-energy-loss-spectroscopy-eels-with-quadrupoles">
+<h2>Electron Energy Loss Spectroscopy (EELS) with Quadrupoles<a class="headerlink" href="#electron-energy-loss-spectroscopy-eels-with-quadrupoles" title="Link to this heading"></a></h2>
+<p>cuMPM supports calculating the EELS probability spectrum and induced dipoles/quadrupoles of particle systems under electron beam excitation using the <a class="reference internal" href="api.html#cuMPM.EELS" title="cuMPM.EELS"><code class="xref py py-class docutils literal notranslate"><span class="pre">cuMPM.EELS</span></code></a> class.</p>
+<p>Example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">cuMPM</span>
+
+<span class="c1"># Define box dimensions [Lx, Ly, Lz] in nm</span>
+<span class="n">box</span> <span class="o">=</span> <span class="p">[</span><span class="mf">150.0</span><span class="p">,</span> <span class="mf">150.0</span><span class="p">,</span> <span class="mf">150.0</span><span class="p">]</span>
+
+<span class="c1"># Complex permittivity of the particles</span>
+<span class="n">eps_p</span> <span class="o">=</span> <span class="mf">4.5</span> <span class="o">+</span> <span class="mf">0.2</span><span class="n">j</span>
+
+<span class="c1"># Wavenumbers to solve (in 1/nm)</span>
+<span class="n">omega</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.15</span><span class="p">]</span>
+
+<span class="c1"># Velocity fraction of speed of light</span>
+<span class="n">v</span> <span class="o">=</span> <span class="mf">0.35</span>
+
+<span class="c1"># Initialize EELS solver with quadrupole contributions enabled</span>
+<span class="n">solver</span> <span class="o">=</span> <span class="n">cuMPM</span><span class="o">.</span><span class="n">EELS</span><span class="p">(</span>
+    <span class="n">box</span><span class="o">=</span><span class="n">box</span><span class="p">,</span>
+    <span class="n">eps_p</span><span class="o">=</span><span class="n">eps_p</span><span class="p">,</span>
+    <span class="n">omega</span><span class="o">=</span><span class="n">omega</span><span class="p">,</span>
+    <span class="n">v</span><span class="o">=</span><span class="n">v</span><span class="p">,</span>
+    <span class="n">radius</span><span class="o">=</span><span class="mf">1.2</span><span class="p">,</span>
+    <span class="n">field_type</span><span class="o">=</span><span class="s1">&#39;direct&#39;</span><span class="p">,</span>
+    <span class="n">solve_quadrupoles</span><span class="o">=</span><span class="kc">True</span>
+<span class="p">)</span>
+
+<span class="c1"># Particle positions</span>
+<span class="n">positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+    <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">10.0</span><span class="p">],</span>
+    <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+    <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">10.0</span><span class="p">]</span>
+<span class="p">])</span>
+
+<span class="c1"># Electron beam impact coordinates [x_beam, y_beam] in nm</span>
+<span class="n">epos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">12.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+
+<span class="c1"># Compute the EELS spectrum and induced fields</span>
+<span class="n">solver</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">epos</span><span class="p">,</span> <span class="n">positions</span><span class="p">)</span>
+
+<span class="c1"># Retrieve computed EELS loss probability, dipoles, and quadrupoles</span>
+<span class="n">eels_loss</span> <span class="o">=</span> <span class="n">solver</span><span class="o">.</span><span class="n">get_eels</span><span class="p">()</span>
+<span class="n">dipoles</span> <span class="o">=</span> <span class="n">solver</span><span class="o">.</span><span class="n">get_dipoles</span><span class="p">()</span>
+<span class="n">quadrupoles</span> <span class="o">=</span> <span class="n">solver</span><span class="o">.</span><span class="n">get_quadrupoles</span><span class="p">()</span>
 </pre></div>
 </div>
 </section>

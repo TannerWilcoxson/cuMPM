@@ -75,6 +75,32 @@
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cuMPM</span>
 
+<div class="viewcode-block" id="drude_dielectric">
+<a class="viewcode-back" href="../../api.html#cuMPM.drude_dielectric">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">drude_dielectric</span><span class="p">(</span><span class="n">omega</span><span class="p">,</span> <span class="n">gamma</span><span class="p">,</span> <span class="n">omega_p</span><span class="p">,</span> <span class="n">eps_inf</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculate the complex relative permittivity of a Drude metal.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    omega : float or array_like</span>
+<span class="sd">        Wavenumbers or frequencies.</span>
+<span class="sd">    gamma : float</span>
+<span class="sd">        Damping constant.</span>
+<span class="sd">    omega_p : float</span>
+<span class="sd">        Plasma frequency.</span>
+<span class="sd">    eps_inf : float</span>
+<span class="sd">        High-frequency permittivity limit.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    complex or ndarray</span>
+<span class="sd">        The calculated complex relative permittivity.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">omega</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">omega</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">eps_inf</span> <span class="o">-</span> <span class="n">omega_p</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="n">omega</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">omega</span> <span class="o">*</span> <span class="n">gamma</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="dipole_solver">
 <a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">dipole_solver</span><span class="p">:</span>
@@ -86,7 +112,7 @@
 <span class="sd">    a GPU-resident restarted complex GMRES or BiCGSTAB solver and uses 3D Ewald summation </span>
 <span class="sd">    to evaluate the dipole-dipole interactions efficiently.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">box</span><span class="p">,</span> <span class="n">eps_p</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">eps_m</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">xi</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">quiet</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">guess_type</span><span class="o">=</span><span class="s2">&quot;derivative&quot;</span><span class="p">,</span> <span class="n">solver_type</span><span class="o">=</span><span class="s2">&quot;gmres&quot;</span><span class="p">,</span> <span class="n">field_type</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="n">E0</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">box</span><span class="p">,</span> <span class="n">eps_p</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">eps_m</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">xi</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">quiet</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">guess_type</span><span class="o">=</span><span class="s2">&quot;derivative&quot;</span><span class="p">,</span> <span class="n">solver_type</span><span class="o">=</span><span class="s2">&quot;gmres&quot;</span><span class="p">,</span> <span class="n">field_type</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="n">E0</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">quadrupoles</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize the dipole solver with system and solver parameters.</span>
 
@@ -116,7 +142,7 @@
 <span class="sd">            The electric polarization of the incident field (a 3-element vector or a list/array of 3-element vectors). Defaults to None.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">field_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;monodisperse&quot;</span><span class="p">,</span> <span class="s2">&quot;polydisperse&quot;</span><span class="p">,</span> <span class="s2">&quot;direct&quot;</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;field_type must be &#39;auto&#39;, &#39;monodisperse&#39;, or &#39;polydisperse&#39;, got </span><span class="si">{</span><span class="n">field_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;field_type must be &#39;auto&#39;, &#39;monodisperse&#39;, &#39;polydisperse&#39;, or &#39;direct&#39;, got </span><span class="si">{</span><span class="n">field_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
         <span class="c1"># Convert box to a list of 3 floats</span>
         <span class="n">box_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">box</span><span class="p">]</span>
@@ -134,15 +160,33 @@
         <span class="k">if</span> <span class="n">E0</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">E0_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">E0</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">size</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
-                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Incident field vector must be 3-dimensional&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">size</span> <span class="o">%</span> <span class="mi">3</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Incident field vector size must be a multiple of 3&quot;</span><span class="p">)</span>
                 <span class="n">E0_list</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">E0_arr</span><span class="p">]]</span>
             <span class="k">elif</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
-                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Each incident field vector must be 3-dimensional&quot;</span><span class="p">)</span>
-                <span class="n">E0_list</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">E0_arr</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+                    <span class="n">E0_list</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">E0_arr</span><span class="p">]</span>
+                <span class="k">elif</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">%</span> <span class="mi">3</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">E0_list</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">E0_arr</span><span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Each vector in E0 must be 3-dimensional or have a size that is a multiple of 3&quot;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">E0_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;The last dimension of E0 must be 3&quot;</span><span class="p">)</span>
+                <span class="n">E0_list</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">block</span><span class="o">.</span><span class="n">ravel</span><span class="p">()]</span> <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">E0_arr</span><span class="p">]</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;E0 must be a 1D vector or a 2D array of vectors&quot;</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;E0 must be a 1D, 2D, or 3D array&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Resolve quadrupoles argument</span>
+        <span class="n">solve_quadrupoles</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">quad_idxs_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">quadrupoles</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="n">solve_quadrupoles</span> <span class="o">=</span> <span class="n">quadrupoles</span>
+        <span class="k">elif</span> <span class="n">np</span><span class="o">.</span><span class="n">iterable</span><span class="p">(</span><span class="n">quadrupoles</span><span class="p">):</span>
+            <span class="n">solve_quadrupoles</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">quad_idxs_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">quadrupoles</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;quadrupoles must be a boolean or a list/iterable of particle indices&quot;</span><span class="p">)</span>
 
         <span class="c1"># Convert eps_p based on dimension</span>
         <span class="n">eps_p_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">eps_p</span><span class="p">)</span>
@@ -150,25 +194,25 @@
             <span class="c1"># Scalar</span>
             <span class="n">eps_p_scalar</span> <span class="o">=</span> <span class="nb">complex</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Dipole_Solver</span><span class="p">(</span>
-                <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_scalar</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">E0_list</span>
+                <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_scalar</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">E0_list</span><span class="p">,</span> <span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="n">quad_idxs_list</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
             <span class="c1"># 1D array</span>
             <span class="k">if</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
                 <span class="n">eps_p_scalar</span> <span class="o">=</span> <span class="nb">complex</span><span class="p">(</span><span class="n">eps_p_arr</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Dipole_Solver</span><span class="p">(</span>
-                    <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_scalar</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">E0_list</span>
+                    <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_scalar</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">E0_list</span><span class="p">,</span> <span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="n">quad_idxs_list</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">eps_p_1d</span> <span class="o">=</span> <span class="p">[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">eps_p_arr</span><span class="p">]</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Dipole_Solver</span><span class="p">(</span>
-                    <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_1d</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">E0_list</span>
+                    <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_1d</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">E0_list</span><span class="p">,</span> <span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="n">quad_idxs_list</span>
                 <span class="p">)</span>
         <span class="k">elif</span> <span class="n">eps_p_arr</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
             <span class="c1"># 2D array</span>
             <span class="n">eps_p_2d</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">complex</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">eps_p_arr</span><span class="p">]</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span> <span class="o">=</span> <span class="n">_cuMPM</span><span class="o">.</span><span class="n">Dipole_Solver</span><span class="p">(</span>
-                <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_2d</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">E0_list</span>
+                <span class="n">box_list</span><span class="p">,</span> <span class="n">eps_p_2d</span><span class="p">,</span> <span class="n">radius_list</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eps_m</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">xi</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">tol</span><span class="p">),</span> <span class="nb">bool</span><span class="p">(</span><span class="n">quiet</span><span class="p">),</span> <span class="n">guess_type</span><span class="p">,</span> <span class="n">solver_type</span><span class="p">,</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">E0_list</span><span class="p">,</span> <span class="n">solve_quadrupoles</span><span class="p">,</span> <span class="n">quad_idxs_list</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;eps_p must be a scalar, 1D array, or 2D array&quot;</span><span class="p">)</span>
@@ -202,30 +246,59 @@
 
 <div class="viewcode-block" id="dipole_solver.get_eff_polarizability">
 <a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver.get_eff_polarizability">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_eff_polarizability</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_eff_polarizability</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">physical</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns the effective polarizability by averaging all particle dipoles over all frames.</span>
+<span class="sd">        Returns the effective polarizability by averaging all particle dipoles over all frames</span>
 <span class="sd">        </span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        physical : bool, optional</span>
+<span class="sd">            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</span>
+
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        alpha_eff : numpy.ndarray</span>
 <span class="sd">            Average polarizability with shape (num_wavelengths, 3, 3) (squeezed)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_eff_polarizability</span><span class="p">())</span></div>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_eff_polarizability</span><span class="p">(</span><span class="n">physical</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="dipole_solver.get_dipoles">
 <a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver.get_dipoles">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_dipoles</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_dipoles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">physical</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the dipoles calculated for all frames.</span>
 <span class="sd">        </span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        physical : bool, optional</span>
+<span class="sd">            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</span>
+
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        p : numpy.ndarray</span>
 <span class="sd">            Dipoles of each particle with shape (num_frames, num_wavelengths, num_particles, 3, 3) (squeezed)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_dipoles</span><span class="p">())</span></div>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_dipoles</span><span class="p">(</span><span class="n">physical</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="dipole_solver.get_quadrupoles">
+<a class="viewcode-back" href="../../api.html#cuMPM.dipole_solver.get_quadrupoles">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_quadrupoles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">physical</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the quadrupoles calculated for all frames.</span>
+<span class="sd">        </span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        physical : bool, optional</span>
+<span class="sd">            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Q : numpy.ndarray</span>
+<span class="sd">            Quadrupoles of each particle in the quadrupole subset with shape (num_frames, num_wavelengths, num_quads, 3, 5) (squeezed)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">get_quadrupoles</span><span class="p">(</span><span class="n">physical</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="dipole_solver.get_cap_dip">

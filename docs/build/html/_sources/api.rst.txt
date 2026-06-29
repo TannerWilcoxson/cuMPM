@@ -15,3 +15,12 @@ API Reference
    :members:
    :undoc-members:
    :show-inheritance:
+
+.. autoclass:: cuMPM.EELS
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: cuMPM.drude_dielectric
+
+

@@ -43,7 +43,14 @@ During installation, the build backend (`scikit-build-core`) will automatically 
 
 ## Python Interface Usage
 
-Once installed, you can import and run `cuMPM` within Python scripts. For complete, executable simulation setups (such as Drude ITO hexatic lattice modeling and mixed permittivity simulations), please refer to the `examples/` directory.
+Once installed, you can import and run `cuMPM` within Python scripts. 
+
+cuMPM provides:
+1. **`dipole_solver`**: Solves self-consistent dipoles (and optionally quadrupoles) of particle arrays under incident plane wave fields with periodic/open boundary conditions.
+2. **`Near_Field`**: Computes local field intensity at arbitrary spatial coordinates.
+3. **`EELS`**: Computes Electron Energy Loss Spectroscopy (EELS) probability spectra and induced dipoles/quadrupoles along the trajectory of a relativistic electron beam.
+
+For complete, executable simulation setups (such as Drude ITO hexatic lattice modeling, periodic EELS with quadrupoles, and mixed permittivity simulations), please refer to the `examples/` directory.
 
 ---
 

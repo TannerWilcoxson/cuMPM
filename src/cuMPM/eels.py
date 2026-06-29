@@ -47,12 +47,16 @@ class EELS:
             Step size along the electron beam trajectory in nanometers. Defaults to 0.05.
         split_method : str, optional
             Algorithm used to distribute sub-dipoles inside the NC volume.
-            ``"cubic"``    – uniform cubic lattice truncated at the NC radius (default).
-                            N_split is rounded up to the next perfect cube n³; the actual
-                            sub-dipole count M ≈ (π/6)·n³ after truncation.
-            ``"fibonacci"``– Fibonacci/golden-angle spiral on the unit sphere with
-                            cube-root-spaced shells decoupled by a fixed random shuffle.
-                            The actual count equals exactly N_split.
+
+            ``"cubic"``
+                uniform cubic lattice truncated at the NC radius (default).
+                N_split is rounded up to the next perfect cube n³; the actual
+                sub-dipole count M ≈ (π/6)·n³ after truncation.
+            ``"fibonacci"``
+                Fibonacci/golden-angle spiral on the unit sphere with
+                cube-root-spaced shells decoupled by a fixed random shuffle.
+                The actual count equals exactly N_split.
+
             In both cases sub-dipole radii are set so that the total sub-dipole volume
             equals the original NC volume.
         solve_quadrupoles : bool, optional
