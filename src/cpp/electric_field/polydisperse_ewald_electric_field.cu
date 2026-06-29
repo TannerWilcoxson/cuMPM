@@ -1420,7 +1420,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
     }
 
     double* G_point = E_point + num_particles * 3 * 2;
-    const double I_arr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    const double I_arr[5] = {1.0, 0.0, 0.0, 1.0, 0.0};
 
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];

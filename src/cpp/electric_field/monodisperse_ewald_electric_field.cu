@@ -1765,7 +1765,7 @@ __global__ void real_space_neighbor_kernel_joint(
     }
 
     double* G_point = E_point + num_particles * 3 * 2;
-    const double I_arr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    const double I_arr[5] = {1.0, 0.0, 0.0, 1.0, 0.0};
 
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];
@@ -2440,7 +2440,29 @@ void Monodisperse_Ewald_Electric_Field::electricField() {
         }
     }
     
+    // Copy and print reciprocal contribution
+    {
+        size_t size = ((num_field_points > 0) ? num_field_points : num_particles) * 3 + num_quads * 5;
+        std::vector<double> temp(size * 2);
+        cudaMemcpy(temp.data(), d_E_point, size * 2 * sizeof(double), cudaMemcpyDeviceToHost);
+        std::cout << "--- C++ Ewald Reciprocal Contribution ---" << std::endl;
+        for (size_t i = 0; i < size; ++i) {
+            std::cout << "  idx " << i << ": (" << temp[i * 2] << ", " << temp[i * 2 + 1] << ")" << std::endl;
+        }
+    }
+    
     realSpace(d_E_point);
+
+    // Copy and print total
+    {
+        size_t size = ((num_field_points > 0) ? num_field_points : num_particles) * 3 + num_quads * 5;
+        std::vector<double> temp(size * 2);
+        cudaMemcpy(temp.data(), d_E_point, size * 2 * sizeof(double), cudaMemcpyDeviceToHost);
+        std::cout << "--- C++ Ewald Total (Reciprocal + Real) ---" << std::endl;
+        for (size_t i = 0; i < size; ++i) {
+            std::cout << "  idx " << i << ": (" << temp[i * 2] << ", " << temp[i * 2 + 1] << ")" << std::endl;
+        }
+    }
 }
 
 void Monodisperse_Ewald_Electric_Field::calculate() {
