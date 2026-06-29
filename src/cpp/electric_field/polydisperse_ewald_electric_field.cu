@@ -629,7 +629,8 @@ __global__ void real_space_self_kernel_polydisperse(
     const int* __restrict__ radius_idx,
     const double* __restrict__ d_self_perp_uniq,
     double* __restrict__ E_point,
-    size_t num_particles)
+    size_t num_particles,
+    FieldCalcMode mode)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_particles) return;
@@ -684,8 +685,10 @@ __global__ void real_space_neighbor_kernel_polydisperse(
     double box_x,
     double box_y,
     double box_z,
-    double rc)
+    double rc,
+    FieldCalcMode mode)
 {
+    double sign = (mode == FieldCalcMode::SOLVER_AX) ? 1.0 : -1.0;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_particles) return;
 
@@ -744,14 +747,14 @@ __global__ void real_space_neighbor_kernel_polydisperse(
             double contrib_z_r = perp_val * (dip_z_r - delta_z * delta_dip_r) + para_val * delta_z * delta_dip_r;
             double contrib_z_i = perp_val * (dip_z_i - delta_z * delta_dip_i) + para_val * delta_z * delta_dip_i;
 
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], contrib_x_r);
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], contrib_x_i);
+            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], sign * contrib_x_r);
+            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], sign * contrib_x_i);
 
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], contrib_y_r);
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], contrib_y_i);
+            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], sign * contrib_y_r);
+            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], sign * contrib_y_i);
 
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], contrib_z_r);
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], contrib_z_i);
+            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], sign * contrib_z_r);
+            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], sign * contrib_z_i);
         }
     }
 }
@@ -1263,7 +1266,8 @@ __global__ void real_space_self_kernel_polydisperse_joint(
     double* __restrict__ E_point,
     size_t num_particles,
     size_t num_quads,
-    bool solve_quadrupoles)
+    bool solve_quadrupoles,
+    FieldCalcMode mode)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_particles) return;
@@ -1366,8 +1370,10 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
     double box_y,
     double box_z,
     double rc,
-    bool solve_quadrupoles)
+    bool solve_quadrupoles,
+    FieldCalcMode mode)
 {
+    double sign = (mode == FieldCalcMode::SOLVER_AX) ? 1.0 : -1.0;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_particles) return;
 
@@ -1490,14 +1496,14 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
                 E_quad_z_i = 0.5 * (Q1_val * Q__rr_i * delta_z + 2.0 * Q2_val * Q_r_vec_i[2]);
             }
 
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], E_dip_x_r + E_quad_x_r);
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], E_dip_x_i + E_quad_x_i);
+            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], sign * (E_dip_x_r + E_quad_x_r));
+            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], sign * (E_dip_x_i + E_quad_x_i));
 
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], E_dip_y_r + E_quad_y_r);
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], E_dip_y_i + E_quad_y_i);
+            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], sign * (E_dip_y_r + E_quad_y_r));
+            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], sign * (E_dip_y_i + E_quad_y_i));
 
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], E_dip_z_r + E_quad_z_r);
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], E_dip_z_i + E_quad_z_i);
+            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], sign * (E_dip_z_r + E_quad_z_r));
+            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], sign * (E_dip_z_i + E_quad_z_i));
 
             // 2. Contributions to G
             if (solve_quadrupoles) {
@@ -1574,8 +1580,8 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
                     }
 
                     for (int c = 0; c < 5; ++c) {
-                        atomicAdd(&G_point[(q_field * 5 + c) * 2 + 0], G_dip_r[c] + G_quad_r[c]);
-                        atomicAdd(&G_point[(q_field * 5 + c) * 2 + 1], G_dip_i[c] + G_quad_i[c]);
+                        atomicAdd(&G_point[(q_field * 5 + c) * 2 + 0], sign * (G_dip_r[c] + G_quad_r[c]));
+                        atomicAdd(&G_point[(q_field * 5 + c) * 2 + 1], sign * (G_dip_i[c] + G_quad_i[c]));
                     }
                 }
             }
@@ -1940,10 +1946,7 @@ void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
                 (-48.0 * xi_8 * r_6 * r_sq - 32.0 * xi_6 * (3.0 - 8.0 * xi_sq) * r_6 + 
                  24.0 * xi_4 * (3.0 - 16.0 * xi_sq) * r_4 - 72.0 * xi_sq * (1.0 - 8.0 * xi_sq) * r_sq + 45.0 - 480.0 * xi_sq);
 
-            double fq1_reg = 0.0;
-            if (mode == FieldCalcMode::SOLVER_AX) {
-                fq1_reg = -15.0 / (4.0 * PI * r_4) + 15.0 * r_sq / (64.0 * PI) * (1.0 - 3.0 * r_sq / 16.0);
-            }
+            double fq1_reg = -15.0 / (4.0 * PI * r_4) + 15.0 * r_sq / (64.0 * PI) * (1.0 - 3.0 * r_sq / 16.0);
 
             host_field_quad_1[idx + 1] = fq1_exppolyp * std::exp(-std::pow(r + 2.0, 2) * xi_sq) + fq1_erfpolyp * std::erfc((r + 2.0) * xi) +
                                          fq1_exppolym * std::exp(-std::pow(r - 2.0, 2) * xi_sq) + fq1_erfpolym * std::erfc((r - 2.0) * xi) +
@@ -1982,10 +1985,7 @@ void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
                 (-16.0 * xi_8 * r_6 * r_sq - 32.0 * xi_6 * (3.0 - 8.0 * xi_sq) * r_6 - 24.0 * xi_4 * (3.0 - 16.0 * xi_sq) * r_4 + 
                  24.0 * xi_sq * (1.0 - 8.0 * xi_sq) * r_sq - 9.0 + 96.0 * xi_sq);
 
-            double fq2_reg = 0.0;
-            if (mode == FieldCalcMode::SOLVER_AX) {
-                fq2_reg = 3.0 / (4.0 * PI * r_4) - 3.0 * r / (8.0 * PI) * (1.0 - 5.0 * r / 8.0 + 5.0 * r_cub / 128.0);
-            }
+            double fq2_reg = 3.0 / (4.0 * PI * r_4) - 3.0 * r / (8.0 * PI) * (1.0 - 5.0 * r / 8.0 + 5.0 * r_cub / 128.0);
 
             host_field_quad_2[idx + 1] = fq2_exppolyp * std::exp(-std::pow(r + 2.0, 2) * xi_sq) + fq2_erfpolyp * std::erfc((r + 2.0) * xi) +
                                          fq2_exppolym * std::exp(-std::pow(r - 2.0, 2) * xi_sq) + fq2_erfpolym * std::erfc((r - 2.0) * xi) +
@@ -2011,10 +2011,7 @@ void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
             double fq3_erfpoly0 = 5.0 / (1024.0 * PI * xi_6 * r_sq) * 
                 (8.0 * xi_6 * r_6 + 12.0 * xi_4 * (3.0 - 8.0 * xi_sq) * r_4 + 6.0 * xi_sq * (3.0 - 16.0 * xi_sq) * r_sq - 3.0 + 24.0 * xi_sq);
 
-            double fq3_reg = 0.0;
-            if (mode == FieldCalcMode::SOLVER_AX) {
-                fq3_reg = 5.0 * r / (8.0 * PI) * (1.0 - 3.0 * r / 4.0 + r_cub / 16.0);
-            }
+            double fq3_reg = 5.0 * r / (8.0 * PI) * (1.0 - 3.0 * r / 4.0 + r_cub / 16.0);
 
             host_field_quad_3[idx + 1] = fq3_exppolyp * std::exp(-std::pow(r + 2.0, 2) * xi_sq) + fq3_erfpolyp * std::erfc((r + 2.0) * xi) +
                                          fq3_exppolym * std::exp(-std::pow(r - 2.0, 2) * xi_sq) + fq3_erfpolym * std::erfc((r - 2.0) * xi) +
@@ -2045,10 +2042,7 @@ void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
                 (16.0 * xi_8 * r_6 * r_sq + (96.0 * xi_6 - 128.0 * xi_8) * r_6 + (72.0 * xi_4 - 192.0 * xi_6 + 256.0 * xi_8) * r_4 - 
                  (24.0 * xi_sq - 96.0 * xi_4 + 256.0 * xi_6) * r_sq + 9.0 - 48.0 * xi_sq + 192.0 * xi_4);
 
-            double gq1_reg = 0.0;
-            if (mode == FieldCalcMode::SOLVER_AX) {
-                gq1_reg = 75.0 * r * std::pow(4.0 - r_sq, 2.0) / (1024.0 * PI);
-            }
+            double gq1_reg = 75.0 * r * std::pow(4.0 - r_sq, 2.0) / (1024.0 * PI);
 
             host_grad_quad_1[idx + 1] = gq1_exppolyp * std::exp(-std::pow(r + 2.0, 2) * xi_sq) + gq1_erfpolyp * std::erfc((r + 2.0) * xi) +
                                          gq1_exppolym * std::exp(-std::pow(r - 2.0, 2) * xi_sq) + gq1_erfpolym * std::erfc((r - 2.0) * xi) +
@@ -2083,10 +2077,7 @@ void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
                 (48.0 * xi_8 * r_6 * r_sq + (288.0 * xi_6 - 384.0 * xi_8) * r_6 + (216.0 * xi_4 - 576.0 * xi_6 + 768.0 * xi_8) * r_4 - 
                  (72.0 * xi_sq - 288.0 * xi_4 + 768.0 * xi_6) * r_sq + 45.0 - 240.0 * xi_sq + 960.0 * xi_4);
 
-            double gq2_reg = 0.0;
-            if (mode == FieldCalcMode::SOLVER_AX) {
-                gq2_reg = -45.0 * r / (32.0 * PI) * (1.0 - 5.0 * r_sq / 12.0 + r_4 / 16.0);
-            }
+            double gq2_reg = -45.0 * r / (32.0 * PI) * (1.0 - 5.0 * r_sq / 12.0 + r_4 / 16.0);
 
             host_grad_quad_2[idx + 1] = gq2_exppolyp * std::exp(-std::pow(r + 2.0, 2) * xi_sq) + gq2_erfpolyp * std::erfc((r + 2.0) * xi) +
                                          gq2_exppolym * std::exp(-std::pow(r - 2.0, 2) * xi_sq) + gq2_erfpolym * std::erfc((r - 2.0) * xi) +
@@ -2129,10 +2120,7 @@ void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
                  (360.0 * xi_4 - 1440.0 * xi_6 + 3840.0 * xi_8) * r_4 + (270.0 * xi_sq - 1440.0 * xi_4 + 5760.0 * xi_6) * r_sq - 
                  135.0 + 900.0 * xi_sq - 4800.0 * xi_4);
 
-            double gq3_reg = 0.0;
-            if (mode == FieldCalcMode::SOLVER_AX) {
-                gq3_reg = -15.0 * std::pow(r_sq - 4.0, 3) * (3.0 * r_4 + 6.0 * r_sq + 8.0) / (2048.0 * PI * r_5);
-            }
+            double gq3_reg = -15.0 * std::pow(r_sq - 4.0, 3) * (3.0 * r_4 + 6.0 * r_sq + 8.0) / (2048.0 * PI * r_5);
 
             host_grad_quad_3[idx + 1] = gq3_exppolyp * std::exp(-std::pow(r + 2.0, 2) * xi_sq) + gq3_erfpolyp * std::erfc((r + 2.0) * xi) +
                                          gq3_exppolym * std::exp(-std::pow(r - 2.0, 2) * xi_sq) + gq3_erfpolym * std::erfc((r - 2.0) * xi) +
@@ -2175,10 +2163,7 @@ void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
                  (1080.0 * xi_4 - 4320.0 * xi_6 + 11520.0 * xi_8) * r_4 - (1350.0 * xi_sq - 7200.0 * xi_4 + 28800.0 * xi_6) * r_sq + 
                  945.0 - 6300.0 * xi_sq + 33600.0 * xi_4);
 
-            double gq4_reg = 0.0;
-            if (mode == FieldCalcMode::SOLVER_AX) {
-                gq4_reg = -15.0 * (3584.0 - 80.0 * r_6 - 30.0 * std::pow(r, 8.0) + 9.0 * std::pow(r, 10.0)) / (2048.0 * PI * r_5);
-            }
+            double gq4_reg = -15.0 * (3584.0 - 80.0 * r_6 - 30.0 * std::pow(r, 8.0) + 9.0 * std::pow(r, 10.0)) / (2048.0 * PI * r_5);
 
             host_grad_quad_4[idx + 1] = gq4_exppolyp * std::exp(-std::pow(r + 2.0, 2) * xi_sq) + gq4_erfpolyp * std::erfc((r + 2.0) * xi) +
                                          gq4_exppolym * std::exp(-std::pow(r - 2.0, 2) * xi_sq) + gq4_erfpolym * std::erfc((r - 2.0) * xi) +
@@ -2648,14 +2633,16 @@ void Polydisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
                 d_radii,
                 d_E_point,
                 num_particles, num_quads,
-                solve_quadrupoles
+                solve_quadrupoles,
+                mode
             );
         } else {
             real_space_self_kernel_polydisperse<<<blocksPerGrid, threadsPerBlock>>>(
                 d_dipoles, d_self_coef_r, d_self_coef_i,
                 d_radius_idx, d_self_perp_uniq,
                 d_E_point,
-                num_particles
+                num_particles,
+                mode
             );
         }
         CUDA_CHECK(cudaGetLastError());
@@ -2679,7 +2666,8 @@ void Polydisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
                 neighbor_list->get_max_neighbors(),
                 box_x, box_y, box_z,
                 rc,
-                solve_quadrupoles
+                solve_quadrupoles,
+                mode
             );
         } else {
             real_space_neighbor_kernel_polydisperse<<<blocksPerGrid, threadsPerBlock>>>(
@@ -2692,11 +2680,19 @@ void Polydisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
                 num_particles,
                 neighbor_list->get_max_neighbors(),
                 box_x, box_y, box_z,
-                rc
+                rc,
+                mode
             );
         }
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
+    }
+}
+
+__global__ void negate_vector_kernel_poly(double* vec, size_t size) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        vec[idx] = -vec[idx];
     }
 }
 
@@ -2823,6 +2819,18 @@ void Polydisperse_Ewald_Electric_Field::electricField() {
         );
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
+    }
+
+    if (mode == FieldCalcMode::INTERACTION_FIELD) {
+        size_t num_targets = (num_field_points > 0) ? num_field_points : num_particles;
+        size_t num_doubles_E = (num_targets * 3 + num_quads * 5) * 2;
+        if (num_doubles_E > 0) {
+            int threads = 256;
+            int blocks = (num_doubles_E + threads - 1) / threads;
+            negate_vector_kernel_poly<<<blocks, threads>>>(d_E_point, num_doubles_E);
+            CUDA_CHECK(cudaGetLastError());
+            CUDA_CHECK(cudaDeviceSynchronize());
+        }
     }
 
     realSpace(d_E_point);

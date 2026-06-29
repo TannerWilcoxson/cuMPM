@@ -192,17 +192,17 @@ std::vector<double> Near_Field::calculate() {
     std::vector<double> host_E_point(num_field_points * 3 * 2);
     CUDA_CHECK(cudaMemcpy(host_E_point.data(), EF->getDevEPoint(), num_field_points * 3 * 2 * sizeof(double), cudaMemcpyDeviceToHost));
 
-    // Compute intensity: | -E_ind + E0 |^2
+    // Compute intensity: | E_ind + E0 |^2
     std::vector<double> intensity(num_field_points, 0.0);
     for (size_t i = 0; i < num_field_points; ++i) {
-        double fx_r = -host_E_point[(i * 3 + 0) * 2 + 0] + E0[0].real();
-        double fx_i = -host_E_point[(i * 3 + 0) * 2 + 1] + E0[0].imag();
+        double fx_r = host_E_point[(i * 3 + 0) * 2 + 0] + E0[0].real();
+        double fx_i = host_E_point[(i * 3 + 0) * 2 + 1] + E0[0].imag();
 
-        double fy_r = -host_E_point[(i * 3 + 1) * 2 + 0] + E0[1].real();
-        double fy_i = -host_E_point[(i * 3 + 1) * 2 + 1] + E0[1].imag();
+        double fy_r = host_E_point[(i * 3 + 1) * 2 + 0] + E0[1].real();
+        double fy_i = host_E_point[(i * 3 + 1) * 2 + 1] + E0[1].imag();
 
-        double fz_r = -host_E_point[(i * 3 + 2) * 2 + 0] + E0[2].real();
-        double fz_i = -host_E_point[(i * 3 + 2) * 2 + 1] + E0[2].imag();
+        double fz_r = host_E_point[(i * 3 + 2) * 2 + 0] + E0[2].real();
+        double fz_i = host_E_point[(i * 3 + 2) * 2 + 1] + E0[2].imag();
 
         intensity[i] = (fx_r * fx_r + fx_i * fx_i) +
                        (fy_r * fy_r + fy_i * fy_i) +

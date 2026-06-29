@@ -603,7 +603,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
             double phase = -2.0 * M_PI * omega_val * Z_pts[j] / v;
             Complex exp_factor = std::exp(Complex(0.0, phase));
-            integrand[j] = -(Eind_z * exp_factor).real();
+            integrand[j] = (Eind_z * exp_factor).real();
         }
 
         double integral = simpson_integrate(integrand, integration_step);

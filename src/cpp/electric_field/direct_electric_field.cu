@@ -89,6 +89,7 @@ __global__ void direct_field_kernel(
 
     const double2* dips = reinterpret_cast<const double2*>(d_dipoles);
     const double INV_4PI = 1.0 / (4.0 * 3.14159265358979323846);
+    const double inv_4pi_scaled = INV_4PI * ((mode == FieldCalcMode::SOLVER_AX) ? -1.0 : 1.0);
 
     for (int tile_start = 0; tile_start < N; tile_start += DIRECT_TILE_SIZE) {
         int src = tile_start + tid;
@@ -201,12 +202,12 @@ __global__ void direct_field_kernel(
                 double E_dip_zr = 3.0 * p_dot_rhat_r * runit_z - pz_r;
                 double E_dip_zi = 3.0 * p_dot_rhat_i * runit_z - pz_i;
 
-                E_xr += INV_4PI * inv_r3 * E_dip_xr;
-                E_xi += INV_4PI * inv_r3 * E_dip_xi;
-                E_yr += INV_4PI * inv_r3 * E_dip_yr;
-                E_yi += INV_4PI * inv_r3 * E_dip_yi;
-                E_zr += INV_4PI * inv_r3 * E_dip_zr;
-                E_zi += INV_4PI * inv_r3 * E_dip_zi;
+                E_xr += inv_4pi_scaled * inv_r3 * E_dip_xr;
+                E_xi += inv_4pi_scaled * inv_r3 * E_dip_xi;
+                E_yr += inv_4pi_scaled * inv_r3 * E_dip_yr;
+                E_yi += inv_4pi_scaled * inv_r3 * E_dip_yi;
+                E_zr += inv_4pi_scaled * inv_r3 * E_dip_zr;
+                E_zi += inv_4pi_scaled * inv_r3 * E_dip_zi;
 
                 if (solve_quadrupoles) {
                     // 2. Quadrupole fields
@@ -235,12 +236,12 @@ __global__ void direct_field_kernel(
                     double E_quad_zr = 2.5 * Q_rhatrhat_r * runit_z - Q_rhat_zr;
                     double E_quad_zi = 2.5 * Q_rhatrhat_i * runit_z - Q_rhat_zi;
 
-                    E_xr += 3.0 * INV_4PI * inv_r4 * E_quad_xr;
-                    E_xi += 3.0 * INV_4PI * inv_r4 * E_quad_xi;
-                    E_yr += 3.0 * INV_4PI * inv_r4 * E_quad_yr;
-                    E_yi += 3.0 * INV_4PI * inv_r4 * E_quad_yi;
-                    E_zr += 3.0 * INV_4PI * inv_r4 * E_quad_zr;
-                    E_zi += 3.0 * INV_4PI * inv_r4 * E_quad_zi;
+                    E_xr += 3.0 * inv_4pi_scaled * inv_r4 * E_quad_xr;
+                    E_xi += 3.0 * inv_4pi_scaled * inv_r4 * E_quad_xi;
+                    E_yr += 3.0 * inv_4pi_scaled * inv_r4 * E_quad_yr;
+                    E_yi += 3.0 * inv_4pi_scaled * inv_r4 * E_quad_yi;
+                    E_zr += 3.0 * inv_4pi_scaled * inv_r4 * E_quad_zr;
+                    E_zi += 3.0 * inv_4pi_scaled * inv_r4 * E_quad_zi;
 
                     if (q_target >= 0) {
                         double rr0 = runit_x * runit_x - runit_z * runit_z;
@@ -260,16 +261,16 @@ __global__ void direct_field_kernel(
                         double G_dip_4r = 5.0 * p_dot_rhat_r * rr4 - 2.0 * (py_r * runit_z + pz_r * runit_y);
                         double G_dip_4i = 5.0 * p_dot_rhat_i * rr4 - 2.0 * (py_i * runit_z + pz_i * runit_y);
 
-                        G_0r -= 3.0 * INV_4PI * inv_r4 * G_dip_0r;
-                        G_0i -= 3.0 * INV_4PI * inv_r4 * G_dip_0i;
-                        G_1r -= 3.0 * INV_4PI * inv_r4 * G_dip_1r;
-                        G_1i -= 3.0 * INV_4PI * inv_r4 * G_dip_1i;
-                        G_2r -= 3.0 * INV_4PI * inv_r4 * G_dip_2r;
-                        G_2i -= 3.0 * INV_4PI * inv_r4 * G_dip_2i;
-                        G_3r -= 3.0 * INV_4PI * inv_r4 * G_dip_3r;
-                        G_3i -= 3.0 * INV_4PI * inv_r4 * G_dip_3i;
-                        G_4r -= 3.0 * INV_4PI * inv_r4 * G_dip_4r;
-                        G_4i -= 3.0 * INV_4PI * inv_r4 * G_dip_4i;
+                        G_0r -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_0r;
+                        G_0i -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_0i;
+                        G_1r -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_1r;
+                        G_1i -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_1i;
+                        G_2r -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_2r;
+                        G_2i -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_2i;
+                        G_3r -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_3r;
+                        G_3i -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_3i;
+                        G_4r -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_4r;
+                        G_4i -= 3.0 * inv_4pi_scaled * inv_r4 * G_dip_4i;
 
                         double Q_rr_rr_Q_0r = 2.0 * (Q_rhat_xr * runit_x - Q_rhat_zr * runit_z);
                         double Q_rr_rr_Q_0i = 2.0 * (Q_rhat_xi * runit_x - Q_rhat_zi * runit_z);
@@ -282,7 +283,7 @@ __global__ void direct_field_kernel(
                         double Q_rr_rr_Q_4r = 2.0 * (Q_rhat_yr * runit_z + Q_rhat_zr * runit_y);
                         double Q_rr_rr_Q_4i = 2.0 * (Q_rhat_yi * runit_z + Q_rhat_zi * runit_y);
 
-                        double factor = INV_4PI * inv_r5;
+                        double factor = inv_4pi_scaled * inv_r5;
 
                         G_0r += factor * (1.5 * q0r - 15.0 * Q_rr_rr_Q_0r + 52.5 * rr0 * Q_rhatrhat_r);
                         G_0i += factor * (1.5 * q0i - 15.0 * Q_rr_rr_Q_0i + 52.5 * rr0 * Q_rhatrhat_i);
