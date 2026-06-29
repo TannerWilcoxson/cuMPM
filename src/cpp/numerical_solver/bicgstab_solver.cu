@@ -59,7 +59,8 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
     const std::vector<Complex>& b,
     const std::vector<Complex>& x0,
     Electric_Field* EF,
-    double tol
+    double tol,
+    bool quiet
 ) {
     size_t vec_size = b.size();
     if (vec_size == 0) return std::vector<Complex>();

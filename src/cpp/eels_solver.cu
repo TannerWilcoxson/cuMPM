@@ -547,7 +547,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             dip_guess[i] /= Enorm;
         }
 
-        std::vector<Complex> sol_dip_norm = solver->solve(E_inc_norm, dip_guess, EF.get(), tol);
+        std::vector<Complex> sol_dip_norm = solver->solve(E_inc_norm, dip_guess, EF.get(), tol, quiet);
 
         // Scale solved dipoles back by Enorm
         std::vector<Complex> sol_dip(num_particles * 3);

@@ -848,10 +848,6 @@ __global__ void spread_precalcs_kernel(
     double oxyz_y = offsetxyz[o * 3 + 1];
     double oxyz_z = offsetxyz[o * 3 + 2];
 
-    int geix = ((gix + ox) % num_grid_x + num_grid_x) % num_grid_x;
-    int geiy = ((giy + oy) % num_grid_y + num_grid_y) % num_grid_y;
-    int geiz = ((giz + oz) % num_grid_z + num_grid_z) % num_grid_z;
-
     spread_idxs[idx] = (((gix + ox + 256) & 0x3FF) << 20) | (((giy + oy + 256) & 0x3FF) << 10) | ((giz + oz + 256) & 0x3FF);
 
     double gdx = dx + oxyz_x;
@@ -2439,30 +2435,7 @@ void Monodisperse_Ewald_Electric_Field::electricField() {
             CUDA_CHECK(cudaDeviceSynchronize());
         }
     }
-    
-    // Copy and print reciprocal contribution
-    {
-        size_t size = ((num_field_points > 0) ? num_field_points : num_particles) * 3 + num_quads * 5;
-        std::vector<double> temp(size * 2);
-        cudaMemcpy(temp.data(), d_E_point, size * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-        std::cout << "--- C++ Ewald Reciprocal Contribution ---" << std::endl;
-        for (size_t i = 0; i < size; ++i) {
-            std::cout << "  idx " << i << ": (" << temp[i * 2] << ", " << temp[i * 2 + 1] << ")" << std::endl;
-        }
-    }
-    
     realSpace(d_E_point);
-
-    // Copy and print total
-    {
-        size_t size = ((num_field_points > 0) ? num_field_points : num_particles) * 3 + num_quads * 5;
-        std::vector<double> temp(size * 2);
-        cudaMemcpy(temp.data(), d_E_point, size * 2 * sizeof(double), cudaMemcpyDeviceToHost);
-        std::cout << "--- C++ Ewald Total (Reciprocal + Real) ---" << std::endl;
-        for (size_t i = 0; i < size; ++i) {
-            std::cout << "  idx " << i << ": (" << temp[i * 2] << ", " << temp[i * 2 + 1] << ")" << std::endl;
-        }
-    }
 }
 
 void Monodisperse_Ewald_Electric_Field::calculate() {

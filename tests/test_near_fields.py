@@ -72,5 +72,5 @@ def test_near_field_vs_pyMPM():
     nf_cu = cuMPM.Near_Field(box, E0, radius=radius, dip=dipoles, dip_pos=dip_pos, field_points=field_points)
     intensity_cu = nf_cu.calculate()
     
-    np.testing.assert_allclose(intensity_py, intensity_cu, rtol=1e-4, atol=1e-5)
+    np.testing.assert_allclose(intensity_py, intensity_cu, rtol=1e-12, atol=1e-12)
 

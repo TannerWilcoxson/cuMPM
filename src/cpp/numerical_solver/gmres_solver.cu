@@ -57,7 +57,8 @@ std::vector<Complex> GMRES_Solver::solve(
     const std::vector<Complex>& b,
     const std::vector<Complex>& x0,
     Electric_Field* EF,
-    double tol
+    double tol,
+    bool quiet
 ) {
     size_t vec_size = b.size();
     if (vec_size == 0) return std::vector<Complex>();
@@ -92,7 +93,6 @@ std::vector<Complex> GMRES_Solver::solve(
         gpu_vector_sub(d_r, d_b, d_r, vec_size);
 
         double r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
-        std::cout << "GMRES Iter " << iter << ", residual: " << r_norm << " / " << b_norm << std::endl;
         if (r_norm < tol * b_norm) {
             break;
         }

@@ -4,7 +4,7 @@ from cuMPM.dev import DirectElectricField, MonodisperseEwaldElectricField, Polyd
 
 def test_direct_electric_field():
     radius = np.array([1.0, 1.2, 1.5])
-    ef = DirectElectricField(radius)
+    ef = DirectElectricField(radius, mode=False)
     
     x = np.array([0.0, 2.0, 4.0])
     y = np.array([0.0, 0.0, 0.0])
@@ -52,14 +52,12 @@ def test_ewald_equivalence_and_splits():
     # 1. Monodisperse Ewald
     ef_mono = MonodisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole)
     ef_mono.update_particle_coordinates(x, y, z)
-    ef_mono.update_field_coordinates(x, y, z)
     ef_mono.update_dipoles(dip_x, dip_y, dip_z)
     ef_mono.set_self_coef(self_coef_r, self_coef_i)
 
     # 2. Polydisperse Ewald (initialized with radius = 1.0 for monodisperse equivalence)
     ef_poly = PolydisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles)
     ef_poly.update_particle_coordinates(x, y, z)
-    ef_poly.update_field_coordinates(x, y, z)
     ef_poly.update_dipoles(dip_x, dip_y, dip_z)
     ef_poly.set_self_coef(self_coef_r, self_coef_i)
 
@@ -118,7 +116,6 @@ def test_ewald_quadrupoles_equivalence_and_splits():
         solve_quadrupoles=True, quad_idxs=quad_idxs
     )
     ef_mono.update_particle_coordinates(x, y, z)
-    ef_mono.update_field_coordinates(x, y, z)
     ef_mono.update_dipoles(dip_x, dip_y, dip_z)
     ef_mono.update_quadrupoles(quad_1, quad_2, quad_3, quad_4, quad_5)
     ef_mono.set_self_coef(self_coef_r, self_coef_i)
@@ -129,7 +126,6 @@ def test_ewald_quadrupoles_equivalence_and_splits():
         solve_quadrupoles=True, quad_idxs=quad_idxs
     )
     ef_poly.update_particle_coordinates(x, y, z)
-    ef_poly.update_field_coordinates(x, y, z)
     ef_poly.update_dipoles(dip_x, dip_y, dip_z)
     ef_poly.update_quadrupoles(quad_1, quad_2, quad_3, quad_4, quad_5)
     ef_poly.set_self_coef(self_coef_r, self_coef_i)
@@ -195,9 +191,7 @@ def test_polydisperse_quadrupole_subset_electric_fields():
     y = pos[:, 1]
     z = pos[:, 2]
     ef_mono.update_particle_coordinates(x, y, z)
-    ef_mono.update_field_coordinates(x, y, z)
     ef_poly.update_particle_coordinates(x, y, z)
-    ef_poly.update_field_coordinates(x, y, z)
 
     # Set self coefficients
     self_coef_r = np.ones(num_particles) * 1.5

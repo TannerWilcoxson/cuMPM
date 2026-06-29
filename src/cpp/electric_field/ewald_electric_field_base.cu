@@ -169,7 +169,7 @@ void Ewald_Electric_Field_Base::updateFieldCoordinates(const std::vector<double>
                                                       const std::vector<double>& y_field,
                                                       const std::vector<double>& z_field) {
     if (mode == FieldCalcMode::SOLVER_AX) {
-        return;
+        throw std::runtime_error("Ewald_Electric_Field_Base: Cannot update field coordinates when SOLVER_AX mode is active.");
     }
     num_field_points = x_field.size();
     size_t size_bytes = num_field_points * sizeof(double);

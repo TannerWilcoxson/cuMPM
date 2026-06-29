@@ -182,9 +182,9 @@ def test_dipole_solver_direct_vs_ewald_large_box():
     dips_ewald = solver_ewald.get_dipoles()
     quads_ewald = solver_ewald.get_quadrupoles()
  
-    np.testing.assert_allclose(alpha_direct, alpha_ewald, rtol=5e-3, atol=1e-5)
-    np.testing.assert_allclose(dips_direct, dips_ewald, rtol=5e-3, atol=1e-5)
-    np.testing.assert_allclose(quads_direct, quads_ewald, rtol=5e-3, atol=1e-5)
+    np.testing.assert_allclose(alpha_direct, alpha_ewald, rtol=1e-3, atol=1e-5)
+    np.testing.assert_allclose(dips_direct, dips_ewald, rtol=1e-3, atol=1e-5)
+    np.testing.assert_allclose(quads_direct, quads_ewald, rtol=1e-3, atol=1e-5)
 
 
 def test_polydisperse_quadrupole_subset():
@@ -239,9 +239,9 @@ def test_polydisperse_quadrupole_subset():
     assert quads_mono.shape == (len(omega), len(quad_idxs), 3, 5)
     assert quads_poly.shape == (len(omega), len(quad_idxs), 3, 5)
 
-    np.testing.assert_allclose(alpha_mono, alpha_poly, rtol=5e-3, atol=5e-3)
-    np.testing.assert_allclose(dips_mono, dips_poly, rtol=5e-3, atol=5e-3)
-    np.testing.assert_allclose(quads_mono, quads_poly, rtol=5e-3, atol=5e-3)
+    np.testing.assert_allclose(alpha_mono, alpha_poly, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(dips_mono, dips_poly, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(quads_mono, quads_poly, rtol=1e-3, atol=1e-3)
 
 
 def test_polydisperse_solver_direct_vs_ewald_mixed_radii():

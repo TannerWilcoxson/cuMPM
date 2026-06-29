@@ -348,7 +348,7 @@ std::vector<Complex> Dipole_Solver::calc_derivative_guess(const std::vector<Comp
 
 std::vector<Complex> Dipole_Solver::compute_dipoles(const std::vector<Complex>& E, 
                                                     const std::vector<Complex>& dip_guess) {
-    return solver->solve(E, dip_guess, EF.get(), tol);
+    return solver->solve(E, dip_guess, EF.get(), tol, quiet);
 }
 
 // -----------------------------------------------------------------------------

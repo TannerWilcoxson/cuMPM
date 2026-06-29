@@ -34,7 +34,8 @@ public:
         const std::vector<Complex>& b,
         const std::vector<Complex>& x0,
         Electric_Field* EF,
-        double tol
+        double tol,
+        bool quiet = false
     ) override;
 };
 
