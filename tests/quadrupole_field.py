@@ -123,8 +123,8 @@ class Electric_Field():#{{{
         fE_dot = fE[...,0]+fE[...,1]+fE[...,2]
         fG_dot = fG[...,0]+fG[...,1]+fG[...,2]+fG[...,3]+fG[...,4]
 
-        Edot = self.scale_EP_coef*fE_dot + self.scale_EQ_coef*fG_dot
-        Gdot = self.scale_GP_coef*fE_dot + self.scale_GQ_coef*fG_dot
+        Edot = self.scale_EP_coef*fE_dot - self.scale_EQ_coef*fG_dot
+        Gdot = -self.scale_GP_coef*fE_dot + self.scale_GQ_coef*fG_dot
 
         #np.multiply(khat,sum[...,None],out=fE)
         np.multiply(khat[...,0],Edot,out=fE[...,0])
@@ -206,8 +206,8 @@ class Electric_Field():#{{{
         rrrr__Q = __rr.T*Q__rr #P2 x 5
 
         np.add.at(E_point,p1,perp*(P - rr_P) + para*rr_P)
-        np.add.at(E_point,p1,-0.5*(Q1*Q__rr*r + 2*Q2*Q_r))
-        np.add.at(G_point,p1,Q1*rrr_P + Q2*Pr_rP + (Q2 + Q3)*Ir_P)
+        np.add.at(E_point,p1,0.5*(Q1*Q__rr*r + 2*Q2*Q_r))
+        np.add.at(G_point,p1,-(Q1*rrr_P + Q2*Pr_rP + (Q2 + Q3)*Ir_P))
         np.add.at(G_point,p1,0.5*(G1*Irr__Q + G2*Q + G3*(Irr__Q+2*Q_rr_rr_Q) + G4*rrrr__Q))
         return E_point, G_point
     # }}}

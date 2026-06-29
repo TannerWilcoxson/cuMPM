@@ -34,7 +34,7 @@ public:
     Polydisperse_Ewald_Electric_Field(double box_x, double box_y, double box_z,
                                       double errortol,
                                       double xi,
-                                      bool calc_inter_dipole,
+                                      FieldCalcMode mode,
                                       const std::vector<double>& particle_radii,
                                       bool solve_quadrupoles = false,
                                       const std::vector<int>& quad_idxs = {});

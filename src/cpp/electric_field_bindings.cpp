@@ -12,6 +12,11 @@
 namespace py = pybind11;
 
 void register_electric_fields(py::module_& m) {
+    py::enum_<FieldCalcMode>(m, "FieldCalcMode")
+        .value("SOLVER_AX", FieldCalcMode::SOLVER_AX)
+        .value("INTERACTION_FIELD", FieldCalcMode::INTERACTION_FIELD)
+        .export_values();
+
     // Expose abstract base class Electric_Field
     py::class_<Electric_Field, std::unique_ptr<Electric_Field>>(m, "Electric_Field")
         .def("getDevDipoles", [](const Electric_Field& self) {
@@ -28,10 +33,12 @@ void register_electric_fields(py::module_& m) {
 
     // Expose Direct_Electric_Field
     py::class_<Direct_Electric_Field, Electric_Field, std::unique_ptr<Direct_Electric_Field>>(m, "Direct_Electric_Field")
-        .def(py::init<const std::vector<double>&, bool, const std::vector<int>&>(),
+        .def(py::init<const std::vector<double>&, FieldCalcMode, bool, const std::vector<int>&>(),
              py::arg("radius") = std::vector<double>{},
+             py::arg("mode") = FieldCalcMode::SOLVER_AX,
              py::arg("solve_quadrupoles") = false,
              py::arg("quad_idxs") = std::vector<int>{})
+        .def("getCalcMode", &Direct_Electric_Field::getCalcMode)
         .def("getSolveQuadrupoles", &Direct_Electric_Field::getSolveQuadrupoles)
         .def("getNumQuads", &Direct_Electric_Field::getNumQuads)
         .def("getNumFieldPoints", &Direct_Electric_Field::getNumFieldPoints)
@@ -87,7 +94,7 @@ void register_electric_fields(py::module_& m) {
         .def("getErrortol", &Ewald_Electric_Field_Base::getErrortol)
         .def("getRc", &Ewald_Electric_Field_Base::getRc)
         .def("getXi", &Ewald_Electric_Field_Base::getXi)
-        .def("getCalcInterDipole", &Ewald_Electric_Field_Base::getCalcInterDipole)
+        .def("getCalcMode", &Ewald_Electric_Field_Base::getCalcMode)
         .def("getSelfCoef", &Ewald_Electric_Field_Base::getSelfCoef)
         .def("getNumParticles", &Ewald_Electric_Field_Base::getNumParticles)
         .def("getNumFieldPoints", &Ewald_Electric_Field_Base::getNumFieldPoints)
@@ -238,9 +245,10 @@ void register_electric_fields(py::module_& m) {
 
     // Expose Monodisperse_Ewald_Electric_Field
     py::class_<Monodisperse_Ewald_Electric_Field, Ewald_Electric_Field_Base, std::unique_ptr<Monodisperse_Ewald_Electric_Field>>(m, "Monodisperse_Ewald_Electric_Field")
-        .def(py::init<double, double, double, double, double, bool, bool, const std::vector<int>&>(),
+        .def(py::init<double, double, double, double, double, FieldCalcMode, double, bool, const std::vector<int>&>(),
              py::arg("box_x"), py::arg("box_y"), py::arg("box_z"),
-             py::arg("errortol"), py::arg("xi"), py::arg("calc_inter_dipole"),
+             py::arg("errortol"), py::arg("xi"), py::arg("mode"),
+             py::arg("radius") = 1.0,
              py::arg("solve_quadrupoles") = false,
              py::arg("quad_idxs") = std::vector<int>{})
         .def("getDevSelfPerp", [](const Monodisperse_Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfPerp()); })
@@ -258,9 +266,9 @@ void register_electric_fields(py::module_& m) {
 
     // Expose Polydisperse_Ewald_Electric_Field
     py::class_<Polydisperse_Ewald_Electric_Field, Ewald_Electric_Field_Base, std::unique_ptr<Polydisperse_Ewald_Electric_Field>>(m, "Polydisperse_Ewald_Electric_Field")
-        .def(py::init<double, double, double, double, double, bool, const std::vector<double>&, bool, const std::vector<int>&>(),
+        .def(py::init<double, double, double, double, double, FieldCalcMode, const std::vector<double>&, bool, const std::vector<int>&>(),
              py::arg("box_x"), py::arg("box_y"), py::arg("box_z"),
-             py::arg("errortol"), py::arg("xi"), py::arg("calc_inter_dipole"),
+             py::arg("errortol"), py::arg("xi"), py::arg("mode"),
              py::arg("particle_radii"),
              py::arg("solve_quadrupoles") = false,
              py::arg("quad_idxs") = std::vector<int>{})

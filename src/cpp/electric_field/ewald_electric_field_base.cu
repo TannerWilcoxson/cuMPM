@@ -11,10 +11,10 @@
 }
 
 Ewald_Electric_Field_Base::Ewald_Electric_Field_Base(double box_x, double box_y, double box_z,
-                                                     double errortol, double xi, bool calc_inter_dipole,
+                                                     double errortol, double xi, FieldCalcMode mode,
                                                      bool solve_quadrupoles, const std::vector<int>& quad_idxs)
     : box_x(box_x), box_y(box_y), box_z(box_z), errortol(errortol), xi(xi),
-      calc_inter_dipole(calc_inter_dipole), solve_quadrupoles(solve_quadrupoles),
+      mode(mode), solve_quadrupoles(solve_quadrupoles),
       quad_idxs(quad_idxs), neighbor_list(std::make_unique<NeighborList>())
 {
 }
@@ -23,11 +23,9 @@ Ewald_Electric_Field_Base::~Ewald_Electric_Field_Base() {
     if (d_x_part) cudaFree(d_x_part);
     if (d_y_part) cudaFree(d_y_part);
     if (d_z_part) cudaFree(d_z_part);
-    if (!calc_inter_dipole) {
-        if (d_x_field) cudaFree(d_x_field);
-        if (d_y_field) cudaFree(d_y_field);
-        if (d_z_field) cudaFree(d_z_field);
-    }
+    if (d_x_field && d_x_field != d_x_part) cudaFree(d_x_field);
+    if (d_y_field && d_y_field != d_y_part) cudaFree(d_y_field);
+    if (d_z_field && d_z_field != d_z_part) cudaFree(d_z_field);
     if (d_r_table) cudaFree(d_r_table);
     if (d_field_dip_1) cudaFree(d_field_dip_1);
     if (d_field_dip_2) cudaFree(d_field_dip_2);
@@ -81,7 +79,7 @@ void Ewald_Electric_Field_Base::computeNeighborList(int max_neighbors_per_partic
         d_x_field, d_y_field, d_z_field,
         num_particles, num_field_points,
         box_x, box_y, box_z,
-        rc, calc_inter_dipole,
+        rc, (mode == FieldCalcMode::SOLVER_AX),
         max_neighbors_per_particle
     );
 }
@@ -158,7 +156,7 @@ void Ewald_Electric_Field_Base::updateParticleCoordinates(const std::vector<doub
 
     particles_updated = true;
 
-    if (calc_inter_dipole) {
+    if (mode == FieldCalcMode::SOLVER_AX) {
         d_x_field = d_x_part;
         d_y_field = d_y_part;
         d_z_field = d_z_part;
@@ -170,7 +168,7 @@ void Ewald_Electric_Field_Base::updateParticleCoordinates(const std::vector<doub
 void Ewald_Electric_Field_Base::updateFieldCoordinates(const std::vector<double>& x_field,
                                                       const std::vector<double>& y_field,
                                                       const std::vector<double>& z_field) {
-    if (calc_inter_dipole) {
+    if (mode == FieldCalcMode::SOLVER_AX) {
         return;
     }
     num_field_points = x_field.size();
@@ -395,11 +393,12 @@ void Ewald_Electric_Field_Base::getContractPrecalcsHost(std::vector<double>& hos
                                                        std::vector<int>& host_particle_index,
                                                        std::vector<double>& host_contract_coef,
                                                        std::vector<int>& host_contract_idxs) const {
-    host_E_point.resize((num_field_points * 3 + num_quads * 5) * 2);
+    size_t num_targets = num_field_points > 0 ? num_field_points : num_particles;
+    host_E_point.resize((num_targets * 3 + num_quads * 5) * 2);
     host_particle_index.resize(num_contract);
     host_contract_coef.resize(num_contract);
     host_contract_idxs.resize(num_contract);
-    CUDA_CHECK(cudaMemcpy(host_E_point.data(), d_E_point, (num_field_points * 3 + num_quads * 5) * 2 * sizeof(double), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(host_E_point.data(), d_E_point, (num_targets * 3 + num_quads * 5) * 2 * sizeof(double), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(host_particle_index.data(), d_particle_index, num_contract * sizeof(int), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(host_contract_coef.data(), d_contract_coef, num_contract * sizeof(double), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(host_contract_idxs.data(), d_contract_idxs, num_contract * sizeof(int), cudaMemcpyDeviceToHost));
@@ -417,13 +416,14 @@ void Ewald_Electric_Field_Base::getRealSpacePrecalcsHost(double& host_self_perp,
 }
 
 std::vector<Complex> Ewald_Electric_Field_Base::getEPointHost() const {
-    std::vector<Complex> host_E(num_field_points * 3 + num_quads * 5, 0.0);
-    if (d_E_point == nullptr || num_field_points == 0) {
+    size_t num_targets = num_field_points > 0 ? num_field_points : num_particles;
+    std::vector<Complex> host_E(num_targets * 3 + num_quads * 5, 0.0);
+    if (d_E_point == nullptr || num_targets == 0) {
         return host_E;
     }
-    std::vector<double> temp((num_field_points * 3 + num_quads * 5) * 2);
-    CUDA_CHECK(cudaMemcpy(temp.data(), d_E_point, (num_field_points * 3 + num_quads * 5) * 2 * sizeof(double), cudaMemcpyDeviceToHost));
-    for (size_t i = 0; i < num_field_points * 3 + num_quads * 5; ++i) {
+    std::vector<double> temp((num_targets * 3 + num_quads * 5) * 2);
+    CUDA_CHECK(cudaMemcpy(temp.data(), d_E_point, (num_targets * 3 + num_quads * 5) * 2 * sizeof(double), cudaMemcpyDeviceToHost));
+    for (size_t i = 0; i < num_targets * 3 + num_quads * 5; ++i) {
         host_E[i] = Complex(temp[i * 2], temp[i * 2 + 1]);
     }
     return host_E;
@@ -431,7 +431,8 @@ std::vector<Complex> Ewald_Electric_Field_Base::getEPointHost() const {
 
 void Ewald_Electric_Field_Base::clearEPoint() {
     if (d_E_point) {
-        size_t size_epoint_bytes = (num_field_points * 3 + num_quads * 5) * 2 * sizeof(double);
+        size_t num_targets = num_field_points > 0 ? num_field_points : num_particles;
+        size_t size_epoint_bytes = (num_targets * 3 + num_quads * 5) * 2 * sizeof(double);
         CUDA_CHECK(cudaMemset(d_E_point, 0, size_epoint_bytes));
     }
 }

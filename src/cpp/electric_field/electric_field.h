@@ -3,6 +3,11 @@
 
 #include <vector>
 
+enum class FieldCalcMode {
+    SOLVER_AX,
+    INTERACTION_FIELD
+};
+
 class Electric_Field {
 public:
     virtual ~Electric_Field() = default;

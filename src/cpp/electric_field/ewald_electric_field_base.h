@@ -28,7 +28,7 @@ protected:
     double errortol = 0.0;
     double rc = 0.0;
     double xi = 0.5;
-    bool calc_inter_dipole = true;
+    FieldCalcMode mode = FieldCalcMode::SOLVER_AX;
 
     int num_grid[3] = {0, 0, 0};
     double grid_spacing[3] = {0.0, 0.0, 0.0};
@@ -113,7 +113,7 @@ public:
     Ewald_Electric_Field_Base(double box_x, double box_y, double box_z,
                               double errortol,
                               double xi,
-                              bool calc_inter_dipole,
+                              FieldCalcMode mode,
                               bool solve_quadrupoles = false,
                               const std::vector<int>& quad_idxs = {});
 
@@ -139,7 +139,7 @@ public:
     double getErrortol() const { return errortol; }
     double getRc() const { return rc; }
     double getXi() const { return xi; }
-    bool getCalcInterDipole() const { return calc_inter_dipole; }
+    FieldCalcMode getCalcMode() const { return mode; }
     double getSelfCoef() const { return self_coef; }
 
     bool getParticlesUpdated() const { return particles_updated; }

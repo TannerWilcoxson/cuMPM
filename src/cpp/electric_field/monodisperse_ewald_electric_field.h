@@ -23,7 +23,8 @@ public:
     Monodisperse_Ewald_Electric_Field(double box_x, double box_y, double box_z,
                                       double errortol,
                                       double xi,
-                                      bool calc_inter_dipole,
+                                      FieldCalcMode mode,
+                                      double radius = 1.0,
                                       bool solve_quadrupoles = false,
                                       const std::vector<int>& quad_idxs = {});
 

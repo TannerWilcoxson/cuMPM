@@ -1,5 +1,6 @@
 import numpy as np
 from .. import _cuMPM
+from .._cuMPM import FieldCalcMode
 
 def _to_list(val):
     if val is None:
@@ -14,13 +15,17 @@ class DirectElectricField:
     """
     Python wrapper for the C++ Direct_Electric_Field class.
     """
-    def __init__(self, radius=None, solve_quadrupoles=False, quad_idxs=None):
+    def __init__(self, radius=None, mode=None, solve_quadrupoles=False, quad_idxs=None):
         if radius is None:
             radius = []
+        if mode is None:
+            mode = FieldCalcMode.SOLVER_AX
+        elif isinstance(mode, bool):
+            mode = FieldCalcMode.SOLVER_AX if mode else FieldCalcMode.INTERACTION_FIELD
         if quad_idxs is None:
             quad_idxs = []
         self._ef = _cuMPM.Direct_Electric_Field(
-            _to_list(radius), bool(solve_quadrupoles), [int(i) for i in quad_idxs]
+            _to_list(radius), mode, bool(solve_quadrupoles), [int(i) for i in quad_idxs]
         )
 
     @property
@@ -48,8 +53,12 @@ class DirectElectricField:
         return 0.0
 
     @property
+    def mode(self) -> FieldCalcMode:
+        return self._ef.getCalcMode()
+
+    @property
     def calc_inter_dipole(self) -> bool:
-        return False
+        return self._ef.getCalcMode() == FieldCalcMode.SOLVER_AX
 
     @property
     def self_coef(self) -> float:
@@ -390,12 +399,16 @@ class MonodisperseEwaldElectricField:
     """
     Python wrapper for the C++ Ewald_Electric_Field class.
     """
-    def __init__(self, box_x, box_y, box_z, errortol, xi, calc_inter_dipole, solve_quadrupoles=False, quad_idxs=None):
+    def __init__(self, box_x, box_y, box_z, errortol, xi, calc_inter_dipole, radius=1.0, solve_quadrupoles=False, quad_idxs=None):
         if quad_idxs is None:
             quad_idxs = []
+        if isinstance(calc_inter_dipole, bool):
+            mode = FieldCalcMode.SOLVER_AX if calc_inter_dipole else FieldCalcMode.INTERACTION_FIELD
+        else:
+            mode = calc_inter_dipole
         self._ef = _cuMPM.Monodisperse_Ewald_Electric_Field(
             float(box_x), float(box_y), float(box_z),
-            float(errortol), float(xi), bool(calc_inter_dipole),
+            float(errortol), float(xi), mode, float(radius),
             bool(solve_quadrupoles), [int(i) for i in quad_idxs]
         )
 
@@ -424,8 +437,12 @@ class MonodisperseEwaldElectricField:
         return self._ef.getXi()
 
     @property
+    def mode(self) -> FieldCalcMode:
+        return self._ef.getCalcMode()
+
+    @property
     def calc_inter_dipole(self) -> bool:
-        return self._ef.getCalcInterDipole()
+        return self._ef.getCalcMode() == FieldCalcMode.SOLVER_AX
 
     @property
     def self_coef(self) -> float:
@@ -788,9 +805,13 @@ class PolydisperseEwaldElectricField:
     def __init__(self, box_x, box_y, box_z, errortol, xi, calc_inter_dipole, particle_radii, solve_quadrupoles=False, quad_idxs=None):
         if quad_idxs is None:
             quad_idxs = []
+        if isinstance(calc_inter_dipole, bool):
+            mode = FieldCalcMode.SOLVER_AX if calc_inter_dipole else FieldCalcMode.INTERACTION_FIELD
+        else:
+            mode = calc_inter_dipole
         self._ef = _cuMPM.Polydisperse_Ewald_Electric_Field(
             float(box_x), float(box_y), float(box_z),
-            float(errortol), float(xi), bool(calc_inter_dipole),
+            float(errortol), float(xi), mode,
             _to_list(particle_radii), bool(solve_quadrupoles), [int(i) for i in quad_idxs]
         )
 
@@ -819,8 +840,12 @@ class PolydisperseEwaldElectricField:
         return self._ef.getXi()
 
     @property
+    def mode(self) -> FieldCalcMode:
+        return self._ef.getCalcMode()
+
+    @property
     def calc_inter_dipole(self) -> bool:
-        return self._ef.getCalcInterDipole()
+        return self._ef.getCalcMode() == FieldCalcMode.SOLVER_AX
 
     @property
     def num_particles(self) -> int:

@@ -516,7 +516,7 @@ void Dipole_Solver::compute(const std::vector<double>& x_part,
 
         // Instantiate CUDA-accelerated Electric_Field solver
         if (field_type == "direct") {
-            EF = std::make_unique<Direct_Electric_Field>(radius, solve_quadrupoles, quad_idxs);
+            EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::SOLVER_AX, solve_quadrupoles, quad_idxs);
         } else {
             bool use_polydisperse = false;
             if (field_type == "polydisperse") {
@@ -538,9 +538,9 @@ void Dipole_Solver::compute(const std::vector<double>& x_part,
             }
 
             if (use_polydisperse) {
-                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true, radius, solve_quadrupoles, quad_idxs);
+                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius, solve_quadrupoles, quad_idxs);
             } else {
-                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true, solve_quadrupoles, quad_idxs);
+                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, 1.0, solve_quadrupoles, quad_idxs);
             }
         }
     } else if (num_particles != num_p) {

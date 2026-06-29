@@ -184,10 +184,10 @@ def test_polydisperse_quadrupole_subset_electric_fields():
 
     # Initialize field classes
     ef_mono = MonodisperseEwaldElectricField(
-        box[0], box[1], box[2], tol, xi, True, solve_quadrupoles, quad_idxs
+        box[0], box[1], box[2], tol, xi, True, radius=radius, solve_quadrupoles=solve_quadrupoles, quad_idxs=quad_idxs
     )
     ef_poly = PolydisperseEwaldElectricField(
-        box[0], box[1], box[2], tol, xi, True, [radius] * num_particles, solve_quadrupoles, quad_idxs
+        box[0], box[1], box[2], tol, xi, True, particle_radii=[radius] * num_particles, solve_quadrupoles=solve_quadrupoles, quad_idxs=quad_idxs
     )
 
     # Set coordinates

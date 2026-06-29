@@ -127,14 +127,14 @@ std::vector<double> Near_Field::calculate() {
         }
 
         if (use_direct) {
-            EF = std::make_unique<Direct_Electric_Field>(scaled_radius);
+            EF = std::make_unique<Direct_Electric_Field>(scaled_radius, FieldCalcMode::INTERACTION_FIELD);
         } else if (use_polydisperse) {
             EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(
-                scaled_box_x, scaled_box_y, scaled_box_z, errortol, xi, false, scaled_radius
+                scaled_box_x, scaled_box_y, scaled_box_z, errortol, xi, FieldCalcMode::INTERACTION_FIELD, scaled_radius
             );
         } else {
             EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(
-                scaled_box_x, scaled_box_y, scaled_box_z, errortol, xi, false
+                scaled_box_x, scaled_box_y, scaled_box_z, errortol, xi, FieldCalcMode::INTERACTION_FIELD
             );
         }
     }

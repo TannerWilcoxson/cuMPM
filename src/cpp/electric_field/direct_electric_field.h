@@ -62,13 +62,16 @@ private:
     int* d_quad_idxs = nullptr;
     int* d_quad_map = nullptr;
     size_t num_quads = 0;
+    FieldCalcMode mode = FieldCalcMode::SOLVER_AX;
 
     void electricField();
 
 public:
     Direct_Electric_Field(const std::vector<double>& radius = {},
+                          FieldCalcMode mode = FieldCalcMode::SOLVER_AX,
                           bool solve_quadrupoles = false,
                           const std::vector<int>& quad_idxs = {});
+    FieldCalcMode getCalcMode() const { return mode; }
     ~Direct_Electric_Field() override;
 
     Direct_Electric_Field(const Direct_Electric_Field&) = delete;

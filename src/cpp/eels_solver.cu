@@ -367,8 +367,8 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
         // Instantiate CUDA-accelerated Electric_Field solvers
         if (field_type == "direct") {
-            EF = std::make_unique<Direct_Electric_Field>(radius);
-            eels_EF = std::make_unique<Direct_Electric_Field>(radius);
+            EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::SOLVER_AX);
+            eels_EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::INTERACTION_FIELD);
         } else {
             bool use_polydisperse = false;
             if (field_type == "polydisperse") {
@@ -389,11 +389,11 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             }
 
             if (use_polydisperse) {
-                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true, radius);
-                eels_EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, false);
+                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius);
+                eels_EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::INTERACTION_FIELD);
             } else {
-                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, true);
-                eels_EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, false);
+                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX);
+                eels_EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::INTERACTION_FIELD);
             }
         }
     } else if (num_particles != num_p) {
@@ -511,6 +511,14 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         if (wavevec_idx == 0) {
             // Match python's first wavelength guess alignment step:
             // Ew = Ew / norm(Ew), dip_guess = 0.1 * Ew * sign(Ew), dips[:,2] *= 1j
+            // Scaled by mean field guess: 4 * pi * beta / (1 - beta * vol_frac)
+            double sum_r3 = 0.0;
+            for (double r : radius) {
+                sum_r3 += std::pow(r, 3.0);
+            }
+            double box_vol = box[0] * box[1] * box[2];
+            double vol_frac = (4.0 / 3.0) * M_PI * sum_r3 / box_vol;
+
             std::vector<Complex> Ew_norm(num_particles * 3);
             for (size_t p = 0; p < num_particles; ++p) {
                 double norm_p = std::sqrt(std::norm(E_inc[p * 3 + 0]) + std::norm(E_inc[p * 3 + 1]) + std::norm(E_inc[p * 3 + 2]));
@@ -521,10 +529,12 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             }
             dip_guess.resize(num_particles * 3);
             for (size_t p = 0; p < num_particles; ++p) {
+                Complex beta = (eps_p[0][p] - 1.0) / (eps_p[0][p] + 2.0);
+                Complex val = 4.0 * M_PI * beta / (1.0 - beta * vol_frac);
                 for (int c = 0; c < 3; ++c) {
                     Complex ew = Ew_norm[p * 3 + c];
                     double sgn = (ew.real() >= 0.0) ? 1.0 : -1.0;
-                    dip_guess[p * 3 + c] = 0.1 * ew * sgn;
+                    dip_guess[p * 3 + c] = 0.1 * val * ew * sgn;
                 }
                 dip_guess[p * 3 + 2] *= Complex(0.0, 1.0);
             }
@@ -593,7 +603,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
             double phase = -2.0 * M_PI * omega_val * Z_pts[j] / v;
             Complex exp_factor = std::exp(Complex(0.0, phase));
-            integrand[j] = (Eind_z * exp_factor).real();
+            integrand[j] = -(Eind_z * exp_factor).real();
         }
 
         double integral = simpson_integrate(integrand, integration_step);
