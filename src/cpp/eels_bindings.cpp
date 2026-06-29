@@ -38,6 +38,25 @@ py::array_t<std::complex<double>> get_dipoles_numpy(const EELS_Solver& self, boo
     return result;
 }
 
+py::array_t<std::complex<double>> get_quadrupoles_numpy(const EELS_Solver& self, bool physical = true) {
+    std::vector<std::complex<double>> vec = self.get_quadrupoles(physical);
+    size_t num_frames = self.get_num_frames();
+    size_t num_waves = self.get_num_wavevectors();
+    size_t num_quads = self.get_num_quads();
+    
+    py::array_t<std::complex<double>> result({
+        (ssize_t)num_frames,
+        (ssize_t)num_waves,
+        (ssize_t)num_quads,
+        (ssize_t)5
+    });
+    auto buffer = result.request();
+    std::complex<double>* ptr = static_cast<std::complex<double>*>(buffer.ptr);
+    
+    std::copy(vec.begin(), vec.end(), ptr);
+    return result;
+}
+
 void register_eels(py::module_& m) {
     py::class_<EELS_Solver>(m, "EELS_Solver")
         // 1. 2D eps_p
@@ -53,7 +72,9 @@ void register_eels(py::module_& m) {
                       const std::string&,
                       const std::string&,
                       const std::string&,
-                      double>(),
+                      double,
+                      bool,
+                      const std::vector<int>&>(),
              py::arg("box"),
              py::arg("eps_p"),
              py::arg("omega"),
@@ -66,7 +87,9 @@ void register_eels(py::module_& m) {
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
              py::arg("field_type") = "auto",
-             py::arg("integration_step") = 0.01)
+             py::arg("integration_step") = 0.01,
+             py::arg("solve_quadrupoles") = false,
+             py::arg("quad_idxs") = std::vector<int>{})
         // 2. 1D eps_p
         .def(py::init<const std::vector<double>&,
                       const std::vector<Complex>&,
@@ -80,7 +103,9 @@ void register_eels(py::module_& m) {
                       const std::string&,
                       const std::string&,
                       const std::string&,
-                      double>(),
+                      double,
+                      bool,
+                      const std::vector<int>&>(),
              py::arg("box"),
              py::arg("eps_p_1d"),
              py::arg("omega"),
@@ -93,7 +118,9 @@ void register_eels(py::module_& m) {
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
              py::arg("field_type") = "auto",
-             py::arg("integration_step") = 0.01)
+             py::arg("integration_step") = 0.01,
+             py::arg("solve_quadrupoles") = false,
+             py::arg("quad_idxs") = std::vector<int>{})
         // 3. Scalar eps_p
         .def(py::init<const std::vector<double>&,
                       Complex,
@@ -107,7 +134,9 @@ void register_eels(py::module_& m) {
                       const std::string&,
                       const std::string&,
                       const std::string&,
-                      double>(),
+                      double,
+                      bool,
+                      const std::vector<int>&>(),
              py::arg("box"),
              py::arg("eps_p_scalar"),
              py::arg("omega"),
@@ -120,7 +149,9 @@ void register_eels(py::module_& m) {
              py::arg("guess_type") = "derivative",
              py::arg("solver_type") = "gmres",
              py::arg("field_type") = "auto",
-             py::arg("integration_step") = 0.01)
+             py::arg("integration_step") = 0.01,
+             py::arg("solve_quadrupoles") = false,
+             py::arg("quad_idxs") = std::vector<int>{})
         .def("compute", &EELS_Solver::compute,
              py::arg("epos"),
              py::arg("x_part"),
@@ -128,7 +159,9 @@ void register_eels(py::module_& m) {
              py::arg("z_part"))
         .def("get_eels", &get_eels_numpy)
         .def("get_dipoles", &get_dipoles_numpy, py::arg("physical") = true)
+        .def("get_quadrupoles", &get_quadrupoles_numpy, py::arg("physical") = true)
         .def("get_num_frames", &EELS_Solver::get_num_frames)
         .def("get_num_particles", &EELS_Solver::get_num_particles)
+        .def("get_num_quads", &EELS_Solver::get_num_quads)
         .def("get_num_wavevectors", &EELS_Solver::get_num_wavevectors);
 }

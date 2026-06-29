@@ -25,7 +25,10 @@ private:
     std::string solver_type;
     std::string field_type;
 
+    bool solve_quadrupoles = false;
+    std::vector<int> quad_idxs;
     size_t num_particles = 0;
+    size_t num_quads = 0;
     size_t num_wavevectors = 0;
     size_t num_frames = 0;
     double length_scale = 1.0;
@@ -47,6 +50,9 @@ private:
     // dips: calculated particle dipoles for each frame, wavelength, and particle
     // shape: num_frames * num_wavevectors * num_particles * 3
     std::vector<Complex> dips;
+    // quads: calculated particle quadrupoles for each frame, wavelength, and quadrupole particle
+    // shape: num_frames * num_wavevectors * num_quads * 5
+    std::vector<Complex> quads;
 
     // Helper functions
     void set_dims(size_t num_p);
@@ -61,10 +67,10 @@ private:
     void decrease_indent() { if (indent_level > 0) indent_level--; }
 
     // Guess calculation
-    std::vector<Complex> calc_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx, const std::vector<Complex>& E_inc) const;
-    std::vector<Complex> calc_mean_field_guess(size_t wavevec_idx, const std::vector<Complex>& E) const;
-    std::vector<Complex> calc_previous_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx) const;
-    std::vector<Complex> calc_derivative_guess(const std::vector<Complex>& prev_dip, size_t wavevec_idx) const;
+    std::vector<Complex> calc_guess(const std::vector<Complex>& prev_dip, const std::vector<Complex>& prev_quad, size_t wavevec_idx, const std::vector<Complex>& E_inc) const;
+    std::vector<Complex> calc_mean_field_guess(size_t wavevec_idx, const std::vector<Complex>& E_inc) const;
+    std::vector<Complex> calc_previous_guess(const std::vector<Complex>& prev_dip, const std::vector<Complex>& prev_quad, size_t wavevec_idx) const;
+    std::vector<Complex> calc_derivative_guess(const std::vector<Complex>& prev_dip, const std::vector<Complex>& prev_quad, size_t wavevec_idx) const;
 
 public:
     void set_numerical_solver(std::unique_ptr<Numerical_Solver> new_solver) {
@@ -85,7 +91,9 @@ public:
                 const std::string& guess_type = "derivative",
                 const std::string& solver_type = "gmres",
                 const std::string& field_type = "auto",
-                double integration_step = 0.002);
+                double integration_step = 0.002,
+                bool solve_quadrupoles = false,
+                const std::vector<int>& quad_idxs = {});
 
     // 2. 1D eps_p
     EELS_Solver(const std::vector<double>& box,
@@ -100,7 +108,9 @@ public:
                 const std::string& guess_type = "derivative",
                 const std::string& solver_type = "gmres",
                 const std::string& field_type = "auto",
-                double integration_step = 0.002);
+                double integration_step = 0.002,
+                bool solve_quadrupoles = false,
+                const std::vector<int>& quad_idxs = {});
 
     // 3. Scalar eps_p
     EELS_Solver(const std::vector<double>& box,
@@ -115,7 +125,9 @@ public:
                 const std::string& guess_type = "derivative",
                 const std::string& solver_type = "gmres",
                 const std::string& field_type = "auto",
-                double integration_step = 0.002);
+                double integration_step = 0.002,
+                bool solve_quadrupoles = false,
+                const std::vector<int>& quad_idxs = {});
 
     ~EELS_Solver();
 
@@ -134,8 +146,18 @@ public:
         }
         return scaled_dips;
     }
+    std::vector<Complex> get_quadrupoles(bool physical = true) const {
+        if (!physical) return quads;
+        double factor = eps_scale * std::pow(length_scale, 4.0);
+        std::vector<Complex> scaled_quads = quads;
+        for (auto& val : scaled_quads) {
+            val *= factor;
+        }
+        return scaled_quads;
+    }
     size_t get_num_frames() const { return num_frames; }
     size_t get_num_particles() const { return num_particles; }
+    size_t get_num_quads() const { return num_quads; }
     size_t get_num_wavevectors() const { return num_wavevectors; }
 };
 

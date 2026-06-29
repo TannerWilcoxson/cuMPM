@@ -9,7 +9,7 @@ class EELS:
     spectrum and self-consistent induced dipoles for a collection of particles 
     subject to the relativistic incident field of a moving electron beam.
     """
-    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None, integration_step=0.05, split_method="cubic"):
+    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None, integration_step=0.05, split_method="cubic", solve_quadrupoles=False, quad_idxs=None):
         """
         Initialize the EELS solver with system, electron, and solver parameters.
 
@@ -55,6 +55,10 @@ class EELS:
                             The actual count equals exactly N_split.
             In both cases sub-dipole radii are set so that the total sub-dipole volume
             equals the original NC volume.
+        solve_quadrupoles : bool, optional
+            Whether to solve for quadrupoles as well. Defaults to False.
+        quad_idxs : list of int, optional
+            A list of particle indices for which quadrupoles should be solved. If None or empty, all particles are solved.
         """
         if split_method not in ("cubic", "fibonacci"):
             raise ValueError("split_method must be 'cubic' or 'fibonacci', got " + repr(split_method))
@@ -84,10 +88,13 @@ class EELS:
         self.solver_type = solver_type
         self.field_type = field_type
         self.integration_step = float(integration_step)
+        self.solve_quadrupoles = bool(solve_quadrupoles)
+        self.quad_idxs = [int(i) for i in quad_idxs] if quad_idxs is not None else []
 
         # Initialize results lists for splitting mode
         self._eels_results = []
         self._dips_results = []
+        self._quads_results = []
         self._split_poss = []
         self.positions = None
 
@@ -113,23 +120,23 @@ class EELS:
             if eps_p_arr.ndim == 0:
                 eps_p_scalar = complex(eps_p_arr.item())
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step)
+                    box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs
                 )
             elif eps_p_arr.ndim == 1:
                 if eps_p_arr.size == 1:
                     eps_p_scalar = complex(eps_p_arr.item())
                     self._solver = _cuMPM.EELS_Solver(
-                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step)
+                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs
                     )
                 else:
                     eps_p_1d = [complex(x) for x in eps_p_arr]
                     self._solver = _cuMPM.EELS_Solver(
-                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step)
+                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs
                     )
             elif eps_p_arr.ndim == 2:
                 eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step)
+                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs
                 )
             else:
                 raise ValueError("eps_p must be a scalar, 1D array, or 2D array")
@@ -329,10 +336,36 @@ class EELS:
                 # Convert split_eps to nested lists
                 split_eps_2d = [[complex(x) for x in row] for row in split_eps]
                 
+                # Map quad_idxs to the split system
+                if self.solve_quadrupoles and len(self.quad_idxs) > 0:
+                    split_quad_idxs = []
+                    dists_2d = np.linalg.norm(positions[:, :2] - e_pos[np.newaxis, :], axis=1)
+                    to_split = dists_2d < self.split_dist
+                    
+                    unsplit_indices = np.where(~to_split)[0].tolist()
+                    split_indices = np.where(to_split)[0].tolist()
+                    
+                    if self.split_method == "cubic":
+                        M = len(self._make_cubic_offsets())
+                    else:
+                        M = len(self._make_fibonacci_offsets())
+                        
+                    for q_idx in self.quad_idxs:
+                        if q_idx in unsplit_indices:
+                            new_idx = unsplit_indices.index(q_idx)
+                            split_quad_idxs.append(new_idx)
+                        elif q_idx in split_indices:
+                            pos_in_split_indices = split_indices.index(q_idx)
+                            start_idx = len(unsplit_indices) + pos_in_split_indices * M
+                            split_quad_idxs.extend(range(start_idx, start_idx + M))
+                else:
+                    split_quad_idxs = self.quad_idxs
+                
                 frame_solver = _cuMPM.EELS_Solver(
                     box_list, split_eps_2d, omega_list, float(self.v), split_R.tolist(),
                     float(self.eps_m), float(self.xi), float(self.tol), bool(self.quiet),
-                    self.guess_type, self.solver_type, self.field_type, float(self.integration_step)
+                    self.guess_type, self.solver_type, self.field_type, float(self.integration_step),
+                    self.solve_quadrupoles, split_quad_idxs
                 )
                 
                 # Run the solver
@@ -359,6 +392,18 @@ class EELS:
                 if not hasattr(self, '_dips_scale_factors'):
                     self._dips_scale_factors = []
                 self._dips_scale_factors.append(self.eps_m * (split_R[0] ** 3))
+
+                if self.solve_quadrupoles:
+                    frame_quads = np.squeeze(frame_solver.get_quadrupoles(physical=False))
+                    if len(omega_list) == 1:
+                        if frame_quads.ndim == 2:
+                            frame_quads = frame_quads[np.newaxis, ...]
+                        elif frame_quads.ndim == 1:
+                            frame_quads = frame_quads[np.newaxis, np.newaxis, ...]
+                    self._quads_results.append(frame_quads)
+                    if not hasattr(self, '_quads_scale_factors'):
+                        self._quads_scale_factors = []
+                    self._quads_scale_factors.append(self.eps_m * (split_R[0] ** 4))
         else:
             x_part = positions[:, 0].tolist()
             y_part = positions[:, 1].tolist()
@@ -426,6 +471,49 @@ class EELS:
                     return [np.squeeze(d) for d in self._dips_results]
         else:
             return np.squeeze(self._solver.get_dipoles(physical))
+
+    def get_quadrupoles(self, physical=True):
+        """
+        Returns the computed induced quadrupoles.
+
+        Parameters
+        ----------
+        physical : bool, optional
+            If True, returns values scaled back to physical units. If False, returns dimensionless values. Defaults to True.
+
+        Returns
+        -------
+        Q : numpy.ndarray or list of numpy.ndarray
+            Induced quadrupoles of each particle. If split, returns a list of arrays (one per epos)
+            of shape (num_wavelengths, num_split_particles, 5).
+            If shapes across all epos are identical, they are stacked into a single array of shape 
+            (num_epos, num_wavelengths, num_split_particles, 5).
+            Squeezed if single epos.
+        """
+        if self.split_dist > 0.0 and self.N_split > 1:
+            if not self._quads_results:
+                return []
+            if physical:
+                scaled_results = []
+                for quads_arr, factor in zip(self._quads_results, self._quads_scale_factors):
+                    scaled_results.append(quads_arr * factor)
+                if len(scaled_results) == 1:
+                    return np.squeeze(scaled_results[0])
+                try:
+                    stacked = np.stack(scaled_results)
+                    return np.squeeze(stacked)
+                except ValueError:
+                    return [np.squeeze(q) for q in scaled_results]
+            else:
+                if len(self._quads_results) == 1:
+                    return np.squeeze(self._quads_results[0])
+                try:
+                    stacked = np.stack(self._quads_results)
+                    return np.squeeze(stacked)
+                except ValueError:
+                    return [np.squeeze(q) for q in self._quads_results]
+        else:
+            return np.squeeze(self._solver.get_quadrupoles(physical))
 
     def get_positions(self):
         """
