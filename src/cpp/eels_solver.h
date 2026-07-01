@@ -25,6 +25,10 @@ private:
     std::string solver_type;
     std::string field_type;
 
+    bool asm_flag = false;
+    int asm_Nx = 1;
+    int asm_Ny = 1;
+
     bool solve_quadrupoles = false;
     std::vector<int> quad_idxs;
     size_t num_particles = 0;
@@ -93,7 +97,10 @@ public:
                 const std::string& field_type = "auto",
                 double integration_step = 0.002,
                 bool solve_quadrupoles = false,
-                const std::vector<int>& quad_idxs = {});
+                const std::vector<int>& quad_idxs = {},
+                bool asm_flag = false,
+                int asm_Nx = 1,
+                int asm_Ny = 1);
 
     // 2. 1D eps_p
     EELS_Solver(const std::vector<double>& box,
@@ -110,7 +117,10 @@ public:
                 const std::string& field_type = "auto",
                 double integration_step = 0.002,
                 bool solve_quadrupoles = false,
-                const std::vector<int>& quad_idxs = {});
+                const std::vector<int>& quad_idxs = {},
+                bool asm_flag = false,
+                int asm_Nx = 1,
+                int asm_Ny = 1);
 
     // 3. Scalar eps_p
     EELS_Solver(const std::vector<double>& box,
@@ -127,7 +137,10 @@ public:
                 const std::string& field_type = "auto",
                 double integration_step = 0.002,
                 bool solve_quadrupoles = false,
-                const std::vector<int>& quad_idxs = {});
+                const std::vector<int>& quad_idxs = {},
+                bool asm_flag = false,
+                int asm_Nx = 1,
+                int asm_Ny = 1);
 
     ~EELS_Solver();
 

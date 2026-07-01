@@ -91,7 +91,6 @@ Polydisperse_Ewald_Electric_Field::Polydisperse_Ewald_Electric_Field(
     // 5. Allocate scalar grids and FFT plan
     size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
     CUDA_CHECK(cudaMalloc(&d_fE_grid, grid_voxels * 2 * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&d_fEs_grid, grid_voxels * 2 * sizeof(double)));
 
     cufftResult plan_res = cufftPlan3d((cufftHandle*)&fft_plan, num_grid[0], num_grid[1], num_grid[2], CUFFT_Z2Z);
     if (plan_res != CUFFT_SUCCESS) {
@@ -100,7 +99,6 @@ Polydisperse_Ewald_Electric_Field::Polydisperse_Ewald_Electric_Field(
 
     if (solve_quadrupoles) {
         CUDA_CHECK(cudaMalloc(&d_fG_grid, grid_voxels * 5 * 2 * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_fGs_grid, grid_voxels * 5 * 2 * sizeof(double)));
 
         int n[3] = { num_grid[0], num_grid[1], num_grid[2] };
         cufftResult plan_res_G = cufftPlanMany((cufftHandle*)&fft_plan_G, 3, n,
@@ -759,58 +757,6 @@ __global__ void real_space_neighbor_kernel_polydisperse(
     }
 }
 
-__global__ void fftshift_3d_kernel_scalar(
-    const double* __restrict__ input,
-    double* __restrict__ output,
-    int N0, int N1, int N2)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int num_voxels = N0 * N1 * N2;
-    if (idx >= num_voxels) return;
-
-    int x = idx / (N1 * N2);
-    int y = (idx / N2) % N1;
-    int z = idx % N2;
-
-    int shifted_x = (x + N0 / 2) % N0;
-    int shifted_y = (y + N1 / 2) % N1;
-    int shifted_z = (z + N2 / 2) % N2;
-
-    size_t shifted_idx = static_cast<size_t>(shifted_x) * N1 * N2 +
-                          static_cast<size_t>(shifted_y) * N2 +
-                          static_cast<size_t>(shifted_z);
-
-    output[shifted_idx * 2 + 0] = input[idx * 2 + 0];
-    output[shifted_idx * 2 + 1] = input[idx * 2 + 1];
-}
-
-__global__ void ifftshift_3d_kernel_scalar(
-    const double* __restrict__ input,
-    double* __restrict__ output,
-    int N0, int N1, int N2)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int num_voxels = N0 * N1 * N2;
-    if (idx >= num_voxels) return;
-
-    int x = idx / (N1 * N2);
-    int y = (idx / N2) % N1;
-    int z = idx % N2;
-
-    int xs = (x + (N0 + 1) / 2) % N0;
-    int ys = (y + (N1 + 1) / 2) % N1;
-    int zs = (z + (N2 + 1) / 2) % N2;
-
-    size_t shifted_idx = static_cast<size_t>(xs) * N1 * N2 +
-                          static_cast<size_t>(ys) * N2 +
-                          static_cast<size_t>(zs);
-
-    double scale_factor = 1.0 / (static_cast<double>(N0) * N1 * N2);
-
-    output[shifted_idx * 2 + 0] = input[idx * 2 + 0] * scale_factor;
-    output[shifted_idx * 2 + 1] = input[idx * 2 + 1] * scale_factor;
-}
-
 // -----------------------------------------------------------------------------
 // Quadrupole-related Kernels for Polydisperse solver
 // -----------------------------------------------------------------------------
@@ -1192,64 +1138,6 @@ __global__ void copy_G_to_E_kernel_polydisperse(
 
     for (int c = 0; c < 10; ++c) {
         dst[c] = src[c];
-    }
-}
-
-__global__ void fftshift_3d_kernel_polydisperse(
-    const double* __restrict__ input,
-    double* __restrict__ output,
-    int N0, int N1, int N2,
-    int num_components)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int num_voxels = N0 * N1 * N2;
-    if (idx >= num_voxels) return;
-
-    int x = idx / (N1 * N2);
-    int y = (idx / N2) % N1;
-    int z = idx % N2;
-
-    int xs = (x + N0 / 2) % N0;
-    int ys = (y + N1 / 2) % N1;
-    int zs = (z + N2 / 2) % N2;
-
-    size_t shifted_idx = (static_cast<size_t>(xs) * N1 * N2 +
-                          static_cast<size_t>(ys) * N2 +
-                          static_cast<size_t>(zs));
-
-    for (int c = 0; c < num_components; ++c) {
-        output[(shifted_idx * num_components + c) * 2 + 0] = input[(idx * num_components + c) * 2 + 0];
-        output[(shifted_idx * num_components + c) * 2 + 1] = input[(idx * num_components + c) * 2 + 1];
-    }
-}
-
-__global__ void ifftshift_3d_kernel_polydisperse(
-    const double* __restrict__ input,
-    double* __restrict__ output,
-    int N0, int N1, int N2,
-    int num_components)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int num_voxels = N0 * N1 * N2;
-    if (idx >= num_voxels) return;
-
-    int x = idx / (N1 * N2);
-    int y = (idx / N2) % N1;
-    int z = idx % N2;
-
-    int xs = (x + (N0 + 1) / 2) % N0;
-    int ys = (y + (N1 + 1) / 2) % N1;
-    int zs = (z + (N2 + 1) / 2) % N2;
-
-    size_t shifted_idx = (static_cast<size_t>(xs) * N1 * N2 +
-                          static_cast<size_t>(ys) * N2 +
-                          static_cast<size_t>(zs));
-
-    double scale_factor = 1.0 / (static_cast<double>(N0) * N1 * N2);
-
-    for (int c = 0; c < num_components; ++c) {
-        output[(shifted_idx * num_components + c) * 2 + 0] = input[(idx * num_components + c) * 2 + 0] * scale_factor;
-        output[(shifted_idx * num_components + c) * 2 + 1] = input[(idx * num_components + c) * 2 + 1] * scale_factor;
     }
 }
 
@@ -2254,9 +2142,9 @@ void Polydisperse_Ewald_Electric_Field::computePrecalculations() {
 
     auto getKvals = [](int N, double box_len) {
         std::vector<double> K(N);
-        double start = -std::ceil((N - 1) / 2.0);
         for (int i = 0; i < N; ++i) {
-            K[i] = (start + i) * 2.0 * 3.14159265358979323846 / box_len;
+            double freq = (i <= (N - 1) / 2) ? i : (i - N);
+            K[i] = freq * 2.0 * 3.14159265358979323846 / box_len;
         }
         return K;
     };
@@ -2265,16 +2153,18 @@ void Polydisperse_Ewald_Electric_Field::computePrecalculations() {
     std::vector<double> Ky = getKvals(num_grid[1], box_y);
     std::vector<double> Kz = getKvals(num_grid[2], box_z);
 
-    int k0x = static_cast<int>(std::ceil((num_grid[0] - 1) / 2.0));
-    int k0y = static_cast<int>(std::ceil((num_grid[1] - 1) / 2.0));
-    int k0z = static_cast<int>(std::ceil((num_grid[2] - 1) / 2.0));
-
     for (int ix = 0; ix < num_grid[0]; ++ix) {
         for (int iy = 0; iy < num_grid[1]; ++iy) {
             for (int iz = 0; iz < num_grid[2]; ++iz) {
                 size_t linear_idx = ix * num_grid[1] * num_grid[2] + iy * num_grid[2] + iz;
 
-                if (ix == k0x && iy == k0y && iz == k0z) {
+                double kx_val = Kx[ix];
+                double ky_val = Ky[iy];
+                double kz_val = Kz[iz];
+
+                double ksqsm = kx_val * kx_val + ky_val * ky_val + kz_val * kz_val;
+
+                if (ksqsm < 1e-12) {
                     host_scale_coef[linear_idx] = 0.0;
                     if (solve_quadrupoles) {
                         host_scale_coef_Q_imag[linear_idx] = 0.0;
@@ -2288,14 +2178,9 @@ void Polydisperse_Ewald_Electric_Field::computePrecalculations() {
                     continue;
                 }
 
-                double kx_val = Kx[ix];
-                double ky_val = Ky[iy];
-                double kz_val = Kz[iz];
-
-                double ksqsm = kx_val * kx_val + ky_val * ky_val + kz_val * kz_val;
-
                 double exp_part = std::exp(-(1.0 - eta_scalar) * ksqsm / (4.0 * xi * xi));
-                host_scale_coef[linear_idx] = exp_part / ksqsm;
+                double scale_factor = 1.0 / static_cast<double>(grid_voxels);
+                host_scale_coef[linear_idx] = (exp_part / ksqsm) * scale_factor;
 
                 if (solve_quadrupoles) {
                     double kmag = std::sqrt(ksqsm);
@@ -2316,9 +2201,9 @@ void Polydisperse_Ewald_Electric_Field::computePrecalculations() {
                     host_Qfactor_dot[linear_idx * 5 + 4] = 2.0 * kh1 * kh2;
 
                     // Analytical Fourier transform of Gaussian spread functions for scalar potential/fields
-                    host_scale_coef_Q_imag[linear_idx] = -0.5 * exp_part;
-                    host_scale_coef_GP_imag[linear_idx] = exp_part;
-                    host_scale_coef_GQ_real[linear_idx] = -0.5 * exp_part * ksqsm;
+                    host_scale_coef_Q_imag[linear_idx] = (-0.5 * exp_part) * scale_factor;
+                    host_scale_coef_GP_imag[linear_idx] = (exp_part) * scale_factor;
+                    host_scale_coef_GQ_real[linear_idx] = (-0.5 * exp_part * ksqsm) * scale_factor;
                 }
             }
         }
@@ -2575,7 +2460,7 @@ void Polydisperse_Ewald_Electric_Field::scale(double* d_fE_grid) {
     if (solve_quadrupoles) {
         scale_kernel_joint_polydisperse<<<blocksPerGrid, threadsPerBlock>>>(
             d_fE_grid,
-            d_fGs_grid,
+            d_fG_grid,
             d_scale_coef,
             d_scale_coef_Q_imag,
             d_scale_coef_GP_imag,
@@ -2736,32 +2621,7 @@ void Polydisperse_Ewald_Electric_Field::electricField() {
     }
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    int threadsPerBlock = 256;
-    int blocksPerGridShift = (grid_voxels + threadsPerBlock - 1) / threadsPerBlock;
-    
-    fftshift_3d_kernel_polydisperse<<<blocksPerGridShift, threadsPerBlock>>>(
-        d_fE_grid, d_fEs_grid, num_grid[0], num_grid[1], num_grid[2], 1
-    );
-    if (solve_quadrupoles && num_quads > 0 && d_fG_grid != nullptr) {
-        fftshift_3d_kernel_polydisperse<<<blocksPerGridShift, threadsPerBlock>>>(
-            d_fG_grid, d_fGs_grid, num_grid[0], num_grid[1], num_grid[2], 5
-        );
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    scale(d_fEs_grid);
-
-    ifftshift_3d_kernel_polydisperse<<<blocksPerGridShift, threadsPerBlock>>>(
-        d_fEs_grid, d_fE_grid, num_grid[0], num_grid[1], num_grid[2], 1
-    );
-    if (solve_quadrupoles && num_quads > 0 && d_fG_grid != nullptr) {
-        ifftshift_3d_kernel_polydisperse<<<blocksPerGridShift, threadsPerBlock>>>(
-            d_fGs_grid, d_fG_grid, num_grid[0], num_grid[1], num_grid[2], 5
-        );
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    scale(d_fE_grid);
 
     plan_res = cufftExecZ2Z((cufftHandle)fft_plan,
                            (cufftDoubleComplex*)d_fE_grid,

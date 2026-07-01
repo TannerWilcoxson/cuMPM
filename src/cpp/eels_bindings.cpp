@@ -74,7 +74,10 @@ void register_eels(py::module_& m) {
                       const std::string&,
                       double,
                       bool,
-                      const std::vector<int>&>(),
+                      const std::vector<int>&,
+                      bool,
+                      int,
+                      int>(),
              py::arg("box"),
              py::arg("eps_p"),
              py::arg("omega"),
@@ -89,7 +92,10 @@ void register_eels(py::module_& m) {
              py::arg("field_type") = "auto",
              py::arg("integration_step") = 0.01,
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("asm_flag") = false,
+             py::arg("asm_Nx") = 1,
+             py::arg("asm_Ny") = 1)
         // 2. 1D eps_p
         .def(py::init<const std::vector<double>&,
                       const std::vector<Complex>&,
@@ -105,7 +111,10 @@ void register_eels(py::module_& m) {
                       const std::string&,
                       double,
                       bool,
-                      const std::vector<int>&>(),
+                      const std::vector<int>&,
+                      bool,
+                      int,
+                      int>(),
              py::arg("box"),
              py::arg("eps_p_1d"),
              py::arg("omega"),
@@ -120,7 +129,10 @@ void register_eels(py::module_& m) {
              py::arg("field_type") = "auto",
              py::arg("integration_step") = 0.01,
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("asm_flag") = false,
+             py::arg("asm_Nx") = 1,
+             py::arg("asm_Ny") = 1)
         // 3. Scalar eps_p
         .def(py::init<const std::vector<double>&,
                       Complex,
@@ -136,7 +148,10 @@ void register_eels(py::module_& m) {
                       const std::string&,
                       double,
                       bool,
-                      const std::vector<int>&>(),
+                      const std::vector<int>&,
+                      bool,
+                      int,
+                      int>(),
              py::arg("box"),
              py::arg("eps_p_scalar"),
              py::arg("omega"),
@@ -151,7 +166,10 @@ void register_eels(py::module_& m) {
              py::arg("field_type") = "auto",
              py::arg("integration_step") = 0.01,
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("asm_flag") = false,
+             py::arg("asm_Nx") = 1,
+             py::arg("asm_Ny") = 1)
         .def("compute", &EELS_Solver::compute,
              py::arg("epos"),
              py::arg("x_part"),

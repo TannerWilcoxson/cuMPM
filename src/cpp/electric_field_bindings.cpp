@@ -142,7 +142,6 @@ void register_electric_fields(py::module_& m) {
         .def("getDevPerp", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevPerp()); })
         .def("getDevPara", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevPara()); })
         .def("getDevFEGrid", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevFEGrid()); })
-        .def("getDevFEsGrid", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevFEsGrid()); })
         .def("getDevNeighborList", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevNeighborList()); })
         .def("getDevNeighborCounts", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevNeighborCounts()); })
         .def("getDevRTable", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevRTable()); })
@@ -228,8 +227,7 @@ void register_electric_fields(py::module_& m) {
             self.spread(ptr);
         }, py::arg("grid_ptr") = py::none())
         .def("scale", [](Ewald_Electric_Field_Base& self, std::optional<uintptr_t> grid_ptr) {
-            double* ptr = grid_ptr ? reinterpret_cast<double*>(*grid_ptr) : self.getDevFEsGrid();
-            if (!ptr) ptr = self.getDevFEGrid();
+            double* ptr = grid_ptr ? reinterpret_cast<double*>(*grid_ptr) : self.getDevFEGrid();
             self.scale(ptr);
         }, py::arg("grid_ptr") = py::none())
         .def("contract", [](Ewald_Electric_Field_Base& self, std::optional<uintptr_t> E_point_ptr, std::optional<uintptr_t> Es_grid_ptr) {

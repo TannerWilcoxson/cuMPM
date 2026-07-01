@@ -10,25 +10,14 @@
 
 using Complex = std::complex<double>;
 
-class Ewald_Electric_Field_Base : public Electric_Field {
+class Ewald_Electric_Field_Base : public Base_Electric_Field {
 protected:
-    double* d_x_part = nullptr;
-    double* d_y_part = nullptr;
-    double* d_z_part = nullptr;
-    size_t num_particles = 0;
-
-    double* d_x_field = nullptr;
-    double* d_y_field = nullptr;
-    double* d_z_field = nullptr;
-    size_t num_field_points = 0;
-
     double box_x = 0.0;
     double box_y = 0.0;
     double box_z = 0.0;
     double errortol = 0.0;
     double rc = 0.0;
     double xi = 0.5;
-    FieldCalcMode mode = FieldCalcMode::SOLVER_AX;
 
     int num_grid[3] = {0, 0, 0};
     double grid_spacing[3] = {0.0, 0.0, 0.0};
@@ -46,20 +35,10 @@ protected:
     double* d_scale_coef = nullptr;
     size_t num_offsets = 0;
 
-    bool particles_updated = false;
-    bool field_points_updated = false;
-
-    double* d_dipoles = nullptr;
-    bool dipoles_updated = false;
-
-    double* d_self_coef_r = nullptr;
-    double* d_self_coef_i = nullptr;
-
     double* d_spread_coef = nullptr;
     int* d_spread_idxs = nullptr;
     size_t num_spread = 0;
 
-    double* d_E_point = nullptr;
     int* d_particle_index = nullptr;
     double* d_contract_coef = nullptr;
     int* d_contract_idxs = nullptr;
@@ -70,14 +49,7 @@ protected:
     double self_coef = 0.0;
 
     double* d_fE_grid = nullptr;
-    double* d_fEs_grid = nullptr;
     int fft_plan = 0;
-
-    bool solve_quadrupoles = false;
-    std::vector<int> quad_idxs;
-    int* d_quad_idxs = nullptr;
-    int* d_quad_map = nullptr;
-    size_t num_quads = 0;
 
     double* d_field_quad_1 = nullptr;
     double* d_field_quad_2 = nullptr;
@@ -96,7 +68,6 @@ protected:
     double* d_G4 = nullptr;
 
     double* d_fG_grid = nullptr;
-    double* d_fGs_grid = nullptr;
     int fft_plan_G = 0;
 
     double* d_scale_coef_Q_imag = nullptr;
@@ -123,41 +94,30 @@ public:
     Ewald_Electric_Field_Base& operator=(const Ewald_Electric_Field_Base&) = delete;
 
     // Getters / Setters
-    double* getDevXPart() const { return d_x_part; }
-    double* getDevYPart() const { return d_y_part; }
-    double* getDevZPart() const { return d_z_part; }
-    size_t getNumParticles() const { return num_particles; }
-
-    double* getDevXField() const { return d_x_field; }
-    double* getDevYField() const { return d_y_field; }
-    double* getDevZField() const { return d_z_field; }
-    size_t getNumFieldPoints() const { return num_field_points; }
-
     double getBoxX() const { return box_x; }
     double getBoxY() const { return box_y; }
     double getBoxZ() const { return box_z; }
     double getErrortol() const { return errortol; }
     double getRc() const { return rc; }
     double getXi() const { return xi; }
-    FieldCalcMode getCalcMode() const { return mode; }
     double getSelfCoef() const { return self_coef; }
 
-    bool getParticlesUpdated() const { return particles_updated; }
-    bool getFieldPointsUpdated() const { return field_points_updated; }
-    void clearParticlesUpdated() { particles_updated = false; }
-    void clearFieldPointsUpdated() { field_points_updated = false; }
+    double k_x = 0.0;
+    double k_y = 0.0;
+    bool kt_updated = false;
 
-    double* getDevDipoles() const override { return d_dipoles; }
-    double* getDevSelfCoefReal() const { return d_self_coef_r; }
-    double* getDevSelfCoefImag() const { return d_self_coef_i; }
-    bool getDipolesUpdated() const { return dipoles_updated; }
-    void clearDipolesUpdated() { dipoles_updated = false; }
+    void setBlochWavevector(double kx, double ky) {
+        if (k_x != kx || k_y != ky) {
+            k_x = kx;
+            k_y = ky;
+            kt_updated = true;
+        }
+    }
 
     double* getDevSpreadCoef() const { return d_spread_coef; }
     int* getDevSpreadIdxs() const { return d_spread_idxs; }
     size_t getNumSpread() const { return num_spread; }
 
-    double* getDevEPoint() const override { return d_E_point; }
     int* getDevParticleIndex() const { return d_particle_index; }
     double* getDevContractCoef() const { return d_contract_coef; }
     int* getDevContractIdxs() const { return d_contract_idxs; }
@@ -171,7 +131,6 @@ public:
     const double* getGridSpacing() const { return grid_spacing; }
     const double* getSpectralSplit() const { return spectral_split; }
     double* getDevFEGrid() const { return d_fE_grid; }
-    double* getDevFEsGrid() const { return d_fEs_grid; }
 
     int* getDevNeighborList() const { return neighbor_list ? neighbor_list->get_list() : nullptr; }
     int* getDevNeighborCounts() const { return neighbor_list ? neighbor_list->get_counts() : nullptr; }
@@ -187,20 +146,11 @@ public:
     double* getDevScaleCoef() const { return d_scale_coef; }
     size_t getNumOffsets() const { return num_offsets; }
 
-    bool getSolveQuadrupoles() const { return solve_quadrupoles; }
-    size_t getNumQuads() const { return num_quads; }
-
     // Verification methods
     void getNeighborListHost(std::vector<int>& host_list, std::vector<int>& host_counts) const;
     void getRealSpaceTablesHost(std::vector<double>& host_r_table,
                                 std::vector<double>& host_field_dip_1,
                                 std::vector<double>& host_field_dip_2) const;
-    void getDipolesHost(std::vector<double>& host_dip_x,
-                        std::vector<double>& host_dip_y,
-                        std::vector<double>& host_dip_z) const;
-    void getDipolesComplexHost(std::vector<double>& host_dip_xr, std::vector<double>& host_dip_xi,
-                               std::vector<double>& host_dip_yr, std::vector<double>& host_dip_yi,
-                               std::vector<double>& host_dip_zr, std::vector<double>& host_dip_zi) const;
     void getSpreadPrecalcsHost(std::vector<double>& host_spread_coef,
                                std::vector<int>& host_spread_idxs) const;
     void getContractPrecalcsHost(std::vector<double>& host_E_point,
@@ -210,42 +160,9 @@ public:
     void getRealSpacePrecalcsHost(double& host_self_perp,
                                   std::vector<double>& host_perp,
                                   std::vector<double>& host_para) const;
-    std::vector<Complex> getEPointHost() const;
-    void clearEPoint();
 
     // Coordinate update methods
     void computeNeighborList(int max_neighbors_per_particle = 128);
-
-    void updateParticleCoordinates(const std::vector<double>& x_part,
-                                   const std::vector<double>& y_part,
-                                   const std::vector<double>& z_part) override;
-
-    void updateFieldCoordinates(const std::vector<double>& x_field,
-                                 const std::vector<double>& y_field,
-                                 const std::vector<double>& z_field);
-
-    void updateDipoles(const std::vector<double>& dip_x,
-                       const std::vector<double>& dip_y,
-                       const std::vector<double>& dip_z);
-
-    void updateDipolesComplex(const std::vector<double>& dip_xr, const std::vector<double>& dip_xi,
-                              const std::vector<double>& dip_yr, const std::vector<double>& dip_yi,
-                              const std::vector<double>& dip_zr, const std::vector<double>& dip_zi);
-
-    void updateQuadrupoles(const std::vector<double>& quad_1,
-                           const std::vector<double>& quad_2,
-                           const std::vector<double>& quad_3,
-                           const std::vector<double>& quad_4,
-                           const std::vector<double>& quad_5);
-
-    void updateQuadrupolesComplex(const std::vector<double>& quad_1r, const std::vector<double>& quad_1i,
-                                  const std::vector<double>& quad_2r, const std::vector<double>& quad_2i,
-                                  const std::vector<double>& quad_3r, const std::vector<double>& quad_3i,
-                                  const std::vector<double>& quad_4r, const std::vector<double>& quad_4i,
-                                  const std::vector<double>& quad_5r, const std::vector<double>& quad_5i);
-
-    void setSelfCoef(const std::vector<double>& self_coef_r, const std::vector<double>& self_coef_i) override;
-    void setSelfCoef(double val_r, double val_i = 0.0);
 
     virtual void spreadPrecalcs() = 0;
     virtual void contractPrecalcs() = 0;

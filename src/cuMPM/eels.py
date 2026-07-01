@@ -9,7 +9,7 @@ class EELS:
     spectrum and self-consistent induced dipoles for a collection of particles 
     subject to the relativistic incident field of a moving electron beam.
     """
-    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None, integration_step=0.05, split_method="cubic", solve_quadrupoles=False, quad_idxs=None):
+    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None, integration_step=0.05, split_method="cubic", solve_quadrupoles=False, quad_idxs=None, asm_flag=False, asm_Nx=1, asm_Ny=1):
         """
         Initialize the EELS solver with system, electron, and solver parameters.
 
@@ -94,6 +94,9 @@ class EELS:
         self.integration_step = float(integration_step)
         self.solve_quadrupoles = bool(solve_quadrupoles)
         self.quad_idxs = [int(i) for i in quad_idxs] if quad_idxs is not None else []
+        self.asm_flag = bool(asm_flag)
+        self.asm_Nx = int(asm_Nx)
+        self.asm_Ny = int(asm_Ny)
 
         # Initialize results lists for splitting mode
         self._eels_results = []
@@ -124,23 +127,23 @@ class EELS:
             if eps_p_arr.ndim == 0:
                 eps_p_scalar = complex(eps_p_arr.item())
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs
+                    box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny
                 )
             elif eps_p_arr.ndim == 1:
                 if eps_p_arr.size == 1:
                     eps_p_scalar = complex(eps_p_arr.item())
                     self._solver = _cuMPM.EELS_Solver(
-                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs
+                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny
                     )
                 else:
                     eps_p_1d = [complex(x) for x in eps_p_arr]
                     self._solver = _cuMPM.EELS_Solver(
-                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs
+                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny
                     )
             elif eps_p_arr.ndim == 2:
                 eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs
+                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny
                 )
             else:
                 raise ValueError("eps_p must be a scalar, 1D array, or 2D array")

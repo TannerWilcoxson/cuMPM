@@ -32,7 +32,7 @@ a1 = np.array([d, 0.0, 0.0])
 a2 = np.array([0.5 * d, 0.5 * np.sqrt(3) * d, 0.0])
 
 # Generate a grid of points
-grid_range = np.arange(-45, 46)
+grid_range = np.arange(-130, 131)
 all_points = []
 for i in grid_range:
     for j in grid_range:
@@ -47,7 +47,7 @@ centroid = np.array([0.5 * d, (np.sqrt(3) / 6.0) * d, 0.0])
 # Calculate distance of each point to the centroid
 dists = np.linalg.norm(all_points - centroid, axis=1)
 
-# Keep exactly the 2000 closest particles to form a symmetric patch
+# Keep exactly the 40000 closest particles to form a symmetric patch
 num_nc = 4000
 closest_indices = np.argsort(dists)[:num_nc]
 pos = all_points[closest_indices]
@@ -112,6 +112,9 @@ ax.annotate(f"LSPR Peak: {peak_omega:.0f} cm$^{{-1}}$",
             arrowprops=dict(facecolor=accent_color, arrowstyle="->", connectionstyle="arc3,rad=.2"),
             fontsize=10, fontweight='bold', color=accent_color)
 
+print(f"MAX EELS VALUE DIRECT: {peak_val}")
+np.savez('direct_eels_data.npz', wls=omega, loss_eels=eels_spectrum)
+
 # Formatting
 ax.set_title(f"EELS Probability Spectrum for 2D ITO Hexagonal Monolayer ({num_nc} NCs)", fontsize=13, fontweight='bold', pad=15)
 ax.set_xlabel("Wavenumber $\\omega$ (cm$^{-1}$)", fontsize=11)
@@ -128,5 +131,5 @@ ax_inset.set_title("NC Patch & E-beam", fontsize=8, fontweight='bold')
 ax_inset.axis('off')
 ax_inset.legend(loc='upper right', fontsize=6, frameon=True)
 
-plt.savefig("eels_hex_monolayer.png")
-print("Saved EELS probability plot to eels_hex_monolayer.png")
+plt.savefig(f"eels_hex_monolayer_{num_nc}.png")
+print(f"Saved EELS probability plot to eels_hex_monolayer_{num_nc}.png")

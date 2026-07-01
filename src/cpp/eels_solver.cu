@@ -103,8 +103,11 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          const std::string& field_type,
                          double integration_step,
                          bool solve_quadrupoles,
-                         const std::vector<int>& quad_idxs)
-    : box(box), eps_p(eps_p), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs) {}
+                         const std::vector<int>& quad_idxs,
+                         bool asm_flag,
+                         int asm_Nx,
+                         int asm_Ny)
+    : box(box), eps_p(eps_p), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny) {}
 
 // Constructor 2: 1D eps_p
 EELS_Solver::EELS_Solver(const std::vector<double>& box,
@@ -121,8 +124,11 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          const std::string& field_type,
                          double integration_step,
                          bool solve_quadrupoles,
-                         const std::vector<int>& quad_idxs)
-    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs) {
+                         const std::vector<int>& quad_idxs,
+                         bool asm_flag,
+                         int asm_Nx,
+                         int asm_Ny)
+    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny) {
     this->eps_p.resize(eps_p_1d.size(), std::vector<Complex>(1, 0.0));
     for (size_t w = 0; w < eps_p_1d.size(); ++w) {
         this->eps_p[w][0] = eps_p_1d[w];
@@ -144,8 +150,11 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          const std::string& field_type,
                          double integration_step,
                          bool solve_quadrupoles,
-                         const std::vector<int>& quad_idxs)
-    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs) {
+                         const std::vector<int>& quad_idxs,
+                         bool asm_flag,
+                         int asm_Nx,
+                         int asm_Ny)
+    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny) {
     this->eps_p.resize(1, std::vector<Complex>(1, eps_p_scalar));
 }
 
@@ -493,69 +502,140 @@ void EELS_Solver::compute(const std::vector<double>& epos,
     std::vector<Complex> frame_dip(num_wavevectors * num_particles * 3, 0.0);
     std::vector<Complex> frame_quad(num_wavevectors * num_quads * 5, 0.0);
     std::vector<double> frame_eels(num_wavevectors, 0.0);
+    std::vector<Complex> dip_sum(num_wavevectors * num_particles * 3, 0.0);
+    std::vector<Complex> quad_sum(num_wavevectors * num_quads * 5, 0.0);
 
-    print("Wavenumber:");
+    if (asm_flag) {
+        print("Brillouin Zone point:");
+    } else {
+        print("Wavenumber:");
+    }
     increase_indent();
 
     Complex gamma = 1.0 / std::sqrt(Complex(1.0 - eps_m * v * v));
     double min_frac = 0.2;
 
-    for (size_t wavevec_idx = 0; wavevec_idx < num_wavevectors; ++wavevec_idx) {
-        std::string progress = std::to_string(wavevec_idx) + " of " + std::to_string(num_wavevectors);
-        print(progress);
+    std::vector<double> eels_sum(num_wavevectors, 0.0);
+
+    int Nx = asm_flag ? asm_Nx : 1;
+    int Ny = asm_flag ? asm_Ny : 1;
+    double dkx = 0.0;
+    double dky = 0.0;
+    if (asm_flag) {
+        dkx = 2.0 * M_PI / (box[0] * Nx);
+        dky = 2.0 * M_PI / (box[1] * Ny);
+    }
+
+    for (int ix = 0; ix < Nx; ++ix) {
+        for (int iy = 0; iy < Ny; ++iy) {
+            double k_x = 0.0;
+            double k_y = 0.0;
+            if (asm_flag) {
+                k_x = -M_PI / box[0] + (ix + 0.5) * dkx;
+                k_y = -M_PI / box[1] + (iy + 0.5) * dky;
+            }
+
+            if (auto* ewald_ef = dynamic_cast<Ewald_Electric_Field_Base*>(EF.get())) {
+                ewald_ef->setBlochWavevector(k_x, k_y);
+            }
+            if (auto* ewald_eels_ef = dynamic_cast<Ewald_Electric_Field_Base*>(eels_EF.get())) {
+                ewald_eels_ef->setBlochWavevector(k_x, k_y);
+            }
+
+            for (size_t wavevec_idx = 0; wavevec_idx < num_wavevectors; ++wavevec_idx) {
+        if (asm_flag) {
+            if (wavevec_idx == 0) {
+                std::string progress = std::to_string(ix * Ny + iy) + " of " + std::to_string(Nx * Ny);
+                print(progress);
+            }
+        } else {
+            std::string progress = std::to_string(wavevec_idx) + " of " + std::to_string(num_wavevectors);
+            print(progress);
+        }
 
         double omega_val = omega[wavevec_idx];
 
         // 1. Calculate space-frequency relativistic ebeam field at each particle
-        std::vector<Complex> E_inc(num_particles * 3 + num_quads * 5, 0.0);
-        for (size_t p = 0; p < num_particles; ++p) {
-            double dx = scaled_x[p] - scaled_epos[0];
-            double dy = scaled_y[p] - scaled_epos[1];
-            double r = std::sqrt(dx*dx + dy*dy);
-            if (r < min_frac) r = min_frac;
-            double rhat_x = dx / r;
-            double rhat_y = dy / r;
-
-            Complex xi_val = (2.0 * M_PI * omega_val * r) / (v * gamma);
-            Complex prefactor = (4.0 * M_PI * omega_val) / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
-            
-            Complex k0 = eval_k0(xi_val);
-            Complex k1 = eval_k1(xi_val);
-
-            E_inc[p * 3 + 0] = -prefactor * k1 * rhat_x;
-            E_inc[p * 3 + 1] = -prefactor * k1 * rhat_y;
-            E_inc[p * 3 + 2] = prefactor * Complex(0.0, 1.0) / gamma * k0;
+        int R_max_x = 0;
+        int R_max_y = 0;
+        if (asm_flag) {
+            double r_decay = 12.0 * std::abs((v * gamma) / (2.0 * M_PI * omega_val));
+            R_max_x = static_cast<int>(std::ceil(r_decay / box[0]));
+            R_max_y = static_cast<int>(std::ceil(r_decay / box[1]));
         }
 
-        if (solve_quadrupoles && num_quads > 0) {
-            for (size_t q = 0; q < num_quads; ++q) {
-                size_t p = quad_idxs.empty() ? q : quad_idxs[q];
-                double dx = scaled_x[p] - scaled_epos[0];
-                double dy = scaled_y[p] - scaled_epos[1];
-                double r = std::sqrt(dx*dx + dy*dy);
-                if (r < min_frac) r = min_frac;
-                double rhat_x = dx / r;
-                double rhat_y = dy / r;
+        std::vector<Complex> E_inc(num_particles * 3 + num_quads * 5, 0.0);
+        for (int ix_R = -R_max_x; ix_R <= R_max_x; ++ix_R) {
+            for (int iy_R = -R_max_y; iy_R <= R_max_y; ++iy_R) {
+                double Rx = ix_R * box[0];
+                double Ry = iy_R * box[1];
 
-                Complex xi_val = (2.0 * M_PI * omega_val * r) / (v * gamma);
-                Complex beta = (2.0 * M_PI * omega_val) / (v * gamma);
-                Complex prefactor = (4.0 * M_PI * omega_val) / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
-                
-                Complex k0 = eval_k0(xi_val);
-                Complex k1 = eval_k1(xi_val);
+                for (size_t p = 0; p < num_particles; ++p) {
+                    double dx = scaled_x[p] - scaled_epos[0] - Rx;
+                    double dy = scaled_y[p] - scaled_epos[1] - Ry;
+                    double r = std::sqrt(dx*dx + dy*dy);
+                    if (r < min_frac) r = min_frac;
+                    double rhat_x = dx / r;
+                    double rhat_y = dy / r;
 
-                Complex G_xx = prefactor * (beta * k0 * rhat_x * rhat_x - ((1.0 - 2.0 * rhat_x * rhat_x) / r) * k1);
-                Complex G_yy = prefactor * (beta * k0 * rhat_y * rhat_y - ((1.0 - 2.0 * rhat_y * rhat_y) / r) * k1);
-                Complex G_zz = -beta * prefactor * k0;
-                Complex G_xy = prefactor * (beta * k0 * rhat_x * rhat_y + (2.0 * rhat_x * rhat_y / r) * k1);
-                Complex G_xz = -Complex(0.0, 1.0) * 0.5 * prefactor * beta * (gamma + 1.0 / gamma) * k1 * rhat_x;
-                Complex G_yz = -Complex(0.0, 1.0) * 0.5 * prefactor * beta * (gamma + 1.0 / gamma) * k1 * rhat_y;
+                    Complex xi_val = (2.0 * M_PI * omega_val * r) / (v * gamma);
+                    Complex prefactor = (4.0 * M_PI * omega_val) / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
+                    
+                    Complex k0 = eval_k0(xi_val);
+                    Complex k1 = eval_k1(xi_val);
 
-                E_inc[num_particles * 3 + q * 5 + 0] = G_xx - G_zz;
-                E_inc[num_particles * 3 + q * 5 + 1] = G_xy;
-                E_inc[num_particles * 3 + q * 5 + 2] = G_xz;
-                E_inc[num_particles * 3 + q * 5 + 3] = G_yy - G_zz;
-                E_inc[num_particles * 3 + q * 5 + 4] = G_yz;
+                    Complex E_x = -prefactor * k1 * rhat_x;
+                    Complex E_y = -prefactor * k1 * rhat_y;
+                    Complex E_z = prefactor * Complex(0.0, 1.0) / gamma * k0;
+
+                    Complex phase_factor(1.0, 0.0);
+                    if (asm_flag) {
+                        double phase = k_x * (scaled_x[p] - Rx) + k_y * (scaled_y[p] - Ry);
+                        phase_factor = std::exp(Complex(0.0, phase));
+                    }
+
+                    E_inc[p * 3 + 0] += E_x * phase_factor;
+                    E_inc[p * 3 + 1] += E_y * phase_factor;
+                    E_inc[p * 3 + 2] += E_z * phase_factor;
+                }
+
+                if (solve_quadrupoles && num_quads > 0) {
+                    for (size_t q = 0; q < num_quads; ++q) {
+                        size_t p = quad_idxs.empty() ? q : quad_idxs[q];
+                        double dx = scaled_x[p] - scaled_epos[0] - Rx;
+                        double dy = scaled_y[p] - scaled_epos[1] - Ry;
+                        double r = std::sqrt(dx*dx + dy*dy);
+                        if (r < min_frac) r = min_frac;
+                        double rhat_x = dx / r;
+                        double rhat_y = dy / r;
+
+                        Complex xi_val = (2.0 * M_PI * omega_val * r) / (v * gamma);
+                        Complex beta = (2.0 * M_PI * omega_val) / (v * gamma);
+                        Complex prefactor = (4.0 * M_PI * omega_val) / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
+                        
+                        Complex k0 = eval_k0(xi_val);
+                        Complex k1 = eval_k1(xi_val);
+
+                        Complex G_xx = prefactor * (beta * k0 * rhat_x * rhat_x - ((1.0 - 2.0 * rhat_x * rhat_x) / r) * k1);
+                        Complex G_yy = prefactor * (beta * k0 * rhat_y * rhat_y - ((1.0 - 2.0 * rhat_y * rhat_y) / r) * k1);
+                        Complex G_zz = -beta * prefactor * k0;
+                        Complex G_xy = prefactor * (beta * k0 * rhat_x * rhat_y + (2.0 * rhat_x * rhat_y / r) * k1);
+                        Complex G_xz = -Complex(0.0, 1.0) * 0.5 * prefactor * beta * (gamma + 1.0 / gamma) * k1 * rhat_x;
+                        Complex G_yz = -Complex(0.0, 1.0) * 0.5 * prefactor * beta * (gamma + 1.0 / gamma) * k1 * rhat_y;
+
+                        Complex phase_factor(1.0, 0.0);
+                        if (asm_flag) {
+                            double phase = k_x * (scaled_x[p] - Rx) + k_y * (scaled_y[p] - Ry);
+                            phase_factor = std::exp(Complex(0.0, phase));
+                        }
+
+                        E_inc[num_particles * 3 + q * 5 + 0] += (G_xx - G_zz) * phase_factor;
+                        E_inc[num_particles * 3 + q * 5 + 1] += G_xy * phase_factor;
+                        E_inc[num_particles * 3 + q * 5 + 2] += G_xz * phase_factor;
+                        E_inc[num_particles * 3 + q * 5 + 3] += (G_yy - G_zz) * phase_factor;
+                        E_inc[num_particles * 3 + q * 5 + 4] += G_yz * phase_factor;
+                    }
+                }
             }
         }
 
@@ -574,6 +654,16 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         for (size_t p = 0; p < num_particles; ++p) {
             double norm = std::sqrt(std::norm(E_inc[p * 3 + 0]) + std::norm(E_inc[p * 3 + 1]) + std::norm(E_inc[p * 3 + 2]));
             if (norm > Enorm) Enorm = norm;
+        }
+        if (solve_quadrupoles && num_quads > 0) {
+            for (size_t q = 0; q < num_quads; ++q) {
+                double norm = std::sqrt(std::norm(E_inc[num_particles * 3 + q * 5 + 0]) + 
+                                        std::norm(E_inc[num_particles * 3 + q * 5 + 1]) + 
+                                        std::norm(E_inc[num_particles * 3 + q * 5 + 2]) + 
+                                        std::norm(E_inc[num_particles * 3 + q * 5 + 3]) + 
+                                        std::norm(E_inc[num_particles * 3 + q * 5 + 4]));
+                if (norm > Enorm) Enorm = norm;
+            }
         }
         if (Enorm < 1e-15) Enorm = 1.0;
 
@@ -606,7 +696,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             solver_guess.resize(num_particles * 3 + num_quads * 5, 0.0);
             for (size_t p = 0; p < num_particles; ++p) {
                 Complex beta = (eps_p[0][p] - 1.0) / (eps_p[0][p] + 2.0);
-                Complex val = 4.0 * M_PI * beta / (1.0 - beta * vol_frac);
+                Complex val = 4.0 * M_PI * std::pow(radius[p], 3.0) * beta / (1.0 - beta * vol_frac);
                 for (int c = 0; c < 3; ++c) {
                     Complex ew = Ew_norm[p * 3 + c];
                     double sgn = (ew.real() >= 0.0) ? 1.0 : -1.0;
@@ -628,10 +718,12 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         // Scale solved dipoles and quadrupoles back by Enorm and save
         for (size_t i = 0; i < num_particles * 3; ++i) {
             frame_dip[wavevec_idx * num_particles * 3 + i] = sol_norm[i] * Enorm;
+            dip_sum[wavevec_idx * num_particles * 3 + i] += sol_norm[i] * Enorm;
         }
         if (solve_quadrupoles && num_quads > 0) {
             for (size_t i = 0; i < num_quads * 5; ++i) {
                 frame_quad[wavevec_idx * num_quads * 5 + i] = sol_norm[num_particles * 3 + i] * Enorm;
+                quad_sum[wavevec_idx * num_quads * 5 + i] += sol_norm[num_particles * 3 + i] * Enorm;
             }
         }
 
@@ -730,7 +822,8 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             Complex Eind_z = Complex(Ez_r, Ez_i);
 
             double phase = -2.0 * M_PI * omega_val * Z_pts[j] / v;
-            Complex exp_factor = std::exp(Complex(0.0, phase));
+            double k_phase = -(k_x * scaled_epos[0] + k_y * scaled_epos[1]);
+            Complex exp_factor = std::exp(Complex(0.0, phase + k_phase));
             integrand[j] = (Eind_z * exp_factor).real();
         }
 
@@ -740,13 +833,39 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         // The solved dipoles were already physically scaled by Enorm,
         // so eels_val already contains the Enorm scaling factor.
         frame_eels[wavevec_idx] = eels_val;
+        eels_sum[wavevec_idx] += eels_val;
+    }
+    }
+    }
+    
+    if (asm_flag) {
+        double dk_area = dkx * dky;
+        double bz_area = (2.0 * M_PI / box[0]) * (2.0 * M_PI / box[1]);
+        for (size_t wavevec_idx = 0; wavevec_idx < num_wavevectors; ++wavevec_idx) {
+            frame_eels[wavevec_idx] = eels_sum[wavevec_idx] * dk_area / bz_area;
+            for (size_t i = 0; i < num_particles * 3; ++i) {
+                dip_sum[wavevec_idx * num_particles * 3 + i] *= (dk_area / bz_area);
+            }
+            if (solve_quadrupoles && num_quads > 0) {
+                for (size_t i = 0; i < num_quads * 5; ++i) {
+                    quad_sum[wavevec_idx * num_quads * 5 + i] *= (dk_area / bz_area);
+                }
+            }
+        }
     }
     decrease_indent();
 
     eels.insert(eels.end(), frame_eels.begin(), frame_eels.end());
-    dips.insert(dips.end(), frame_dip.begin(), frame_dip.end());
-    if (solve_quadrupoles && num_quads > 0) {
-        quads.insert(quads.end(), frame_quad.begin(), frame_quad.end());
+    if (asm_flag) {
+        dips.insert(dips.end(), dip_sum.begin(), dip_sum.end());
+        if (solve_quadrupoles && num_quads > 0) {
+            quads.insert(quads.end(), quad_sum.begin(), quad_sum.end());
+        }
+    } else {
+        dips.insert(dips.end(), frame_dip.begin(), frame_dip.end());
+        if (solve_quadrupoles && num_quads > 0) {
+            quads.insert(quads.end(), frame_quad.begin(), frame_quad.end());
+        }
     }
 
     if (num_frames != 1) {
