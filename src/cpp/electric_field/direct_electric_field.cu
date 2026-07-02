@@ -152,10 +152,10 @@ __global__ void direct_field_kernel(
                 // Exclude self-interaction for Solver
                 if (mode == FieldCalcMode::SOLVER_AX && (i == j)) continue;
 
-                // Target - Source
-                double rx = jx - sh_x[k];
-                double ry = jy - sh_y[k];
-                double rz = jz - sh_z[k];
+                // Source - Target
+                double rx = sh_x[k] - jx;
+                double ry = sh_y[k] - jy;
+                double rz = sh_z[k] - jz;
                 double r2 = rx*rx + ry*ry + rz*rz;
 
                 // Soften/regularize field evaluation inside particle volume
@@ -244,71 +244,71 @@ __global__ void direct_field_kernel(
                     E_zi += 3.0 * inv_4pi_scaled * inv_r4 * E_quad_zi;
 
                     if (q_target >= 0) {
-                        double rr0 = runit_x * runit_x - runit_z * runit_z;
-                        double rr1 = 2.0 * runit_x * runit_y;
-                        double rr2 = 2.0 * runit_x * runit_z;
-                        double rr3 = runit_y * runit_y - runit_z * runit_z;
-                        double rr4 = 2.0 * runit_y * runit_z;
+                        double rr_std0 = runit_x * runit_x;
+                        double rr_std1 = runit_x * runit_y;
+                        double rr_std2 = runit_x * runit_z;
+                        double rr_std3 = runit_y * runit_y;
+                        double rr_std4 = runit_y * runit_z;
 
-                        double G_dip_0r = -5.0 * p_dot_rhat_r * rr0 + 2.0 * (px_r * runit_x - pz_r * runit_z) + p_dot_rhat_r;
-                        double G_dip_0i = -5.0 * p_dot_rhat_i * rr0 + 2.0 * (px_i * runit_x - pz_i * runit_z) + p_dot_rhat_i;
-                        double G_dip_1r = -5.0 * p_dot_rhat_r * rr1 + 2.0 * (px_r * runit_y + py_r * runit_x);
-                        double G_dip_1i = -5.0 * p_dot_rhat_i * rr1 + 2.0 * (px_i * runit_y + py_i * runit_x);
-                        double G_dip_2r = -5.0 * p_dot_rhat_r * rr2 + 2.0 * (px_r * runit_z + pz_r * runit_x);
-                        double G_dip_2i = -5.0 * p_dot_rhat_i * rr2 + 2.0 * (px_i * runit_z + pz_i * runit_x);
-                        double G_dip_3r = -5.0 * p_dot_rhat_r * rr3 + 2.0 * (py_r * runit_y - pz_r * runit_z) + p_dot_rhat_r;
-                        double G_dip_3i = -5.0 * p_dot_rhat_i * rr3 + 2.0 * (py_i * runit_y - pz_i * runit_z) + p_dot_rhat_i;
-                        double G_dip_4r = -5.0 * p_dot_rhat_r * rr4 + 2.0 * (py_r * runit_z + pz_r * runit_y);
-                        double G_dip_4i = -5.0 * p_dot_rhat_i * rr4 + 2.0 * (py_i * runit_z + pz_i * runit_y);
+                        double G_dip_0r = -5.0 * p_dot_rhat_r * rr_std0 + 2.0 * px_r * runit_x + p_dot_rhat_r;
+                        double G_dip_0i = -5.0 * p_dot_rhat_i * rr_std0 + 2.0 * px_i * runit_x + p_dot_rhat_i;
+                        double G_dip_1r = -5.0 * p_dot_rhat_r * rr_std1 + (px_r * runit_y + py_r * runit_x);
+                        double G_dip_1i = -5.0 * p_dot_rhat_i * rr_std1 + (px_i * runit_y + py_i * runit_x);
+                        double G_dip_2r = -5.0 * p_dot_rhat_r * rr_std2 + (px_r * runit_z + pz_r * runit_x);
+                        double G_dip_2i = -5.0 * p_dot_rhat_i * rr_std2 + (px_i * runit_z + pz_i * runit_x);
+                        double G_dip_3r = -5.0 * p_dot_rhat_r * rr_std3 + 2.0 * py_r * runit_y + p_dot_rhat_r;
+                        double G_dip_3i = -5.0 * p_dot_rhat_i * rr_std3 + 2.0 * py_i * runit_y + p_dot_rhat_i;
+                        double G_dip_4r = -5.0 * p_dot_rhat_r * rr_std4 + (py_r * runit_z + pz_r * runit_y);
+                        double G_dip_4i = -5.0 * p_dot_rhat_i * rr_std4 + (py_i * runit_z + pz_i * runit_y);
 
                         // Scale G_dip to G_dip_new = S * G_dip_old
                         G_0r += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_0r);
                         G_0i += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_0i);
-                        G_1r += 3.0 * inv_4pi_scaled * inv_r4 * (-0.5 * G_dip_1r);
-                        G_1i += 3.0 * inv_4pi_scaled * inv_r4 * (-0.5 * G_dip_1i);
-                        G_2r += 3.0 * inv_4pi_scaled * inv_r4 * (-0.5 * G_dip_2r);
-                        G_2i += 3.0 * inv_4pi_scaled * inv_r4 * (-0.5 * G_dip_2i);
+                        G_1r += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_1r);
+                        G_1i += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_1i);
+                        G_2r += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_2r);
+                        G_2i += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_2i);
                         G_3r += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_3r);
                         G_3i += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_3i);
-                        G_4r += 3.0 * inv_4pi_scaled * inv_r4 * (-0.5 * G_dip_4r);
-                        G_4i += 3.0 * inv_4pi_scaled * inv_r4 * (-0.5 * G_dip_4i);
+                        G_4r += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_4r);
+                        G_4i += 3.0 * inv_4pi_scaled * inv_r4 * (-1.0 * G_dip_4i);
 
-                        double Q_rr_rr_Q_0r = 2.0 * (Q_rhat_xr_p * runit_x - Q_rhat_zr_p * runit_z);
-                        double Q_rr_rr_Q_0i = 2.0 * (Q_rhat_xi_p * runit_x - Q_rhat_zi_p * runit_z);
-                        double Q_rr_rr_Q_1r = 2.0 * (Q_rhat_xr_p * runit_y + Q_rhat_yr_p * runit_x);
-                        double Q_rr_rr_Q_1i = 2.0 * (Q_rhat_xi_p * runit_y + Q_rhat_yi_p * runit_x);
-                        double Q_rr_rr_Q_2r = 2.0 * (Q_rhat_xr_p * runit_z + Q_rhat_zr_p * runit_x);
-                        double Q_rr_rr_Q_2i = 2.0 * (Q_rhat_xi_p * runit_z + Q_rhat_zi_p * runit_x);
-                        double Q_rr_rr_Q_3r = 2.0 * (Q_rhat_yr_p * runit_y - Q_rhat_zr_p * runit_z);
-                        double Q_rr_rr_Q_3i = 2.0 * (Q_rhat_yi_p * runit_y - Q_rhat_zi_p * runit_z);
-                        double Q_rr_rr_Q_4r = 2.0 * (Q_rhat_yr_p * runit_z + Q_rhat_zr_p * runit_y);
-                        double Q_rr_rr_Q_4i = 2.0 * (Q_rhat_yi_p * runit_z + Q_rhat_zi_p * runit_y);
+                        double Q_rr_rr_Q_0r = 2.0 * Q_rhat_xr_p * runit_x;
+                        double Q_rr_rr_Q_0i = 2.0 * Q_rhat_xi_p * runit_x;
+                        double Q_rr_rr_Q_1r = Q_rhat_xr_p * runit_y + Q_rhat_yr_p * runit_x;
+                        double Q_rr_rr_Q_1i = Q_rhat_xi_p * runit_y + Q_rhat_yi_p * runit_x;
+                        double Q_rr_rr_Q_2r = Q_rhat_xr_p * runit_z + Q_rhat_zr_p * runit_x;
+                        double Q_rr_rr_Q_2i = Q_rhat_xi_p * runit_z + Q_rhat_zi_p * runit_x;
+                        double Q_rr_rr_Q_3r = 2.0 * Q_rhat_yr_p * runit_y;
+                        double Q_rr_rr_Q_3i = 2.0 * Q_rhat_yi_p * runit_y;
+                        double Q_rr_rr_Q_4r = Q_rhat_yr_p * runit_z + Q_rhat_zr_p * runit_y;
+                        double Q_rr_rr_Q_4i = Q_rhat_yi_p * runit_z + Q_rhat_zi_p * runit_y;
 
                         double factor = inv_4pi_scaled * inv_r5;
 
                         // Calculate physical G_quad
-                        double G_q0r = -1.5 * q0r_p - 7.5 * Q_rhatrhat_r_p - 15.0 * Q_rr_rr_Q_0r + 52.5 * rr0 * Q_rhatrhat_r_p;
-                        double G_q0i = -1.5 * q0i_p - 7.5 * Q_rhatrhat_i_p - 15.0 * Q_rr_rr_Q_0i + 52.5 * rr0 * Q_rhatrhat_i_p;
-                        double G_q1r = -1.5 * q1r_p - 15.0 * Q_rr_rr_Q_1r + 52.5 * rr1 * Q_rhatrhat_r_p;
-                        double G_q1i = -1.5 * q1i_p - 15.0 * Q_rr_rr_Q_1i + 52.5 * rr1 * Q_rhatrhat_i_p;
-                        double G_q2r = -1.5 * q2r_p - 15.0 * Q_rr_rr_Q_2r + 52.5 * rr2 * Q_rhatrhat_r_p;
-                        double G_q2i = -1.5 * q2i_p - 15.0 * Q_rr_rr_Q_2i + 52.5 * rr2 * Q_rhatrhat_i_p;
-                        double G_q3r = -1.5 * q3r_p - 7.5 * Q_rhatrhat_r_p - 15.0 * Q_rr_rr_Q_3r + 52.5 * rr3 * Q_rhatrhat_r_p;
-                        double G_q3i = -1.5 * q3i_p - 7.5 * Q_rhatrhat_i_p - 15.0 * Q_rr_rr_Q_3i + 52.5 * rr3 * Q_rhatrhat_i_p;
-                        double G_q4r = -1.5 * q4r_p - 15.0 * Q_rr_rr_Q_4r + 52.5 * rr4 * Q_rhatrhat_r_p;
-                        double G_q4i = -1.5 * q4i_p - 15.0 * Q_rr_rr_Q_4i + 52.5 * rr4 * Q_rhatrhat_i_p;
+                        double G_q0r = -1.5 * q0r_p - 7.5 * Q_rhatrhat_r_p - 15.0 * Q_rr_rr_Q_0r + 52.5 * rr_std0 * Q_rhatrhat_r_p;
+                        double G_q0i = -1.5 * q0i_p - 7.5 * Q_rhatrhat_i_p - 15.0 * Q_rr_rr_Q_0i + 52.5 * rr_std0 * Q_rhatrhat_i_p;
+                        double G_q1r = -1.5 * q1r_p - 15.0 * Q_rr_rr_Q_1r + 52.5 * rr_std1 * Q_rhatrhat_r_p;
+                        double G_q1i = -1.5 * q1i_p - 15.0 * Q_rr_rr_Q_1i + 52.5 * rr_std1 * Q_rhatrhat_i_p;
+                        double G_q2r = -1.5 * q2r_p - 15.0 * Q_rr_rr_Q_2r + 52.5 * rr_std2 * Q_rhatrhat_r_p;
+                        double G_q2i = -1.5 * q2i_p - 15.0 * Q_rr_rr_Q_2i + 52.5 * rr_std2 * Q_rhatrhat_i_p;
+                        double G_q3r = -1.5 * q3r_p - 7.5 * Q_rhatrhat_r_p - 15.0 * Q_rr_rr_Q_3r + 52.5 * rr_std3 * Q_rhatrhat_r_p;
+                        double G_q3i = -1.5 * q3i_p - 7.5 * Q_rhatrhat_i_p - 15.0 * Q_rr_rr_Q_3i + 52.5 * rr_std3 * Q_rhatrhat_i_p;
+                        double G_q4r = -1.5 * q4r_p - 15.0 * Q_rr_rr_Q_4r + 52.5 * rr_std4 * Q_rhatrhat_r_p;
+                        double G_q4i = -1.5 * q4i_p - 15.0 * Q_rr_rr_Q_4i + 52.5 * rr_std4 * Q_rhatrhat_i_p;
 
                         // Scale G_quad to G_quad_new = S * G_quad_old
                         G_0r += factor * (-1.0 * G_q0r);
                         G_0i += factor * (-1.0 * G_q0i);
-                        G_1r += factor * (-0.5 * G_q1r);
-                        G_1i += factor * (-0.5 * G_q1i);
-                        G_2r += factor * (-0.5 * G_q2r);
-                        G_2i += factor * (-0.5 * G_q2i);
+                        G_1r += factor * (-1.0 * G_q1r);
+                        G_1i += factor * (-1.0 * G_q1i);
+                        G_2r += factor * (-1.0 * G_q2r);
+                        G_2i += factor * (-1.0 * G_q2i);
                         G_3r += factor * (-1.0 * G_q3r);
                         G_3i += factor * (-1.0 * G_q3i);
-                        G_4r += factor * (-0.5 * G_q4r);
-                        G_4i += factor * (-0.5 * G_q4i);
+                        G_4r += factor * (-1.0 * G_q4r);
+                        G_4i += factor * (-1.0 * G_q4i);
                     }
                 }
             }
@@ -335,7 +335,7 @@ __global__ void direct_field_kernel(
             E_zi += sc_r * pj_z.y + sc_i * pj_z.x;
 
             if (solve_quadrupoles && q_target >= 0) {
-                double q_sc_r = 2.5 * d_self_coef_r[j] / (r_j * r_j) + 6.0 * self_corr / (r_j * r_j);
+                double q_sc_r = 2.5 * d_self_coef_r[j] / (r_j * r_j) + 3.0 * self_corr / (r_j * r_j);
                 double q_sc_i = 2.5 * d_self_coef_i[j] / (r_j * r_j);
 
                 const double2* d_quad_d2 = reinterpret_cast<const double2*>(d_dipoles + N * 3 * 2);

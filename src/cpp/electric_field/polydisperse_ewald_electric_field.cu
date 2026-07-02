@@ -392,9 +392,9 @@ __global__ void real_space_precalcs_kernel_polydisperse(
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];
 
-        double rx = x_field[j] - xi;
-        double ry = y_field[j] - yi;
-        double rz = z_field[j] - zi;
+        double rx = xi - x_field[j];
+        double ry = yi - y_field[j];
+        double rz = zi - z_field[j];
 
         if (box_x > 0.0) rx -= box_x * round(rx / box_x);
         if (box_y > 0.0) ry -= box_y * round(ry / box_y);
@@ -701,9 +701,9 @@ __global__ void real_space_neighbor_kernel_polydisperse(
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];
 
-        double rx = x_field[j] - xi;
-        double ry = y_field[j] - yi;
-        double rz = z_field[j] - zi;
+        double rx = xi - x_field[j];
+        double ry = yi - y_field[j];
+        double rz = zi - z_field[j];
 
         if (box_x > 0.0) rx -= box_x * round(rx / box_x);
         if (box_y > 0.0) ry -= box_y * round(ry / box_y);
@@ -886,11 +886,11 @@ __global__ void scale_kernel_joint_polydisperse(
         G_dot_Qdot_I += fG_grid[(v * 5 + c) * 2 + 1] * Qdot_c;
     }
 
-    double S_new_R = sc * S_R - sc_Q * G_dot_Qdot_R;
-    double S_new_I = sc * S_I - sc_Q * G_dot_Qdot_I;
+    double S_new_R = sc * S_R + sc_Q * G_dot_Qdot_R;
+    double S_new_I = sc * S_I + sc_Q * G_dot_Qdot_I;
 
-    double Gdot_G_R = sc_GP * S_R - sc_GQ * G_dot_Qdot_R;
-    double Gdot_G_I = sc_GP * S_I - sc_GQ * G_dot_Qdot_I;
+    double Gdot_G_R = -sc_GP * S_R - sc_GQ * G_dot_Qdot_R;
+    double Gdot_G_I = -sc_GP * S_I - sc_GQ * G_dot_Qdot_I;
 
     fE_grid[v * 2 + 0] = S_new_R;
     fE_grid[v * 2 + 1] = S_new_I;
@@ -1178,21 +1178,21 @@ __global__ void real_space_self_kernel_polydisperse_joint(
     double dy_r = dip_y.x; double dy_i = dip_y.y;
     double dz_r = dip_z.x; double dz_i = dip_z.y;
 
-    atomicAdd(&E_point[(i * 3 + 0) * 2 + 0], factor_r * dx_r - factor_i * dx_i);
-    atomicAdd(&E_point[(i * 3 + 0) * 2 + 1], factor_r * dx_i + factor_i * dx_r);
+    E_point[(i * 3 + 0) * 2 + 0] += factor_r * dx_r - factor_i * dx_i;
+    E_point[(i * 3 + 0) * 2 + 1] += factor_r * dx_i + factor_i * dx_r;
 
-    atomicAdd(&E_point[(i * 3 + 1) * 2 + 0], factor_r * dy_r - factor_i * dy_i);
-    atomicAdd(&E_point[(i * 3 + 1) * 2 + 1], factor_r * dy_i + factor_i * dy_r);
+    E_point[(i * 3 + 1) * 2 + 0] += factor_r * dy_r - factor_i * dy_i;
+    E_point[(i * 3 + 1) * 2 + 1] += factor_r * dy_i + factor_i * dy_r;
 
-    atomicAdd(&E_point[(i * 3 + 2) * 2 + 0], factor_r * dz_r - factor_i * dz_i);
-    atomicAdd(&E_point[(i * 3 + 2) * 2 + 1], factor_r * dz_i + factor_i * dz_r);
+    E_point[(i * 3 + 2) * 2 + 0] += factor_r * dz_r - factor_i * dz_i;
+    E_point[(i * 3 + 2) * 2 + 1] += factor_r * dz_i + factor_i * dz_r;
 
     if (solve_quadrupoles) {
         int q = quad_map[i];
         if (q >= 0 && q < num_quads) {
             double a_j = d_radii[i];
             double self_G2_val = d_self_G2_uniq[radius_idx_i];
-            double q_sc_r = 2.5 * sc_r / (a_j * a_j) + self_G2_val;
+            double q_sc_r = 2.5 * sc_r / (a_j * a_j) + 0.5 * self_G2_val;
             double q_sc_i = 2.5 * sc_i / (a_j * a_j);
 
             const double2* d_quad_d2 = reinterpret_cast<const double2*>(d_dipoles + num_particles * 3 * 2);
@@ -1210,20 +1210,20 @@ __global__ void real_space_self_kernel_polydisperse_joint(
 
             double* G_point = E_point + num_particles * 3 * 2;
 
-            atomicAdd(&G_point[(q * 5 + 0) * 2 + 0], q_sc_r * q0_r - q_sc_i * q0_i);
-            atomicAdd(&G_point[(q * 5 + 0) * 2 + 1], q_sc_r * q0_i + q_sc_i * q0_r);
+            G_point[(q * 5 + 0) * 2 + 0] += q_sc_r * q0_r - q_sc_i * q0_i;
+            G_point[(q * 5 + 0) * 2 + 1] += q_sc_r * q0_i + q_sc_i * q0_r;
 
-            atomicAdd(&G_point[(q * 5 + 1) * 2 + 0], q_sc_r * q1_r - q_sc_i * q1_i);
-            atomicAdd(&G_point[(q * 5 + 1) * 2 + 1], q_sc_r * q1_i + q_sc_i * q1_r);
+            G_point[(q * 5 + 1) * 2 + 0] += q_sc_r * q1_r - q_sc_i * q1_i;
+            G_point[(q * 5 + 1) * 2 + 1] += q_sc_r * q1_i + q_sc_i * q1_r;
 
-            atomicAdd(&G_point[(q * 5 + 2) * 2 + 0], q_sc_r * q2_r - q_sc_i * q2_i);
-            atomicAdd(&G_point[(q * 5 + 2) * 2 + 1], q_sc_r * q2_i + q_sc_i * q2_r);
+            G_point[(q * 5 + 2) * 2 + 0] += q_sc_r * q2_r - q_sc_i * q2_i;
+            G_point[(q * 5 + 2) * 2 + 1] += q_sc_r * q2_i + q_sc_i * q2_r;
 
-            atomicAdd(&G_point[(q * 5 + 3) * 2 + 0], q_sc_r * q3_r - q_sc_i * q3_i);
-            atomicAdd(&G_point[(q * 5 + 3) * 2 + 1], q_sc_r * q3_i + q_sc_i * q3_r);
+            G_point[(q * 5 + 3) * 2 + 0] += q_sc_r * q3_r - q_sc_i * q3_i;
+            G_point[(q * 5 + 3) * 2 + 1] += q_sc_r * q3_i + q_sc_i * q3_r;
 
-            atomicAdd(&G_point[(q * 5 + 4) * 2 + 0], q_sc_r * q4_r - q_sc_i * q4_i);
-            atomicAdd(&G_point[(q * 5 + 4) * 2 + 1], q_sc_r * q4_i + q_sc_i * q4_r);
+            G_point[(q * 5 + 4) * 2 + 0] += q_sc_r * q4_r - q_sc_i * q4_i;
+            G_point[(q * 5 + 4) * 2 + 1] += q_sc_r * q4_i + q_sc_i * q4_r;
         }
     }
 }
@@ -1313,9 +1313,9 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];
 
-        double rx = x_field[j] - xi;
-        double ry = y_field[j] - yi;
-        double rz = z_field[j] - zi;
+        double rx = xi - x_field[j];
+        double ry = yi - y_field[j];
+        double rz = zi - z_field[j];
 
         if (box_x > 0.0) rx -= box_x * round(rx / box_x);
         if (box_y > 0.0) ry -= box_y * round(ry / box_y);
@@ -1335,6 +1335,13 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
             __rr[2] = 2.0 * delta_x * delta_z;
             __rr[3] = delta_y * delta_y - delta_z * delta_z;
             __rr[4] = 2.0 * delta_y * delta_z;
+
+            double rr_std[5];
+            rr_std[0] = delta_x * delta_x;
+            rr_std[1] = delta_x * delta_y;
+            rr_std[2] = delta_x * delta_z;
+            rr_std[3] = delta_y * delta_y;
+            rr_std[4] = delta_y * delta_z;
 
             // 1. Dipole contributions to E
             double r_P_r = px_r * delta_x + py_r * delta_y + pz_r * delta_z;
@@ -1384,14 +1391,14 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
                 E_quad_z_i = 0.5 * (Q1_val * Q__rr_i * delta_z + 2.0 * Q2_val * Q_r_vec_i[2]);
             }
 
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], sign * (E_dip_x_r + E_quad_x_r));
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], sign * (E_dip_x_i + E_quad_x_i));
+            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], sign * (E_dip_x_r - E_quad_x_r));
+            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], sign * (E_dip_x_i - E_quad_x_i));
 
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], sign * (E_dip_y_r + E_quad_y_r));
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], sign * (E_dip_y_i + E_quad_y_i));
+            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], sign * (E_dip_y_r - E_quad_y_r));
+            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], sign * (E_dip_y_i - E_quad_y_i));
 
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], sign * (E_dip_z_r + E_quad_z_r));
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], sign * (E_dip_z_i + E_quad_z_i));
+            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], sign * (E_dip_z_r - E_quad_z_r));
+            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], sign * (E_dip_z_i - E_quad_z_i));
 
             // 2. Contributions to G
             if (solve_quadrupoles) {
@@ -1402,24 +1409,24 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
                     double Q3_val = Q3[start_idx + k];
 
                     double Pr_rP_r[5];
-                    Pr_rP_r[0] = 2.0 * (px_r * delta_x - pz_r * delta_z);
-                    Pr_rP_r[1] = 2.0 * (px_r * delta_y + py_r * delta_x);
-                    Pr_rP_r[2] = 2.0 * (px_r * delta_z + pz_r * delta_x);
-                    Pr_rP_r[3] = 2.0 * (py_r * delta_y - pz_r * delta_z);
-                    Pr_rP_r[4] = 2.0 * (py_r * delta_z + pz_r * delta_y);
+                    Pr_rP_r[0] = 2.0 * px_r * delta_x;
+                    Pr_rP_r[1] = px_r * delta_y + py_r * delta_x;
+                    Pr_rP_r[2] = px_r * delta_z + pz_r * delta_x;
+                    Pr_rP_r[3] = 2.0 * py_r * delta_y;
+                    Pr_rP_r[4] = py_r * delta_z + pz_r * delta_y;
 
                     double Pr_rP_i[5];
-                    Pr_rP_i[0] = 2.0 * (px_i * delta_x - pz_i * delta_z);
-                    Pr_rP_i[1] = 2.0 * (px_i * delta_y + py_i * delta_x);
-                    Pr_rP_i[2] = 2.0 * (px_i * delta_z + pz_i * delta_x);
-                    Pr_rP_i[3] = 2.0 * (py_i * delta_y - pz_i * delta_z);
-                    Pr_rP_i[4] = 2.0 * (py_i * delta_z + pz_i * delta_y);
+                    Pr_rP_i[0] = 2.0 * px_i * delta_x;
+                    Pr_rP_i[1] = px_i * delta_y + py_i * delta_x;
+                    Pr_rP_i[2] = px_i * delta_z + pz_i * delta_x;
+                    Pr_rP_i[3] = 2.0 * py_i * delta_y;
+                    Pr_rP_i[4] = py_i * delta_z + pz_i * delta_y;
 
                     double G_dip_r[5];
                     double G_dip_i[5];
                     for (int c = 0; c < 5; ++c) {
-                        G_dip_r[c] = -(Q1_val * __rr[c] * r_P_r + Q2_val * Pr_rP_r[c] + (Q2_val + Q3_val) * I_arr[c] * r_P_r);
-                        G_dip_i[c] = -(Q1_val * __rr[c] * r_P_i + Q2_val * Pr_rP_i[c] + (Q2_val + Q3_val) * I_arr[c] * r_P_i);
+                        G_dip_r[c] = (Q1_val * rr_std[c] * r_P_r + Q2_val * Pr_rP_r[c] + (Q2_val + Q3_val) * I_arr[c] * r_P_r);
+                        G_dip_i[c] = (Q1_val * rr_std[c] * r_P_i + Q2_val * Pr_rP_i[c] + (Q2_val + Q3_val) * I_arr[c] * r_P_i);
                     }
 
                     double G_quad_r[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -1445,25 +1452,25 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
                         double Q__rr_i = q0_i * __rr[0] + q1_i * __rr[1] + q2_i * __rr[2] + q3_i * __rr[3] + q4_i * __rr[4];
 
                         double Q_rr_rr_Q_r[5];
-                        Q_rr_rr_Q_r[0] = 2.0 * (Q_r_vec_r[0] * delta_x - Q_r_vec_r[2] * delta_z);
-                        Q_rr_rr_Q_r[1] = 2.0 * (Q_r_vec_r[0] * delta_y + Q_r_vec_r[1] * delta_x);
-                        Q_rr_rr_Q_r[2] = 2.0 * (Q_r_vec_r[0] * delta_z + Q_r_vec_r[2] * delta_x);
-                        Q_rr_rr_Q_r[3] = 2.0 * (Q_r_vec_r[1] * delta_y - Q_r_vec_r[2] * delta_z);
-                        Q_rr_rr_Q_r[4] = 2.0 * (Q_r_vec_r[1] * delta_z + Q_r_vec_r[2] * delta_y);
+                        Q_rr_rr_Q_r[0] = 2.0 * Q_r_vec_r[0] * delta_x;
+                        Q_rr_rr_Q_r[1] = Q_r_vec_r[0] * delta_y + Q_r_vec_r[1] * delta_x;
+                        Q_rr_rr_Q_r[2] = Q_r_vec_r[0] * delta_z + Q_r_vec_r[2] * delta_x;
+                        Q_rr_rr_Q_r[3] = 2.0 * Q_r_vec_r[1] * delta_y;
+                        Q_rr_rr_Q_r[4] = Q_r_vec_r[1] * delta_z + Q_r_vec_r[2] * delta_y;
 
                         double Q_rr_rr_Q_i[5];
-                        Q_rr_rr_Q_i[0] = 2.0 * (Q_r_vec_i[0] * delta_x - Q_r_vec_i[2] * delta_z);
-                        Q_rr_rr_Q_i[1] = 2.0 * (Q_r_vec_i[0] * delta_y + Q_r_vec_i[1] * delta_x);
-                        Q_rr_rr_Q_i[2] = 2.0 * (Q_r_vec_i[0] * delta_z + Q_r_vec_i[2] * delta_x);
-                        Q_rr_rr_Q_i[3] = 2.0 * (Q_r_vec_i[1] * delta_y - Q_r_vec_i[2] * delta_z);
-                        Q_rr_rr_Q_i[4] = 2.0 * (Q_r_vec_i[1] * delta_z + Q_r_vec_i[2] * delta_y);
+                        Q_rr_rr_Q_i[0] = 2.0 * Q_r_vec_i[0] * delta_x;
+                        Q_rr_rr_Q_i[1] = Q_r_vec_i[0] * delta_y + Q_r_vec_i[1] * delta_x;
+                        Q_rr_rr_Q_i[2] = Q_r_vec_i[0] * delta_z + Q_r_vec_i[2] * delta_x;
+                        Q_rr_rr_Q_i[3] = 2.0 * Q_r_vec_i[1] * delta_y;
+                        Q_rr_rr_Q_i[4] = Q_r_vec_i[1] * delta_z + Q_r_vec_i[2] * delta_y;
 
                         double q_val_r[5] = {q0_r, q1_r, q2_r, q3_r, q4_r};
                         double q_val_i[5] = {q0_i, q1_i, q2_i, q3_i, q4_i};
 
                         for (int c = 0; c < 5; ++c) {
-                            G_quad_r[c] = 0.5 * (G1_val * I_arr[c] * Q__rr_r + G2_val * q_val_r[c] + G3_val * (I_arr[c] * Q__rr_r + 2.0 * Q_rr_rr_Q_r[c]) + G4_val * __rr[c] * Q__rr_r);
-                            G_quad_i[c] = 0.5 * (G1_val * I_arr[c] * Q__rr_i + G2_val * q_val_i[c] + G3_val * (I_arr[c] * Q__rr_i + 2.0 * Q_rr_rr_Q_i[c]) + G4_val * __rr[c] * Q__rr_i);
+                            G_quad_r[c] = 0.5 * (G1_val * I_arr[c] * Q__rr_r + G2_val * q_val_r[c] + G3_val * (I_arr[c] * Q__rr_r + 2.0 * Q_rr_rr_Q_r[c]) + G4_val * rr_std[c] * Q__rr_r);
+                            G_quad_i[c] = 0.5 * (G1_val * I_arr[c] * Q__rr_i + G2_val * q_val_i[c] + G3_val * (I_arr[c] * Q__rr_i + 2.0 * Q_rr_rr_Q_i[c]) + G4_val * rr_std[c] * Q__rr_i);
                         }
                     }
 
