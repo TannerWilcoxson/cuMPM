@@ -123,8 +123,8 @@ class Electric_Field():#{{{
         fE_dot = fE[...,0]+fE[...,1]+fE[...,2]
         fG_dot = fG[...,0]+fG[...,1]+fG[...,2]+fG[...,3]+fG[...,4]
 
-        Edot = self.scale_EP_coef*fE_dot - self.scale_EQ_coef*fG_dot
-        Gdot = -self.scale_GP_coef*fE_dot + self.scale_GQ_coef*fG_dot
+        Edot = self.scale_EP_coef*fE_dot + self.scale_EQ_coef*fG_dot
+        Gdot = self.scale_GP_coef*fE_dot + self.scale_GQ_coef*fG_dot
 
         #np.multiply(khat,sum[...,None],out=fE)
         np.multiply(khat[...,0],Edot,out=fE[...,0])
@@ -173,22 +173,27 @@ class Electric_Field():#{{{
             E_point += self.self_P_coef * P
             E_point += self.self_perp * P
             G_point += self.self_Q_coef * Q
-            G_point += self.self_G2 * Q
+            G_point += 0.5 * self.self_G2 * Q
 
 
+        __rr = self.__rr
+        rr_std = self.rr_std
+        r = self.delta
+        I = self.I
+        
         P = P[p2]
         Q = Q[p2]
         r_P = np.sum(P*r,axis = -1)[:,None] #P2 x 1
         rr_P = r*r_P #P2 x 3
-        rrr_P = __rr.T*r_P #P2 x 5
+        rrr_P = rr_std.T*r_P #P2 x 5
         Ir_P = I[None,:]*r_P #P2 x 5
         
         Pr_rP = np.zeros((P.shape[0], 5), dtype=P.dtype)
-        Pr_rP[:, 0] = 2 * (P[:, 0] * r[:, 0] - P[:, 2] * r[:, 2])
-        Pr_rP[:, 1] = 2 * (P[:, 0] * r[:, 1] + P[:, 1] * r[:, 0])
-        Pr_rP[:, 2] = 2 * (P[:, 0] * r[:, 2] + P[:, 2] * r[:, 0])
-        Pr_rP[:, 3] = 2 * (P[:, 1] * r[:, 1] - P[:, 2] * r[:, 2])
-        Pr_rP[:, 4] = 2 * (P[:, 1] * r[:, 2] + P[:, 2] * r[:, 1])
+        Pr_rP[:, 0] = 2 * P[:, 0] * r[:, 0]
+        Pr_rP[:, 1] = P[:, 0] * r[:, 1] + P[:, 1] * r[:, 0]
+        Pr_rP[:, 2] = P[:, 0] * r[:, 2] + P[:, 2] * r[:, 0]
+        Pr_rP[:, 3] = 2 * P[:, 1] * r[:, 1]
+        Pr_rP[:, 4] = P[:, 1] * r[:, 2] + P[:, 2] * r[:, 1]
 
         Q_r = np.array([Q[:,0]*r[:,0]+Q[:,1]*r[:,1]+Q[:,2]*r[:,2],
                         Q[:,1]*r[:,0]+Q[:,3]*r[:,1]+Q[:,4]*r[:,2],
@@ -197,13 +202,13 @@ class Electric_Field():#{{{
         Irr__Q = I[None,:]*Q__rr #P2 x 5
         
         Q_rr_rr_Q = np.zeros((Q_r.shape[0], 5), dtype=Q_r.dtype)
-        Q_rr_rr_Q[:, 0] = 2 * (Q_r[:, 0] * r[:, 0] - Q_r[:, 2] * r[:, 2])
-        Q_rr_rr_Q[:, 1] = 2 * (Q_r[:, 0] * r[:, 1] + Q_r[:, 1] * r[:, 0])
-        Q_rr_rr_Q[:, 2] = 2 * (Q_r[:, 0] * r[:, 2] + Q_r[:, 2] * r[:, 0])
-        Q_rr_rr_Q[:, 3] = 2 * (Q_r[:, 1] * r[:, 1] - Q_r[:, 2] * r[:, 2])
-        Q_rr_rr_Q[:, 4] = 2 * (Q_r[:, 1] * r[:, 2] + Q_r[:, 2] * r[:, 1])
+        Q_rr_rr_Q[:, 0] = 2 * Q_r[:, 0] * r[:, 0]
+        Q_rr_rr_Q[:, 1] = Q_r[:, 0] * r[:, 1] + Q_r[:, 1] * r[:, 0]
+        Q_rr_rr_Q[:, 2] = Q_r[:, 0] * r[:, 2] + Q_r[:, 2] * r[:, 0]
+        Q_rr_rr_Q[:, 3] = 2 * Q_r[:, 1] * r[:, 1]
+        Q_rr_rr_Q[:, 4] = Q_r[:, 1] * r[:, 2] + Q_r[:, 2] * r[:, 1]
 
-        rrrr__Q = __rr.T*Q__rr #P2 x 5
+        rrrr__Q = rr_std.T*Q__rr #P2 x 5
 
         np.add.at(E_point,p1,perp*(P - rr_P) + para*rr_P)
         np.add.at(E_point,p1,0.5*(Q1*Q__rr*r + 2*Q2*Q_r))
@@ -273,10 +278,11 @@ class Electric_Field():#{{{
         d = d[cutoff_flags]
         r = r[cutoff_flags]
         r = r[:,:]/d[:,None]
-        self.delta = r
+        self.delta = -r
 
         self.__rr = np.array([r[:,0]**2-r[:,2]**2, 2*r[:,0]*r[:,1], 2*r[:,0]*r[:,2], r[:,1]**2-r[:,2]**2, 2*r[:,1]*r[:,2]])
         self.rr = self.__rr.T
+        self.rr_std = np.array([r[:,0]**2, r[:,0]*r[:,1], r[:,0]*r[:,2], r[:,1]**2, r[:,1]*r[:,2]])
     
         self.p1 = p1[cutoff_flags]
         self.p2 = p2[cutoff_flags]
