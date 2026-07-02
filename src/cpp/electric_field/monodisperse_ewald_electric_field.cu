@@ -598,151 +598,19 @@ void Monodisperse_Ewald_Electric_Field::computePrecalculations() {
     num_offsets = host_offset.size() / 3;
 
     // 8. Scale Precalcs (reciprocal space coefficients)
-    auto getKvals = [](int N, double box_len) {
-        std::vector<double> K(N);
-        for (int i = 0; i < N; ++i) {
-            double freq = (i <= (N - 1) / 2) ? i : (i - N);
-            K[i] = freq * 2.0 * 3.14159265358979323846 / box_len;
-        }
-        return K;
-    };
-
-    std::vector<double> Kx = getKvals(num_grid[0], box_x);
-    std::vector<double> Ky = getKvals(num_grid[1], box_y);
-    std::vector<double> Kz = getKvals(num_grid[2], box_z);
-
-    // Origin indices
-    int k0x = static_cast<int>(std::ceil((num_grid[0] - 1) / 2.0));
-    int k0y = static_cast<int>(std::ceil((num_grid[1] - 1) / 2.0));
-    int k0z = static_cast<int>(std::ceil((num_grid[2] - 1) / 2.0));
-
-    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
-    std::vector<double> host_scale_coef(grid_voxels, 0.0);
-    std::vector<double> host_khat(grid_voxels * 3, 0.0);
-    std::vector<double> host_scale_coef_Q_imag(grid_voxels, 0.0);
-    std::vector<double> host_scale_coef_GP_imag(grid_voxels, 0.0);
-    std::vector<double> host_scale_coef_GQ_real(grid_voxels, 0.0);
-    std::vector<double> host_Qfactor(grid_voxels * 5, 0.0);
-    std::vector<double> host_Qfactor_dot(grid_voxels * 5, 0.0);
-
-    for (int ix = 0; ix < num_grid[0]; ++ix) {
-        for (int iy = 0; iy < num_grid[1]; ++iy) {
-            for (int iz = 0; iz < num_grid[2]; ++iz) {
-                size_t linear_idx = ix * num_grid[1] * num_grid[2] + iy * num_grid[2] + iz;
-
-                double kx_val = Kx[ix] - k_x;
-                double ky_val = Ky[iy] - k_y;
-                double kz_val = Kz[iz];
-
-                double ksqx = kx_val * kx_val;
-                double ksqy = ky_val * ky_val;
-                double ksqz = kz_val * kz_val;
-
-                double ksqsm = ksqx + ksqy + ksqz;
-                double kmag = std::sqrt(ksqsm);
-
-                if (kmag < 1e-12) {
-                    host_scale_coef[linear_idx] = 0.0;
-                    host_khat[linear_idx * 3 + 0] = 0.0;
-                    host_khat[linear_idx * 3 + 1] = 0.0;
-                    host_khat[linear_idx * 3 + 2] = 0.0;
-                    if (solve_quadrupoles) {
-                        host_scale_coef_Q_imag[linear_idx] = 0.0;
-                        host_scale_coef_GP_imag[linear_idx] = 0.0;
-                        host_scale_coef_GQ_real[linear_idx] = 0.0;
-                        for (int c = 0; c < 5; ++c) {
-                            host_Qfactor[linear_idx * 5 + c] = 0.0;
-                            host_Qfactor_dot[linear_idx * 5 + c] = 0.0;
-                        }
-                    }
-                    continue;
-                }
-
-                double kh0 = kx_val / kmag;
-                double kh1 = ky_val / kmag;
-                double kh2 = kz_val / kmag;
-
-                host_khat[linear_idx * 3 + 0] = kh0;
-                host_khat[linear_idx * 3 + 1] = kh1;
-                host_khat[linear_idx * 3 + 2] = kh2;
-
-                if (solve_quadrupoles) {
-                    host_Qfactor[linear_idx * 5 + 0] = kh0 * kh0 - 1.0 / 3.0;
-                    host_Qfactor[linear_idx * 5 + 1] = kh0 * kh1;
-                    host_Qfactor[linear_idx * 5 + 2] = kh0 * kh2;
-                    host_Qfactor[linear_idx * 5 + 3] = kh1 * kh1 - 1.0 / 3.0;
-                    host_Qfactor[linear_idx * 5 + 4] = kh1 * kh2;
-
-                    host_Qfactor_dot[linear_idx * 5 + 0] = kh0 * kh0 - kh2 * kh2;
-                    host_Qfactor_dot[linear_idx * 5 + 1] = 2.0 * kh0 * kh1;
-                    host_Qfactor_dot[linear_idx * 5 + 2] = 2.0 * kh0 * kh2;
-                    host_Qfactor_dot[linear_idx * 5 + 3] = kh1 * kh1 - kh2 * kh2;
-                    host_Qfactor_dot[linear_idx * 5 + 4] = 2.0 * kh1 * kh2;
-                }
-
-                double Gx_sq = Kx[ix] * Kx[ix];
-                double Gy_sq = Ky[iy] * Ky[iy];
-                double Gz_sq = Kz[iz] * Kz[iz];
-
-                // Compensates for the un-shifted grid spreading:
-                double etaksq = ksqsm - (Gx_sq * spectral_split[0] + 
-                                         Gy_sq * spectral_split[1] + 
-                                         Gz_sq * spectral_split[2]);
-
-                double term = std::sin(kmag) / kmag - std::cos(kmag);
-                double exp_part = std::exp(-etaksq / (4.0 * xi * xi));
-                double scale_factor = 1.0 / static_cast<double>(grid_voxels);
-                host_scale_coef[linear_idx] = (9.0 * term * term * exp_part / (ksqsm * ksqsm)) * scale_factor;
-
-                if (solve_quadrupoles) {
-                    double j1 = term / kmag;
-                    double j2 = (3.0 / ksqsm - 1.0) * std::sin(kmag) / kmag - 3.0 * std::cos(kmag) / ksqsm;
-                    double expk2 = exp_part / ksqsm;
-
-                    host_scale_coef_Q_imag[linear_idx] = (-22.5 * j1 * j2 * expk2) * scale_factor;
-                    host_scale_coef_GP_imag[linear_idx] = (45.0 * j1 * j2 * expk2) * scale_factor;
-                    host_scale_coef_GQ_real[linear_idx] = (112.5 * j2 * j2 * expk2) * scale_factor;
-                }
-            }
-        }
-    }
-
-    // Allocate device memory and copy
     // Allocate device memory and copy
     if (!d_offset) {
         CUDA_CHECK(cudaMalloc(&d_offset, num_offsets * 3 * sizeof(int)));
         CUDA_CHECK(cudaMalloc(&d_offsetxyz, num_offsets * 3 * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_scale_coef, grid_voxels * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_khat, grid_voxels * 3 * sizeof(double)));
     }
 
     CUDA_CHECK(cudaMemcpy(d_offset, host_offset.data(), num_offsets * 3 * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_offsetxyz, host_offsetxyz.data(), num_offsets * 3 * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_scale_coef, host_scale_coef.data(), grid_voxels * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_khat, host_khat.data(), grid_voxels * 3 * sizeof(double), cudaMemcpyHostToDevice));
 
-    if (solve_quadrupoles) {
-        if (!d_scale_coef_Q_imag) {
-            CUDA_CHECK(cudaMalloc(&d_scale_coef_Q_imag, grid_voxels * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_scale_coef_GP_imag, grid_voxels * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_scale_coef_GQ_real, grid_voxels * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_Qfactor, grid_voxels * 5 * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_Qfactor_dot, grid_voxels * 5 * sizeof(double)));
-        }
-
-        CUDA_CHECK(cudaMemcpy(d_scale_coef_Q_imag, host_scale_coef_Q_imag.data(), grid_voxels * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_scale_coef_GP_imag, host_scale_coef_GP_imag.data(), grid_voxels * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_scale_coef_GQ_real, host_scale_coef_GQ_real.data(), grid_voxels * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_Qfactor, host_Qfactor.data(), grid_voxels * 5 * sizeof(double), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_Qfactor_dot, host_Qfactor_dot.data(), grid_voxels * 5 * sizeof(double), cudaMemcpyHostToDevice));
-    } else {
-        d_scale_coef_Q_imag = nullptr;
-        d_scale_coef_GP_imag = nullptr;
-        d_scale_coef_GQ_real = nullptr;
-        d_Qfactor = nullptr;
-        d_Qfactor_dot = nullptr;
-    }
+    computeScalePrecalcs();
 }
+
+
 
 void Monodisperse_Ewald_Electric_Field::getPrecalculationsHost(std::vector<int>& host_offset,
                                             std::vector<double>& host_offsetxyz,
@@ -1388,6 +1256,111 @@ __global__ void spread_kernel(
             atomicAdd(&fE_grid[(global_idx + 2) * 2 + 0], coef * dz_r);
             atomicAdd(&fE_grid[(global_idx + 2) * 2 + 1], coef * dz_i);
         }
+    }
+}
+
+__global__ void compute_scale_coefficients_kernel(
+    double* d_scale_coef,
+    double* d_khat,
+    double* d_scale_coef_Q_imag,
+    double* d_scale_coef_GP_imag,
+    double* d_scale_coef_GQ_real,
+    double* d_Qfactor,
+    double* d_Qfactor_dot,
+    int num_grid_x, int num_grid_y, int num_grid_z,
+    double box_x, double box_y, double box_z,
+    double k_x, double k_y,
+    double xi,
+    double spectral_split_x, double spectral_split_y, double spectral_split_z,
+    bool solve_quadrupoles,
+    size_t grid_voxels)
+{
+    size_t linear_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (linear_idx >= grid_voxels) return;
+
+    int ix = linear_idx / (num_grid_y * num_grid_z);
+    int iy = (linear_idx / num_grid_z) % num_grid_y;
+    int iz = linear_idx % num_grid_z;
+
+    double freq_x = (ix <= (num_grid_x - 1) / 2) ? ix : (ix - num_grid_x);
+    double freq_y = (iy <= (num_grid_y - 1) / 2) ? iy : (iy - num_grid_y);
+    double freq_z = (iz <= (num_grid_z - 1) / 2) ? iz : (iz - num_grid_z);
+
+    const double PI = 3.14159265358979323846;
+    double kx_val = freq_x * 2.0 * PI / box_x - k_x;
+    double ky_val = freq_y * 2.0 * PI / box_y - k_y;
+    double kz_val = freq_z * 2.0 * PI / box_z;
+
+    double ksqx = kx_val * kx_val;
+    double ksqy = ky_val * ky_val;
+    double ksqz = kz_val * kz_val;
+
+    double ksqsm = ksqx + ksqy + ksqz;
+    double kmag = sqrt(ksqsm);
+
+    if (kmag < 1e-12) {
+        d_scale_coef[linear_idx] = 0.0;
+        d_khat[linear_idx * 3 + 0] = 0.0;
+        d_khat[linear_idx * 3 + 1] = 0.0;
+        d_khat[linear_idx * 3 + 2] = 0.0;
+        if (solve_quadrupoles) {
+            d_scale_coef_Q_imag[linear_idx] = 0.0;
+            d_scale_coef_GP_imag[linear_idx] = 0.0;
+            d_scale_coef_GQ_real[linear_idx] = 0.0;
+            for (int c = 0; c < 5; ++c) {
+                d_Qfactor[linear_idx * 5 + c] = 0.0;
+                d_Qfactor_dot[linear_idx * 5 + c] = 0.0;
+            }
+        }
+        return;
+    }
+
+    double kh0 = kx_val / kmag;
+    double kh1 = ky_val / kmag;
+    double kh2 = kz_val / kmag;
+
+    d_khat[linear_idx * 3 + 0] = kh0;
+    d_khat[linear_idx * 3 + 1] = kh1;
+    d_khat[linear_idx * 3 + 2] = kh2;
+
+    if (solve_quadrupoles) {
+        d_Qfactor[linear_idx * 5 + 0] = kh0 * kh0 - 1.0 / 3.0;
+        d_Qfactor[linear_idx * 5 + 1] = kh0 * kh1;
+        d_Qfactor[linear_idx * 5 + 2] = kh0 * kh2;
+        d_Qfactor[linear_idx * 5 + 3] = kh1 * kh1 - 1.0 / 3.0;
+        d_Qfactor[linear_idx * 5 + 4] = kh1 * kh2;
+
+        d_Qfactor_dot[linear_idx * 5 + 0] = kh0 * kh0 - kh2 * kh2;
+        d_Qfactor_dot[linear_idx * 5 + 1] = 2.0 * kh0 * kh1;
+        d_Qfactor_dot[linear_idx * 5 + 2] = 2.0 * kh0 * kh2;
+        d_Qfactor_dot[linear_idx * 5 + 3] = kh1 * kh1 - kh2 * kh2;
+        d_Qfactor_dot[linear_idx * 5 + 4] = 2.0 * kh1 * kh2;
+    }
+
+    double Gx_val = freq_x * 2.0 * PI / box_x;
+    double Gy_val = freq_y * 2.0 * PI / box_y;
+    double Gz_val = freq_z * 2.0 * PI / box_z;
+    double Gx_sq = Gx_val * Gx_val;
+    double Gy_sq = Gy_val * Gy_val;
+    double Gz_sq = Gz_val * Gz_val;
+
+    double etaksq = ksqsm - (Gx_sq * spectral_split_x + 
+                             Gy_sq * spectral_split_y + 
+                             Gz_sq * spectral_split_z);
+
+    double term = sin(kmag) / kmag - cos(kmag);
+    double exp_part = exp(-etaksq / (4.0 * xi * xi));
+    double scale_factor = 1.0 / static_cast<double>(grid_voxels);
+    d_scale_coef[linear_idx] = (9.0 * term * term * exp_part / (ksqsm * ksqsm)) * scale_factor;
+
+    if (solve_quadrupoles) {
+        double j1 = term / kmag;
+        double j2 = (3.0 / ksqsm - 1.0) * sin(kmag) / kmag - 3.0 * cos(kmag) / ksqsm;
+        double expk2 = exp_part / ksqsm;
+
+        d_scale_coef_Q_imag[linear_idx] = (-22.5 * j1 * j2 * expk2) * scale_factor;
+        d_scale_coef_GP_imag[linear_idx] = (45.0 * j1 * j2 * expk2) * scale_factor;
+        d_scale_coef_GQ_real[linear_idx] = (112.5 * j2 * j2 * expk2) * scale_factor;
     }
 }
 
@@ -2327,8 +2300,6 @@ __global__ void negate_vector_kernel(double* vec, size_t size) {
 }
 
 void Monodisperse_Ewald_Electric_Field::electricField() {
-    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
-    
     spread(d_fE_grid);
     
     
@@ -2444,9 +2415,56 @@ void Monodisperse_Ewald_Electric_Field::electricField() {
     realSpace(d_E_point);
 }
 
+void Monodisperse_Ewald_Electric_Field::computeScalePrecalcs() {
+    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
+
+    if (!d_scale_coef) {
+        CUDA_CHECK(cudaMalloc(&d_scale_coef, grid_voxels * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_khat, grid_voxels * 3 * sizeof(double)));
+    }
+
+    if (solve_quadrupoles) {
+        if (!d_scale_coef_Q_imag) {
+            CUDA_CHECK(cudaMalloc(&d_scale_coef_Q_imag, grid_voxels * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_scale_coef_GP_imag, grid_voxels * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_scale_coef_GQ_real, grid_voxels * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_Qfactor, grid_voxels * 5 * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_Qfactor_dot, grid_voxels * 5 * sizeof(double)));
+        }
+    } else {
+        d_scale_coef_Q_imag = nullptr;
+        d_scale_coef_GP_imag = nullptr;
+        d_scale_coef_GQ_real = nullptr;
+        d_Qfactor = nullptr;
+        d_Qfactor_dot = nullptr;
+    }
+
+    int threads = 256;
+    int blocks = (grid_voxels + threads - 1) / threads;
+
+    compute_scale_coefficients_kernel<<<blocks, threads>>>(
+        d_scale_coef,
+        d_khat,
+        d_scale_coef_Q_imag,
+        d_scale_coef_GP_imag,
+        d_scale_coef_GQ_real,
+        d_Qfactor,
+        d_Qfactor_dot,
+        num_grid[0], num_grid[1], num_grid[2],
+        box_x, box_y, box_z,
+        k_x, k_y,
+        xi,
+        spectral_split[0], spectral_split[1], spectral_split[2],
+        solve_quadrupoles,
+        grid_voxels
+    );
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+}
+
 void Monodisperse_Ewald_Electric_Field::calculate() {
     if (kt_updated) {
-        computePrecalculations();
+        computeScalePrecalcs();
         kt_updated = false;
     }
     if (particles_updated || field_points_updated || d_self_perp == nullptr) {

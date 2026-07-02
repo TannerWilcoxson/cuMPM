@@ -48,6 +48,9 @@ public:
     // Performs precalculations from precalc.py and copies them to the GPU
     void computePrecalculations();
 
+    // Performs wavevector-dependent Ewald scale precalculations on the GPU
+    void computeScalePrecalcs();
+
     // Helper to retrieve precalculated vectors from GPU to host vectors for validation
     void getPrecalculationsHost(std::vector<int>& host_offset,
                                 std::vector<double>& host_offsetxyz,
