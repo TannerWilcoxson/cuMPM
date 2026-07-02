@@ -112,6 +112,7 @@ void register_electric_fields(py::module_& m) {
         .def("getNumOffsets", &Ewald_Electric_Field_Base::getNumOffsets)
         .def("getSolveQuadrupoles", &Ewald_Electric_Field_Base::getSolveQuadrupoles)
         .def("getNumQuads", &Ewald_Electric_Field_Base::getNumQuads)
+        .def("setBlochWavevector", &Ewald_Electric_Field_Base::setBlochWavevector, py::arg("kx"), py::arg("ky"))
         // Array getters
         .def("getNumGrid", [](const Ewald_Electric_Field_Base& self) {
             const int* grid = self.getNumGrid();

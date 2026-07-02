@@ -54,6 +54,7 @@ public:
 
     void computeRealSpaceTables();
     void computePrecalculations();
+    void computeScalePrecalcs();
     void getPrecalculationsHost(std::vector<int>& host_offset,
                                 std::vector<double>& host_offsetxyz,
                                 std::vector<double>& host_scale_coef) const;

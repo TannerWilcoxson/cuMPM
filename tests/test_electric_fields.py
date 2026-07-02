@@ -222,3 +222,65 @@ def test_polydisperse_quadrupole_subset_electric_fields():
     np.testing.assert_allclose(E_mono, E_poly, rtol=1e-3, atol=1e-3)
     np.testing.assert_allclose(G_mono, G_poly, rtol=1e-3, atol=1e-3)
 
+
+def test_polydisperse_bloch_wavevector():
+    """
+    Test that the Polydisperse Ewald solver matches the Monodisperse Ewald solver
+    for identical Bloch wavevector settings.
+    """
+    box_x, box_y, box_z = 18.0, 18.0, 18.0
+    errortol = 1e-6
+    xi = 0.5
+    calc_inter_dipole = True
+    quad_idxs = [0, 2]
+
+    pos = np.array([
+        [0.0, 0.0, 0.0],
+        [4.5, 0.0, 0.0],
+        [9.0, 0.0, 0.0],
+        [13.5, 0.0, 0.0]
+    ])
+    num_particles = len(pos)
+    x, y, z = pos[:, 0], pos[:, 1], pos[:, 2]
+
+    # Initialize solvers
+    ef_mono = MonodisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, solve_quadrupoles=True, quad_idxs=quad_idxs)
+    ef_poly = PolydisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles, solve_quadrupoles=True, quad_idxs=quad_idxs)
+
+    # Set Bloch wavevectors
+    kx, ky = 0.15, -0.22
+    ef_mono.set_bloch_wavevector(kx, ky)
+    ef_poly.set_bloch_wavevector(kx, ky)
+
+    ef_mono.update_particle_coordinates(x, y, z)
+    ef_poly.update_particle_coordinates(x, y, z)
+
+    # Set same complex self coefficients, dipoles, and quadrupoles
+    self_coef_r = np.ones(num_particles)
+    self_coef_i = np.zeros(num_particles)
+    ef_mono.set_self_coef(self_coef_r, self_coef_i)
+    ef_poly.set_self_coef(self_coef_r, self_coef_i)
+
+    np.random.seed(123)
+    P = np.random.rand(num_particles, 3) + 1j * np.random.rand(num_particles, 3)
+    Q = np.random.rand(len(quad_idxs), 5) + 1j * np.random.rand(len(quad_idxs), 5)
+
+    ef_mono.update_dipoles_complex(P[:, 0].real, P[:, 0].imag, P[:, 1].real, P[:, 1].imag, P[:, 2].real, P[:, 2].imag)
+    ef_mono.update_quadrupoles_complex(Q[:, 0].real, Q[:, 0].imag, Q[:, 1].real, Q[:, 1].imag, Q[:, 2].real, Q[:, 2].imag, Q[:, 3].real, Q[:, 3].imag, Q[:, 4].real, Q[:, 4].imag)
+
+    ef_poly.update_dipoles_complex(P[:, 0].real, P[:, 0].imag, P[:, 1].real, P[:, 1].imag, P[:, 2].real, P[:, 2].imag)
+    ef_poly.update_quadrupoles_complex(Q[:, 0].real, Q[:, 0].imag, Q[:, 1].real, Q[:, 1].imag, Q[:, 2].real, Q[:, 2].imag, Q[:, 3].real, Q[:, 3].imag, Q[:, 4].real, Q[:, 4].imag)
+
+    # Calculate
+    ef_mono.calculate()
+    ef_poly.calculate()
+
+    # Get results
+    E_mono, G_mono = ef_mono.get_epoint_host()
+    E_poly, G_poly = ef_poly.get_epoint_host()
+
+    # Assert matching
+    np.testing.assert_allclose(E_mono, E_poly, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(G_mono, G_poly, rtol=1e-3, atol=1e-3)
+
+

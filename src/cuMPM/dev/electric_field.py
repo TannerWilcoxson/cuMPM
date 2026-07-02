@@ -736,6 +736,9 @@ class MonodisperseEwaldElectricField:
         else:
             return total_field - real_field
 
+    def set_bloch_wavevector(self, kx: float, ky: float):
+        self._ef.setBlochWavevector(kx, ky)
+
     # Host copies (numpy array support)
     def get_neighbor_list_host(self):
         list_data, counts_data = self._ef.getNeighborListHost()
@@ -1166,6 +1169,9 @@ class PolydisperseEwaldElectricField:
             return dip_tot - dip_real, quad_tot - quad_real
         else:
             return total_field - real_field
+
+    def set_bloch_wavevector(self, kx: float, ky: float):
+        self._ef.setBlochWavevector(kx, ky)
 
     # Host copies (numpy array support)
     def get_neighbor_list_host(self):

@@ -517,6 +517,12 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
     std::vector<double> eels_sum(num_wavevectors, 0.0);
 
+    std::vector<Complex> prev_k_dip(num_wavevectors * num_particles * 3, 0.0);
+    std::vector<Complex> prev_k_quad(num_wavevectors * num_quads * 5, 0.0);
+    double prev_k_x = 0.0;
+    double prev_k_y = 0.0;
+    bool has_prev_k = false;
+
     int Nx = asm_flag ? asm_Nx : 1;
     int Ny = asm_flag ? asm_Ny : 1;
     double dkx = 0.0;
@@ -674,38 +680,100 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
         // 4. Calculate initial guess and solve system A * p = E
         std::vector<Complex> solver_guess;
-        if (wavevec_idx == 0) {
-            // Match python's first wavelength guess alignment step:
-            // Ew = Ew / norm(Ew), solver_guess = 0.1 * Ew * sign(Ew), dips[:,2] *= 1j
-            // Scaled by mean field guess: 4 * pi * beta / (1 - beta * vol_frac)
-            double sum_r3 = 0.0;
-            for (double r : radius) {
-                sum_r3 += std::pow(r, 3.0);
-            }
-            double box_vol = box[0] * box[1] * box[2];
-            double vol_frac = (4.0 / 3.0) * M_PI * sum_r3 / box_vol;
-
-            std::vector<Complex> Ew_norm(num_particles * 3);
-            for (size_t p = 0; p < num_particles; ++p) {
-                double norm_p = std::sqrt(std::norm(E_inc[p * 3 + 0]) + std::norm(E_inc[p * 3 + 1]) + std::norm(E_inc[p * 3 + 2]));
-                if (norm_p < 1e-15) norm_p = 1.0;
-                Ew_norm[p * 3 + 0] = E_inc[p * 3 + 0] / norm_p;
-                Ew_norm[p * 3 + 1] = E_inc[p * 3 + 1] / norm_p;
-                Ew_norm[p * 3 + 2] = E_inc[p * 3 + 2] / norm_p;
-            }
+        if (has_prev_k) {
+            double delta_kx = k_x - prev_k_x;
+            double delta_ky = k_y - prev_k_y;
             solver_guess.resize(num_particles * 3 + num_quads * 5, 0.0);
-            for (size_t p = 0; p < num_particles; ++p) {
-                Complex beta = (eps_p[0][p] - 1.0) / (eps_p[0][p] + 2.0);
-                Complex val = 4.0 * M_PI * std::pow(radius[p], 3.0) * beta / (1.0 - beta * vol_frac);
-                for (int c = 0; c < 3; ++c) {
-                    Complex ew = Ew_norm[p * 3 + c];
-                    double sgn = (ew.real() >= 0.0) ? 1.0 : -1.0;
-                    solver_guess[p * 3 + c] = 0.1 * val * ew * sgn;
+
+            if (wavevec_idx == 0) {
+                // Phase-corrected solution from previous k-point at wavevec_idx == 0
+                for (size_t p = 0; p < num_particles; ++p) {
+                    double phase = delta_kx * scaled_x[p] + delta_ky * scaled_y[p];
+                    Complex phase_factor = std::exp(Complex(0.0, phase));
+                    solver_guess[p * 3 + 0] = prev_k_dip[0 * num_particles * 3 + p * 3 + 0] * phase_factor;
+                    solver_guess[p * 3 + 1] = prev_k_dip[0 * num_particles * 3 + p * 3 + 1] * phase_factor;
+                    solver_guess[p * 3 + 2] = prev_k_dip[0 * num_particles * 3 + p * 3 + 2] * phase_factor;
                 }
-                solver_guess[p * 3 + 2] *= Complex(0.0, 1.0);
+                if (solve_quadrupoles && num_quads > 0) {
+                    for (size_t q = 0; q < num_quads; ++q) {
+                        int p = quad_idxs.empty() ? q : quad_idxs[q];
+                        double phase = delta_kx * scaled_x[p] + delta_ky * scaled_y[p];
+                        Complex phase_factor = std::exp(Complex(0.0, phase));
+                        for (int c = 0; c < 5; ++c) {
+                            solver_guess[num_particles * 3 + q * 5 + c] = prev_k_quad[0 * num_quads * 5 + q * 5 + c] * phase_factor;
+                        }
+                    }
+                }
+            } else {
+                // Dual (bilinear) extrapolation combining previous frequency and previous k-point
+                for (size_t p = 0; p < num_particles; ++p) {
+                    double phase = delta_kx * scaled_x[p] + delta_ky * scaled_y[p];
+                    Complex phase_factor = std::exp(Complex(0.0, phase));
+
+                    Complex p_prev_f = frame_dip[(wavevec_idx - 1) * num_particles * 3 + p * 3 + 0];
+                    Complex p_prev_k = prev_k_dip[wavevec_idx * num_particles * 3 + p * 3 + 0];
+                    Complex p_prev_fk = prev_k_dip[(wavevec_idx - 1) * num_particles * 3 + p * 3 + 0];
+                    solver_guess[p * 3 + 0] = p_prev_f + (p_prev_k - p_prev_fk) * phase_factor;
+
+                    p_prev_f = frame_dip[(wavevec_idx - 1) * num_particles * 3 + p * 3 + 1];
+                    p_prev_k = prev_k_dip[wavevec_idx * num_particles * 3 + p * 3 + 1];
+                    p_prev_fk = prev_k_dip[(wavevec_idx - 1) * num_particles * 3 + p * 3 + 1];
+                    solver_guess[p * 3 + 1] = p_prev_f + (p_prev_k - p_prev_fk) * phase_factor;
+
+                    p_prev_f = frame_dip[(wavevec_idx - 1) * num_particles * 3 + p * 3 + 2];
+                    p_prev_k = prev_k_dip[wavevec_idx * num_particles * 3 + p * 3 + 2];
+                    p_prev_fk = prev_k_dip[(wavevec_idx - 1) * num_particles * 3 + p * 3 + 2];
+                    solver_guess[p * 3 + 2] = p_prev_f + (p_prev_k - p_prev_fk) * phase_factor;
+                }
+                if (solve_quadrupoles && num_quads > 0) {
+                    for (size_t q = 0; q < num_quads; ++q) {
+                        int p = quad_idxs.empty() ? q : quad_idxs[q];
+                        double phase = delta_kx * scaled_x[p] + delta_ky * scaled_y[p];
+                        Complex phase_factor = std::exp(Complex(0.0, phase));
+
+                        for (int c = 0; c < 5; ++c) {
+                            Complex q_prev_f = frame_quad[(wavevec_idx - 1) * num_quads * 5 + q * 5 + c];
+                            Complex q_prev_k = prev_k_quad[wavevec_idx * num_quads * 5 + q * 5 + c];
+                            Complex q_prev_fk = prev_k_quad[(wavevec_idx - 1) * num_quads * 5 + q * 5 + c];
+                            solver_guess[num_particles * 3 + q * 5 + c] = q_prev_f + (q_prev_k - q_prev_fk) * phase_factor;
+                        }
+                    }
+                }
             }
         } else {
-            solver_guess = calc_guess(frame_dip, frame_quad, wavevec_idx, E_inc_norm);
+            if (wavevec_idx == 0) {
+                // Match python's first wavelength guess alignment step:
+                // Ew = Ew / norm(Ew), solver_guess = 0.1 * Ew * sign(Ew), dips[:,2] *= 1j
+                // Scaled by mean field guess: 4 * pi * beta / (1 - beta * vol_frac)
+                double sum_r3 = 0.0;
+                for (double r : radius) {
+                    sum_r3 += std::pow(r, 3.0);
+                }
+                double box_vol = box[0] * box[1] * box[2];
+                double vol_frac = (4.0 / 3.0) * M_PI * sum_r3 / box_vol;
+
+                std::vector<Complex> Ew_norm(num_particles * 3);
+                for (size_t p = 0; p < num_particles; ++p) {
+                    double norm_p = std::sqrt(std::norm(E_inc[p * 3 + 0]) + std::norm(E_inc[p * 3 + 1]) + std::norm(E_inc[p * 3 + 2]));
+                    if (norm_p < 1e-15) norm_p = 1.0;
+                    Ew_norm[p * 3 + 0] = E_inc[p * 3 + 0] / norm_p;
+                    Ew_norm[p * 3 + 1] = E_inc[p * 3 + 1] / norm_p;
+                    Ew_norm[p * 3 + 2] = E_inc[p * 3 + 2] / norm_p;
+                }
+                solver_guess.resize(num_particles * 3 + num_quads * 5, 0.0);
+                for (size_t p = 0; p < num_particles; ++p) {
+                    Complex beta = (eps_p[0][p] - 1.0) / (eps_p[0][p] + 2.0);
+                    Complex val = 4.0 * M_PI * std::pow(radius[p], 3.0) * beta / (1.0 - beta * vol_frac);
+                    for (int c = 0; c < 3; ++c) {
+                        Complex ew = Ew_norm[p * 3 + c];
+                        double sgn = (ew.real() >= 0.0) ? 1.0 : -1.0;
+                        solver_guess[p * 3 + c] = 0.1 * val * ew * sgn;
+                    }
+                    solver_guess[p * 3 + 2] *= Complex(0.0, 1.0);
+                }
+            } else {
+                solver_guess = calc_guess(frame_dip, frame_quad, wavevec_idx, E_inc_norm);
+            }
         }
 
         // Divide initial guess by Enorm as well
@@ -835,6 +903,12 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         frame_eels[wavevec_idx] = eels_val;
         eels_sum[wavevec_idx] += eels_val;
     }
+
+    prev_k_dip = frame_dip;
+    prev_k_quad = frame_quad;
+    prev_k_x = k_x;
+    prev_k_y = k_y;
+    has_prev_k = true;
     }
     }
     

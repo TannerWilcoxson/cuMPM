@@ -57,8 +57,8 @@ print(f"Supercell Box dimensions: {box[0]:.2f} x {box[1]:.2f} x {box[2]:.2f} nm"
 
 # 3. Run C++ cuMPM EELS Solver with ASM enabled
 # Because our supercell is large, the folded Brillouin zone is small. We need fewer k-points!
-Nx = 15
-Ny = 15
+Nx = 20
+Ny = 20
 print(f"Running cuMPM GPU EELS calculation with ASM (Nx={Nx}, Ny={Ny})...")
 t0 = time.time()
 eels_solver = cuMPM.EELS(
@@ -71,7 +71,7 @@ eels_solver = cuMPM.EELS(
     xi=0.5,
     tol=1e-3,
     field_type="monodisperse",  # Must be an Ewald field for periodic bounds
-    solver_type="bicgstab",
+    solver_type="gmres",
     asm_flag=True,              # Enable Array Scanning Method!
     asm_Nx=Nx,                  # Number of k-points in x-direction
     asm_Ny=Ny                   # Number of k-points in y-direction
