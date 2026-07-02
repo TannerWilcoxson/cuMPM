@@ -541,6 +541,9 @@ void Monodisperse_Ewald_Electric_Field::computeRealSpaceTables() {
 void Monodisperse_Ewald_Electric_Field::computePrecalculations() {
     // 1. Calculate rc
     rc = std::sqrt(-std::log(errortol)) / xi;
+    if (rc < 2.0) {
+        rc = 2.0;
+    }
 
     // 2. Check if rc > box/2 for any dimension
     if (rc > box_x / 2.0 || rc > box_y / 2.0 || rc > box_z / 2.0) {

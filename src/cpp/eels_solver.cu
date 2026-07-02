@@ -207,7 +207,7 @@ void EELS_Solver::set_dims(size_t num_p) {
 }
 
 void EELS_Solver::nondimensionalize() {
-    length_scale = radius[0];
+    length_scale = *std::min_element(radius.begin(), radius.end());
     eps_scale = eps_m;
 
     box[0] /= length_scale;

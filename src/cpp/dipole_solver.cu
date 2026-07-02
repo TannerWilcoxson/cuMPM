@@ -179,7 +179,7 @@ void Dipole_Solver::set_dims(size_t num_p) {
 }
 
 void Dipole_Solver::nondimensionalize() {
-    length_scale = radius[0];
+    length_scale = *std::min_element(radius.begin(), radius.end());
     eps_scale = eps_m;
 
     if (box.size() >= 3) {

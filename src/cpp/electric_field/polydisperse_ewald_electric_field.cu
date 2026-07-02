@@ -403,7 +403,7 @@ __global__ void real_space_precalcs_kernel_polydisperse(
         double d = sqrt(rx * rx + ry * ry + rz * rz);
 
         if (d < rc) {
-            double d_eff = d < 1.0 ? 1.0 : d;
+            double d_eff = d < 1e-6 ? 1e-6 : d;
             int radius_idx_j = (j < num_particles) ? radius_idx[j] : 0;
             int col = col_ind[radius_idx_i * num_cols_unique + radius_idx_j];
             int num_cols_total = num_cols_unique * (num_cols_unique + 1) / 2;
@@ -712,7 +712,7 @@ __global__ void real_space_neighbor_kernel_polydisperse(
         double d = sqrt(rx * rx + ry * ry + rz * rz);
 
         if (d < rc) {
-            double d_eff = d < 1.0 ? 1.0 : d;
+            double d_eff = d < 1e-6 ? 1e-6 : d;
             double delta_x = rx / d_eff;
             double delta_y = ry / d_eff;
             double delta_z = rz / d_eff;
@@ -1324,7 +1324,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
         double d = sqrt(rx * rx + ry * ry + rz * rz);
 
         if (d < rc) {
-            double d_eff = d < 1.0 ? 1.0 : d;
+            double d_eff = d < 1e-6 ? 1e-6 : d;
             double delta_x = rx / d_eff;
             double delta_y = ry / d_eff;
             double delta_z = rz / d_eff;
@@ -1524,7 +1524,7 @@ static void helper_compute_pair_tables(double a_i, double a_j, double xi,
         double f_3 = 1.0 / (1024.0 * pi_pow_1_5 * std::pow(a_i, 3) * std::pow(a_j, 3) * r_cub * xi_5) * 
             (-4.0 * r_5 * xi_4 + 4.0 * (-a_i + a_j) * r_4 * xi_4 + 
              r_cub * (-16.0 * xi_sq + 8.0 * (4.0 * a_i * a_i + a_i * a_j + 4.0 * a_j * a_j) * xi_4) + 
-             r_sq * (12.0 * (-a_i + a_j) * xi_sq - 8.0 * (4.0 * std::pow(a_i, 3) + 3.0 * a_i * a_i * a_j - 3.0 * a_i * a_j * a_j - std::pow(a_j, 3)) * xi_4) + 
+             r_sq * (12.0 * (-a_i + a_j) * xi_sq - 8.0 * (4.0 * std::pow(a_i, 3) + 3.0 * a_i * a_i * a_j - 3.0 * a_i * a_j * a_j - 4.0 * std::pow(a_j, 3)) * xi_4) + 
              r * (-3.0 + 12.0 * (a_i * a_i + a_i * a_j + a_j * a_j) * xi_sq + 4.0 * std::pow(a_i - a_j, 2) * (a_i * a_i + 4.0 * a_i * a_j + a_j * a_j) * xi_4) + 
              3.0 * (a_i - a_j) + 4.0 * (4.0 * std::pow(a_i, 3) + 3.0 * a_i * a_i * a_j - 3.0 * a_i * a_j * a_j - 4.0 * std::pow(a_j, 3)) * xi_sq + 
              4.0 * std::pow(a_i - a_j, 3) * (a_i * a_i + 4.0 * a_i * a_j + a_j * a_j) * xi_4);
@@ -1532,11 +1532,10 @@ static void helper_compute_pair_tables(double a_i, double a_j, double xi,
         double f_4 = 1.0 / (1024.0 * pi_pow_1_5 * std::pow(a_i, 3) * std::pow(a_j, 3) * r_cub * xi_5) * 
             (-4.0 * r_5 * xi_4 + 4.0 * (a_i - a_j) * r_4 * xi_4 + 
              r_cub * (-16.0 * xi_sq + 8.0 * (4.0 * a_i * a_i + a_i * a_j + 4.0 * a_j * a_j) * xi_4) + 
-             r_sq * (12.0 * (a_i - a_j) * xi_sq + 8.0 * (4.0 * std::pow(a_i, 3) + 3.0 * a_i * a_i * a_j - 3.0 * a_i * a_j * a_j - std::pow(a_j, 3)) * xi_4) + 
+             r_sq * (12.0 * (a_i - a_j) * xi_sq + 8.0 * (4.0 * std::pow(a_i, 3) + 3.0 * a_i * a_i * a_j - 3.0 * a_i * a_j * a_j - 4.0 * std::pow(a_j, 3)) * xi_4) + 
              r * (-3.0 + 12.0 * (a_i * a_i + a_i * a_j + a_j * a_j) * xi_sq + 4.0 * std::pow(a_i - a_j, 2) * (a_i * a_i + 4.0 * a_i * a_j + a_j * a_j) * xi_4) + 
              3.0 * (-a_i + a_j) - 4.0 * (4.0 * std::pow(a_i, 3) + 3.0 * a_i * a_i * a_j - 3.0 * a_i * a_j * a_j - 4.0 * std::pow(a_j, 3)) * xi_sq - 
              4.0 * std::pow(a_i - a_j, 3) * (a_i * a_i + 4.0 * a_i * a_j + a_j * a_j) * xi_4);
-
         double f_5 = 1.0 / (2048.0 * PI * std::pow(a_i, 3) * std::pow(a_j, 3) * r_cub * xi_6) * 
             (-8.0 * r_6 * xi_6 + 36.0 * r_4 * xi_4 * (-1.0 + 2.0 * (a_i * a_i + a_j * a_j) * xi_sq) + 
              128.0 * (std::pow(a_i, 3) + std::pow(a_j, 3)) * r_cub * xi_6 + 
@@ -1678,13 +1677,15 @@ static void helper_compute_pair_tables(double a_i, double a_j, double xi,
 
 
 void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
-    size_t num_r_steps = 9000;
+    double rc_min = 1.001;
+    double rc_val = (rc < rc_min) ? rc_min : rc;
+    size_t num_r_steps = static_cast<size_t>(std::ceil((rc_val - 1.0) / 0.001));
     std::vector<double> r_vals(num_r_steps);
     for (size_t idx = 0; idx < num_r_steps; ++idx) {
         r_vals[idx] = 1.0 + idx * 0.001;
     }
 
-    table_size = 9001;
+    table_size = num_r_steps + 1;
     size_t size_in_bytes = table_size * num_pairs_unique * sizeof(double);
 
     std::vector<double> host_r_table(table_size);
@@ -2087,6 +2088,10 @@ void Polydisperse_Ewald_Electric_Field::computeRealSpaceTables() {
 
 void Polydisperse_Ewald_Electric_Field::computePrecalculations() {
     rc = std::sqrt(-std::log(errortol)) / xi;
+    double rc_min = 2.0 * unique_radii.back();
+    if (rc < rc_min) {
+        rc = rc_min;
+    }
 
     if (rc > box_x / 2.0 || rc > box_y / 2.0 || rc > box_z / 2.0) {
         throw std::runtime_error("Real space cutoff (" + std::to_string(rc) + ") larger than half the box length.");
