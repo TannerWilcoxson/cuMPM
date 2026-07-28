@@ -54,6 +54,20 @@ For complete, executable simulation setups (such as Drude ITO hexatic lattice mo
 
 ---
 
+## Performance & Benchmarks
+
+Evaluating self-consistent dipoles across 10 frequency points for a 2D hexagonal monolayer ($N = 4,000$ particles):
+
+| Implementation | Total Time (10 Freqs) | Time / Frequency | Speedup |
+| :--- | :---: | :---: | :---: |
+| **[pyMPM](https://github.com/truskett-group-ut/pyMPM)** (CPU) | 81.77 s | 8,176 ms | 1.0x |
+| **cuMPM** (GPU - BiCGSTAB) | 2.67 s | 267 ms | **30.6x** |
+| **cuMPM** (GPU - GMRES) | 2.59 s | 259 ms | **31.5x** |
+
+*Benchmark script available at `benchmarks/benchmark_cumpm_vs_pympm.py`.*
+
+---
+
 ## Documentation
 
 The Sphinx HTML documentation is precompiled and included directly in this repository. To view the documentation, open `cuMPM/docs/build/html/index.html` in your web browser. 
