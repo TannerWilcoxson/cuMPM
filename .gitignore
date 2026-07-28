@@ -39,3 +39,9 @@ benchmarks/**/*.png
 benchmarks/**/*.nsys-rep
 .continue/
 
+# Local scripts and legacy test directories
+build.sh
+build_and_test.sh
+legacy_tests/
+
+
