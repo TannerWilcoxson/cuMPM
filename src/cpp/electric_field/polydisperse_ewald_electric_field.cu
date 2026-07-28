@@ -823,7 +823,7 @@ __global__ void real_space_neighbor_kernel_polydisperse(
             double contrib_z_i = perp_val * (dip_z_i - delta_z * delta_dip_i) + para_val * delta_z * delta_dip_i;
 
             if (k_x != 0.0 || k_y != 0.0) {
-                double phase = k_x * rx + k_y * ry;
+                double phase = - (k_x * rx + k_y * ry);
                 double c = cos(phase);
                 double s = sin(phase);
                 double t_r, t_i;
@@ -1497,7 +1497,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
             double E_tot_z_i = E_dip_z_i - E_quad_z_i;
 
             if (k_x != 0.0 || k_y != 0.0) {
-                double phase = k_x * rx + k_y * ry;
+                double phase = - (k_x * rx + k_y * ry);
                 double c = cos(phase);
                 double s = sin(phase);
                 double t_r, t_i;
@@ -1603,7 +1603,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
                         double G_tot_i = G_dip_i[c] + G_quad_i[c];
 
                         if (k_x != 0.0 || k_y != 0.0) {
-                            double phase = k_x * rx + k_y * ry;
+                            double phase = - (k_x * rx + k_y * ry);
                             double c = cos(phase);
                             double s = sin(phase);
                             double t_r = G_tot_r * c - G_tot_i * s;

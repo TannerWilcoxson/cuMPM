@@ -1805,7 +1805,7 @@ __global__ void real_space_neighbor_kernel_joint(
             double E_dip_z_i = perp_val * (pz_i - delta_z * r_P_i) + para_val * delta_z * r_P_i;
 
             if (k_x != 0.0 || k_y != 0.0) {
-                double phase = k_x * rx + k_y * ry;
+                double phase = - (k_x * rx + k_y * ry);
                 double c = cos(phase);
                 double s = sin(phase);
                 double t_r, t_i;
@@ -1855,7 +1855,7 @@ __global__ void real_space_neighbor_kernel_joint(
                 E_quad_z_i = 0.5 * (Q1_val * Q__rr_i * delta_z + 2.0 * Q2_val * Q_r_vec_i[2]);
 
                 if (k_x != 0.0 || k_y != 0.0) {
-                    double phase = k_x * rx + k_y * ry;
+                    double phase = - (k_x * rx + k_y * ry);
                     double c = cos(phase);
                     double s = sin(phase);
                     double t_r, t_i;
@@ -1958,7 +1958,7 @@ __global__ void real_space_neighbor_kernel_joint(
                     }
 
                     if (k_x != 0.0 || k_y != 0.0) {
-                        double phase = k_x * rx + k_y * ry;
+                        double phase = - (k_x * rx + k_y * ry);
                         double c = cos(phase);
                         double s = sin(phase);
                         for (int c_idx = 0; c_idx < 5; ++c_idx) {
