@@ -56,16 +56,19 @@ class EELS:
                 Fibonacci/golden-angle spiral on the unit sphere with
                 cube-root-spaced shells decoupled by a fixed random shuffle.
                 The actual count equals exactly N_split.
+            ``"fcc"``
+                Face-Centered Cubic (FCC) lattice truncated at the NC radius.
+                Calculates step size to pack approximately N_split sub-dipoles.
 
-            In both cases sub-dipole radii are set so that the total sub-dipole volume
+            In all cases sub-dipole radii are set so that the total sub-dipole volume
             equals the original NC volume.
         solve_quadrupoles : bool, optional
             Whether to solve for quadrupoles as well. Defaults to False.
         quad_idxs : list of int, optional
             A list of particle indices for which quadrupoles should be solved. If None or empty, all particles are solved.
         """
-        if split_method not in ("cubic", "fibonacci"):
-            raise ValueError("split_method must be 'cubic' or 'fibonacci', got " + repr(split_method))
+        if split_method not in ("cubic", "fibonacci", "fcc"):
+            raise ValueError("split_method must be 'cubic', 'fibonacci', or 'fcc', got " + repr(split_method))
         self.split_method = split_method
 
         if (split_dist is None) != (N_split is None):
@@ -196,6 +199,46 @@ class EELS:
 
         return r_fracs[:, np.newaxis] * directions
 
+    def _make_fcc_offsets(self):
+        """
+        Return unit-sphere offsets on a Face-Centered Cubic (FCC) lattice truncated at r=1.
+
+        FCC lattice points inside [-1, 1]³ are generated using step size h.
+        An FCC lattice consists of points (i*h, j*h, k*h) where (i + j + k) is even.
+        Step h is adjusted so that the retained count inside the unit sphere M ≈ N_split.
+        """
+        N = max(1, self.N_split)
+        # Expected points inside unit sphere of radius 1 for FCC step h:
+        # Vol_sphere = (4/3)*pi, point density rho = 1/(2*h^3).
+        # Expected points = (2*pi)/(3*h^3) -> h = ((2*pi)/(3*N))^(1/3)
+        h = ((2.0 * np.pi) / (3.0 * N)) ** (1.0 / 3.0)
+
+        def generate_fcc(step):
+            n_max = int(np.ceil(1.0 / step))
+            coords = np.arange(-n_max, n_max + 1)
+            gx, gy, gz = np.meshgrid(coords, coords, coords, indexing='ij')
+            mask_even = (gx + gy + gz) % 2 == 0
+            grid = np.column_stack([gx[mask_even], gy[mask_even], gz[mask_even]]) * step
+            inside = np.linalg.norm(grid, axis=1) <= 1.0
+            return grid[inside]
+
+        pts = generate_fcc(h)
+        while len(pts) < N and h > 1e-4:
+            h *= 0.98
+            pts = generate_fcc(h)
+
+        return pts
+
+    def _get_unit_offsets(self):
+        if self.split_method == "cubic":
+            return self._make_cubic_offsets()
+        elif self.split_method == "fibonacci":
+            return self._make_fibonacci_offsets()
+        elif self.split_method == "fcc":
+            return self._make_fcc_offsets()
+        else:
+            raise ValueError(f"Unknown split_method: {self.split_method}")
+
     def _split_close_dipoles(self, positions, e_pos, radii, eps_p_2d):
         """
         Split particles close to the electron beam into sub-dipoles.
@@ -204,8 +247,9 @@ class EELS:
         - ``"cubic"``     – cubic lattice truncated at the NC sphere boundary.
         - ``"fibonacci"`` – Fibonacci volume lattice (golden-angle directions +
                             cube-root shells, radially decoupled).
+        - ``"fcc"``       – Face-Centered Cubic (FCC) lattice truncated at r=1.
 
-        In both cases sub-dipole radii are chosen to conserve the total NC volume:
+        In all cases sub-dipole radii are chosen to conserve the total NC volume:
             M × (4π/3) sub_R³ = (4π/3) R³  ⟹  sub_R = R / M^(1/3)
         """
         dists_2d = np.linalg.norm(positions[:, :2] - e_pos[np.newaxis, :], axis=1)
@@ -226,12 +270,9 @@ class EELS:
             new_eps_p.append(eps_p_2d[:, idx])
 
         # Build the unit-sphere offsets using the chosen method
-        if self.split_method == "cubic":
-            unit_offsets = self._make_cubic_offsets()
-        else:
-            unit_offsets = self._make_fibonacci_offsets()
+        unit_offsets = self._get_unit_offsets()
 
-        # Number of sub-dipoles (exact for Fibonacci; ≈π/6·n³ for cubic)
+        # Number of sub-dipoles
         M = len(unit_offsets)
 
         # Sub-dipole radius conserves total NC volume:
@@ -352,10 +393,7 @@ class EELS:
                     unsplit_indices = np.where(~to_split)[0].tolist()
                     split_indices = np.where(to_split)[0].tolist()
                     
-                    if self.split_method == "cubic":
-                        M = len(self._make_cubic_offsets())
-                    else:
-                        M = len(self._make_fibonacci_offsets())
+                    M = len(self._get_unit_offsets())
                         
                     for q_idx in self.quad_idxs:
                         if q_idx in unsplit_indices:

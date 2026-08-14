@@ -39,13 +39,10 @@ private:
     double eps_scale = 1.0;
 
     std::unique_ptr<Electric_Field> EF;
-    std::unique_ptr<Electric_Field> eels_EF;
     std::unique_ptr<Numerical_Solver> solver;
 
-    // Simpson's rule integration coordinates along electron path
+    // Simpson's rule integration coordinates (deprecated by Reciprocal Discrete Multipole Sum)
     double integration_step = 0.002;
-    std::vector<double> z_pts;
-    std::vector<double> Z_pts;
 
     // Results storage
     // eels: computed eels probability spectrum for each frame and wavelength
@@ -62,7 +59,6 @@ private:
     void set_dims(size_t num_p);
     void nondimensionalize();
     void precalculations();
-    void precomp_eels(const std::vector<double>& z_part);
 
     // Print utilities
     int indent_level = 0;

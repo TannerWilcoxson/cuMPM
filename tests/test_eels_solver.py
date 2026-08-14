@@ -18,7 +18,7 @@ def Ebeam_Field_py(pos0, pos, omega, eps_m, v, a=1.0, min_frac=0.2):
     rhat = xy_ / r_
     
     gamma = (1.0 - eps_m * v**2)**-0.5
-    prefactor = (4.0 * np.pi * omega_scaled / (v**2 * gamma)) * np.exp(1j * 2.0 * np.pi * omega_scaled * z_ / v)
+    prefactor = (omega_scaled / (v**2 * gamma)) * np.exp(1j * 2.0 * np.pi * omega_scaled * z_ / v)
     xi = 2.0 * np.pi * omega_scaled * r_[..., 0] / (v * gamma)
     
     E = np.zeros(pos_shape, dtype=complex)
@@ -106,7 +106,7 @@ def test_eels_direct_vs_python():
     
     integrand = np.real(-Eind[:, 2] * np.exp(-1j * 2.0 * np.pi * scaled_omega * Z_pts / v))
     integral = simpson(integrand, z_pts)
-    eels_val_ref = integral / (2.0 * np.pi**2 * scaled_omega)
+    eels_val_ref = integral / (2.0 * np.pi**2)
     
     np.testing.assert_allclose(dips_cu, dips_ref, rtol=1e-5, atol=1e-5)
     np.testing.assert_allclose(eels_val_cu, eels_val_ref, rtol=1e-5, atol=1e-5)
@@ -168,8 +168,9 @@ def test_eels_vs_python_module():
     cu_eels = cu_solver.get_eels()
     cu_dips = cu_solver.get_dipoles(physical=False)
     
-    np.testing.assert_allclose(cu_eels, ref_eels, rtol=2e-2, atol=1e-5)
-    np.testing.assert_allclose(cu_dips / (4.0 * np.pi), ref_dips_stacked, rtol=2e-2, atol=1e-5)
+    scaled_omega = omega_nm * R
+    np.testing.assert_allclose(cu_eels / scaled_omega * (4.0 * np.pi)**2, ref_eels, rtol=2e-2, atol=1e-5)
+    np.testing.assert_allclose(cu_dips, ref_dips_stacked, rtol=2e-2, atol=1e-5)
 
 
 def test_eels_splitting():
@@ -186,3 +187,30 @@ def test_eels_splitting():
 
     split_pos = solver.get_positions()
     assert len(split_pos) > 2
+
+
+def test_eels_fcc_splitting():
+    solver_fcc = cuMPM.EELS(
+        box=[100, 100, 100],
+        eps_p=[4.0],
+        omega=[0.15],
+        v=0.3,
+        radius=2.0,
+        split_dist=4.0,
+        N_split=50,
+        split_method="fcc",
+        field_type="direct"
+    )
+    pos = np.array([
+        [0.0, 0.0, 0.0],
+        [10.0, 0.0, 0.0]
+    ])
+    epos = np.array([1.0, 0.0])
+    solver_fcc.compute(epos, pos)
+
+    split_pos = solver_fcc.get_positions()
+    assert len(split_pos) > 2
+    # Verify sub-particles of particle 0 (indices 1:) conserve centroid at origin
+    sub_p0 = split_pos[1:]
+    assert np.linalg.norm(np.mean(sub_p0, axis=0)) < 1e-12
+

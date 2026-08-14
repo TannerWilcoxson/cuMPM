@@ -240,49 +240,6 @@ void EELS_Solver::precalculations() {
     (void)vol_frac; // unused for eels but matches precalc footprint
 }
 
-void EELS_Solver::precomp_eels(const std::vector<double>& z_part) {
-    double dz = integration_step;
-    bool any_neg = false;
-    for (double zp : z_part) {
-        if (zp <= 0.0) {
-            any_neg = true;
-            break;
-        }
-    }
-
-    double zmin, zmax;
-    double Z;
-    if (any_neg) {
-        zmin = -box[2] / 2.0;
-        zmax = box[2] / 2.0 - dz;
-        Z = 0.0;
-    } else {
-        zmin = 0.0;
-        zmax = box[2] - dz;
-        Z = 1.0;
-    }
-
-    double P0 = z_part[0];
-    z_pts.clear();
-    double cur_z = zmin;
-    while (cur_z <= zmax + dz / 2.0) {
-        z_pts.push_back(cur_z);
-        cur_z += dz;
-    }
-
-    Z_pts.resize(z_pts.size());
-    for (size_t i = 0; i < z_pts.size(); ++i) {
-        double val = z_pts[i] - P0 + Z * box[2] / 2.0;
-        if (val < zmin) {
-            val += box[2];
-        }
-        if (val > zmax + dz / 2.0) {
-            val -= box[2];
-        }
-        Z_pts[i] = val + P0 - Z * box[2] / 2.0;
-    }
-}
-
 // Guess Predictor Calculations
 std::vector<Complex> EELS_Solver::calc_guess(const std::vector<Complex>& prev_dip, const std::vector<Complex>& prev_quad, size_t wavevec_idx, const std::vector<Complex>& E_inc) const {
     if (guess_type == "mean_field" || guess_type == "mean-field") {
@@ -417,10 +374,9 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         }
         solver->initialize(num_particles * 3 + num_quads * 5);
 
-        // Instantiate CUDA-accelerated Electric_Field solvers
+        // Instantiate CUDA-accelerated Electric_Field solver
         if (field_type == "direct") {
             EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::SOLVER_AX, solve_quadrupoles, quad_idxs);
-            eels_EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::INTERACTION_FIELD, solve_quadrupoles, quad_idxs);
         } else {
             bool use_polydisperse = false;
             if (field_type == "polydisperse") {
@@ -442,10 +398,8 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
             if (use_polydisperse) {
                 EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius, solve_quadrupoles, quad_idxs);
-                eels_EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::INTERACTION_FIELD, radius[0], solve_quadrupoles, quad_idxs);
             } else {
                 EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius[0], solve_quadrupoles, quad_idxs);
-                eels_EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::INTERACTION_FIELD, radius[0], solve_quadrupoles, quad_idxs);
             }
         }
     } else if (num_particles != num_p) {
@@ -478,25 +432,8 @@ void EELS_Solver::compute(const std::vector<double>& epos,
     scaled_epos[0] = epos[0] / length_scale;
     scaled_epos[1] = epos[1] / length_scale;
 
-    // Upload particle positions to both solvers
+    // Upload particle positions to solver
     EF->updateParticleCoordinates(scaled_x, scaled_y, scaled_z);
-    eels_EF->updateParticleCoordinates(scaled_x, scaled_y, scaled_z);
-
-    // Precompute EELS integration points and set target field points
-    precomp_eels(scaled_z);
-    size_t num_field_points = z_pts.size();
-    std::vector<double> field_x(num_field_points, scaled_epos[0]);
-    std::vector<double> field_y(num_field_points, scaled_epos[1]);
-    std::vector<double> field_z = z_pts;
-
-    if (field_type == "direct") {
-        static_cast<Direct_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
-    } else if (dynamic_cast<Polydisperse_Ewald_Electric_Field*>(eels_EF.get()) != nullptr) {
-        static_cast<Polydisperse_Ewald_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
-    } else {
-        // Ewald
-        static_cast<Monodisperse_Ewald_Electric_Field*>(eels_EF.get())->updateFieldCoordinates(field_x, field_y, field_z);
-    }
 
     // Allocate results for this frame
     std::vector<Complex> frame_dip(num_wavevectors * num_particles * 3, 0.0);
@@ -513,7 +450,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
     increase_indent();
 
     Complex gamma = 1.0 / std::sqrt(Complex(1.0 - eps_m * v * v));
-    double min_frac = 0.2;
+    double min_frac = 1.0;
 
     std::vector<double> eels_sum(num_wavevectors, 0.0);
 
@@ -543,9 +480,6 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
             if (auto* ewald_ef = dynamic_cast<Ewald_Electric_Field_Base*>(EF.get())) {
                 ewald_ef->setBlochWavevector(k_x, k_y);
-            }
-            if (auto* ewald_eels_ef = dynamic_cast<Ewald_Electric_Field_Base*>(eels_EF.get())) {
-                ewald_eels_ef->setBlochWavevector(k_x, k_y);
             }
 
             for (size_t wavevec_idx = 0; wavevec_idx < num_wavevectors; ++wavevec_idx) {
@@ -579,13 +513,19 @@ void EELS_Solver::compute(const std::vector<double>& epos,
                 for (size_t p = 0; p < num_particles; ++p) {
                     double dx = scaled_x[p] - scaled_epos[0] - Rx;
                     double dy = scaled_y[p] - scaled_epos[1] - Ry;
-                    double r = std::sqrt(dx*dx + dy*dy);
-                    if (r < min_frac) r = min_frac;
-                    double rhat_x = dx / r;
-                    double rhat_y = dy / r;
+                    double r_perp = std::sqrt(dx*dx + dy*dy);
 
-                    Complex xi_val = (2.0 * M_PI * omega_val * r) / (v * gamma);
-                    Complex prefactor = (4.0 * M_PI * omega_val) / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
+                    // Physical STEM probe width (0.5 nm in scaled units)
+                    double sigma = 0.5 / length_scale;
+
+                    // Soft-core Euclidean distance
+                    double r_safe = std::sqrt(r_perp * r_perp + sigma * sigma);
+
+                    double rhat_x = dx / r_safe;
+                    double rhat_y = dy / r_safe;
+
+                    Complex xi_val = (2.0 * M_PI * omega_val * r_safe) / (v * gamma);
+                    Complex prefactor = omega_val / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
                     
                     Complex k0 = eval_k0(xi_val);
                     Complex k1 = eval_k1(xi_val);
@@ -617,7 +557,7 @@ void EELS_Solver::compute(const std::vector<double>& epos,
 
                         Complex xi_val = (2.0 * M_PI * omega_val * r) / (v * gamma);
                         Complex beta = (2.0 * M_PI * omega_val) / (v * gamma);
-                        Complex prefactor = (4.0 * M_PI * omega_val) / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
+                        Complex prefactor = omega_val / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
                         
                         Complex k0 = eval_k0(xi_val);
                         Complex k1 = eval_k1(xi_val);
@@ -795,111 +735,43 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             }
         }
 
-        // 5. Evaluate EELS probability using eels_EF
-        std::vector<double> dips_xr(num_particles), dips_xi(num_particles);
-        std::vector<double> dips_yr(num_particles), dips_yi(num_particles);
-        std::vector<double> dips_zr(num_particles), dips_zi(num_particles);
+        // 5. Evaluate EELS probability via Reciprocal Discrete Multipole Sum (Lorentz Reciprocity)
+        double discrete_sum = 0.0;
         for (size_t p = 0; p < num_particles; ++p) {
-            Complex d_val = sol_norm[p * 3 + 0] * Enorm;
-            dips_xr[p] = d_val.real();
-            dips_xi[p] = d_val.imag();
-            d_val = sol_norm[p * 3 + 1] * Enorm;
-            dips_yr[p] = d_val.real();
-            dips_yi[p] = d_val.imag();
-            d_val = sol_norm[p * 3 + 2] * Enorm;
-            dips_zr[p] = d_val.real();
-            dips_zi[p] = d_val.imag();
+            Complex px = sol_norm[p * 3 + 0] * Enorm;
+            Complex py = sol_norm[p * 3 + 1] * Enorm;
+            Complex pz = sol_norm[p * 3 + 2] * Enorm;
+
+            Complex p_dot_E = px * std::conj(E_inc[p * 3 + 0])
+                            + py * std::conj(E_inc[p * 3 + 1])
+                            + pz * std::conj(E_inc[p * 3 + 2]);
+            discrete_sum += p_dot_E.imag();
         }
 
-        if (field_type == "direct") {
-            auto* derived = static_cast<Direct_Electric_Field*>(eels_EF.get());
-            derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
-            if (solve_quadrupoles && num_quads > 0) {
-                std::vector<double> q1r(num_quads), q1i(num_quads), q2r(num_quads), q2i(num_quads), q3r(num_quads), q3i(num_quads), q4r(num_quads), q4i(num_quads), q5r(num_quads), q5i(num_quads);
-                for (size_t q = 0; q < num_quads; ++q) {
-                    Complex q_val = sol_norm[num_particles * 3 + q * 5 + 0] * Enorm;
-                    q1r[q] = q_val.real(); q1i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 1] * Enorm;
-                    q2r[q] = q_val.real(); q2i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 2] * Enorm;
-                    q3r[q] = q_val.real(); q3i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 3] * Enorm;
-                    q4r[q] = q_val.real(); q4i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 4] * Enorm;
-                    q5r[q] = q_val.real(); q5i[q] = q_val.imag();
-                }
-                derived->updateQuadrupolesComplex(q1r, q1i, q2r, q2i, q3r, q3i, q4r, q4i, q5r, q5i);
+        if (solve_quadrupoles && num_quads > 0) {
+            for (size_t q = 0; q < num_quads; ++q) {
+                Complex q0 = sol_norm[num_particles * 3 + q * 5 + 0] * Enorm;
+                Complex q1 = sol_norm[num_particles * 3 + q * 5 + 1] * Enorm;
+                Complex q2 = sol_norm[num_particles * 3 + q * 5 + 2] * Enorm;
+                Complex q3 = sol_norm[num_particles * 3 + q * 5 + 3] * Enorm;
+                Complex q4 = sol_norm[num_particles * 3 + q * 5 + 4] * Enorm;
+
+                Complex g0 = E_inc[num_particles * 3 + q * 5 + 0];
+                Complex g1 = E_inc[num_particles * 3 + q * 5 + 1];
+                Complex g2 = E_inc[num_particles * 3 + q * 5 + 2];
+                Complex g3 = E_inc[num_particles * 3 + q * 5 + 3];
+                Complex g4 = E_inc[num_particles * 3 + q * 5 + 4];
+
+                Complex q_dot_g = q0 * std::conj(g0)
+                                + 2.0 * q1 * std::conj(g1)
+                                + 2.0 * q2 * std::conj(g2)
+                                + q3 * std::conj(g3)
+                                + 2.0 * q4 * std::conj(g4);
+                discrete_sum += (1.0 / 6.0) * q_dot_g.imag();
             }
-            std::vector<double> self_r(num_particles, 0.0), self_i(num_particles, 0.0);
-            derived->setSelfCoef(self_r, self_i);
-        } else if (dynamic_cast<Polydisperse_Ewald_Electric_Field*>(eels_EF.get()) != nullptr) {
-            auto* derived = static_cast<Polydisperse_Ewald_Electric_Field*>(eels_EF.get());
-            derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
-            if (solve_quadrupoles && num_quads > 0) {
-                std::vector<double> q1r(num_quads), q1i(num_quads), q2r(num_quads), q2i(num_quads), q3r(num_quads), q3i(num_quads), q4r(num_quads), q4i(num_quads), q5r(num_quads), q5i(num_quads);
-                for (size_t q = 0; q < num_quads; ++q) {
-                    Complex q_val = sol_norm[num_particles * 3 + q * 5 + 0] * Enorm;
-                    q1r[q] = q_val.real(); q1i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 1] * Enorm;
-                    q2r[q] = q_val.real(); q2i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 2] * Enorm;
-                    q3r[q] = q_val.real(); q3i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 3] * Enorm;
-                    q4r[q] = q_val.real(); q4i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 4] * Enorm;
-                    q5r[q] = q_val.real(); q5i[q] = q_val.imag();
-                }
-                derived->updateQuadrupolesComplex(q1r, q1i, q2r, q2i, q3r, q3i, q4r, q4i, q5r, q5i);
-            }
-            std::vector<double> self_r(num_particles, 0.0), self_i(num_particles, 0.0);
-            derived->setSelfCoef(self_r, self_i);
-        } else {
-            auto* derived = static_cast<Monodisperse_Ewald_Electric_Field*>(eels_EF.get());
-            derived->updateDipolesComplex(dips_xr, dips_xi, dips_yr, dips_yi, dips_zr, dips_zi);
-            if (solve_quadrupoles && num_quads > 0) {
-                std::vector<double> q1r(num_quads), q1i(num_quads), q2r(num_quads), q2i(num_quads), q3r(num_quads), q3i(num_quads), q4r(num_quads), q4i(num_quads), q5r(num_quads), q5i(num_quads);
-                for (size_t q = 0; q < num_quads; ++q) {
-                    Complex q_val = sol_norm[num_particles * 3 + q * 5 + 0] * Enorm;
-                    q1r[q] = q_val.real(); q1i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 1] * Enorm;
-                    q2r[q] = q_val.real(); q2i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 2] * Enorm;
-                    q3r[q] = q_val.real(); q3i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 3] * Enorm;
-                    q4r[q] = q_val.real(); q4i[q] = q_val.imag();
-                    q_val = sol_norm[num_particles * 3 + q * 5 + 4] * Enorm;
-                    q5r[q] = q_val.real(); q5i[q] = q_val.imag();
-                }
-                derived->updateQuadrupolesComplex(q1r, q1i, q2r, q2i, q3r, q3i, q4r, q4i, q5r, q5i);
-            }
-            std::vector<double> self_r(num_particles, 0.0), self_i(num_particles, 0.0);
-            derived->setSelfCoef(self_r, self_i);
         }
 
-        eels_EF->calculate();
-
-        // 6. Copy evaluated field back to host
-        std::vector<double> host_E_point(num_field_points * 3 * 2);
-        CUDA_CHECK(cudaMemcpy(host_E_point.data(), eels_EF->getDevEPoint(), num_field_points * 3 * 2 * sizeof(double), cudaMemcpyDeviceToHost));
-
-        // 7. Simpson's integration
-        std::vector<double> integrand(num_field_points);
-        for (size_t j = 0; j < num_field_points; ++j) {
-            double Ez_r = host_E_point[(j * 3 + 2) * 2 + 0];
-            double Ez_i = host_E_point[(j * 3 + 2) * 2 + 1];
-            Complex Eind_z = Complex(Ez_r, Ez_i);
-
-            double phase = -2.0 * M_PI * omega_val * Z_pts[j] / v;
-            double k_phase = -(k_x * scaled_epos[0] + k_y * scaled_epos[1]);
-            Complex exp_factor = std::exp(Complex(0.0, phase + k_phase));
-            integrand[j] = (Eind_z * exp_factor).real();
-        }
-
-        double integral = simpson_integrate(integrand, integration_step);
-        double eels_val = integral / (2.0 * M_PI * M_PI * omega_val);
-        
-        // The solved dipoles were already physically scaled by Enorm,
-        // so eels_val already contains the Enorm scaling factor.
+        double eels_val = discrete_sum / (2.0 * M_PI * M_PI);
         frame_eels[wavevec_idx] = eels_val;
         eels_sum[wavevec_idx] += eels_val;
     }
