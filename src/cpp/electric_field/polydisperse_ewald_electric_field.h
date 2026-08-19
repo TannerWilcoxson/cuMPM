@@ -25,8 +25,8 @@ private:
     double eta_scalar = 0.0;
     int P_support = 0;
 
-    double* d_spread_coef_Q = nullptr;
-    double* d_contract_coef_Q = nullptr;
+    void* d_spread_coef_Q = nullptr;
+    void* d_contract_coef_Q = nullptr;
 
     void electricField() override;
 
@@ -37,7 +37,8 @@ public:
                                       FieldCalcMode mode,
                                       const std::vector<double>& particle_radii,
                                       bool solve_quadrupoles = false,
-                                      const std::vector<int>& quad_idxs = {});
+                                      const std::vector<int>& quad_idxs = {},
+                                      PrecisionMode recip_precision = PrecisionMode::AUTO);
 
     ~Polydisperse_Ewald_Electric_Field();
 
@@ -49,8 +50,8 @@ public:
     double* getDevGPoint() const { return d_G_point; }
     int* getDevQuadIdxs() const { return d_quad_idxs; }
     int* getDevQuadMap() const { return d_quad_map; }
-    double* getDevSpreadCoefQ() const { return d_spread_coef_Q; }
-    double* getDevContractCoefQ() const { return d_contract_coef_Q; }
+    void* getDevSpreadCoefQ() const { return d_spread_coef_Q; }
+    void* getDevContractCoefQ() const { return d_contract_coef_Q; }
 
     void computeRealSpaceTables();
     void computePrecalculations();
@@ -67,9 +68,9 @@ public:
     void contractPrecalcs() override;
     void realSpacePrecalcs() override;
 
-    void spread(double* d_fE_grid) override;
-    void scale(double* d_fE_grid) override;
-    void contract(double* d_E_point, const double* d_Es_grid) override;
+    void spread(void* d_fE_grid) override;
+    void scale(void* d_fE_grid) override;
+    void contract(double* d_E_point, const void* d_Es_grid) override;
     void realSpace(double* d_E_point) override;
 
     void calculate() override;

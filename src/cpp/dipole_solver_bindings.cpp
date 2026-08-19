@@ -3,6 +3,7 @@
 #include <pybind11/complex.h>
 #include <pybind11/numpy.h>
 #include "dipole_solver.h"
+#include "electric_field/direct_electric_field.h"
 
 namespace py = pybind11;
 
@@ -67,6 +68,15 @@ py::array_t<std::complex<double>> get_quadrupoles_numpy(const Dipole_Solver& sel
 PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
     m.doc() = "CUDA-accelerated Dipole Solver Python Extension";
 
+    void register_electric_fields(py::module_& m);
+    register_electric_fields(m);
+
+    void register_near_field(py::module_& m);
+    register_near_field(m);
+
+    void register_eels(py::module_& m);
+    register_eels(m);
+
     py::class_<Dipole_Solver>(m, "Dipole_Solver")
         .def(py::init<const std::vector<double>&,
                       const std::vector<std::vector<std::complex<double>>>&,
@@ -80,7 +90,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       const std::string&,
                       const std::vector<std::vector<std::complex<double>>>&,
                       bool,
-                      const std::vector<int>&>(),
+                      const std::vector<int>&,
+                      PrecisionMode>(),
              py::arg("box"),
              py::arg("eps_p"),
              py::arg("radius") = std::vector<double>{},
@@ -93,7 +104,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("field_type") = "auto",
              py::arg("E0") = std::vector<std::vector<std::complex<double>>>{},
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("precision") = PrecisionMode::AUTO)
         .def(py::init<const std::vector<double>&,
                       const std::vector<std::complex<double>>&,
                       const std::vector<double>&,
@@ -106,7 +118,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       const std::string&,
                       const std::vector<std::vector<std::complex<double>>>&,
                       bool,
-                      const std::vector<int>&>(),
+                      const std::vector<int>&,
+                      PrecisionMode>(),
              py::arg("box"),
              py::arg("eps_p_1d"),
              py::arg("radius") = std::vector<double>{},
@@ -119,7 +132,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("field_type") = "auto",
              py::arg("E0") = std::vector<std::vector<std::complex<double>>>{},
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("precision") = PrecisionMode::AUTO)
         .def(py::init<const std::vector<double>&,
                       std::complex<double>,
                       const std::vector<double>&,
@@ -132,7 +146,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
                       const std::string&,
                       const std::vector<std::vector<std::complex<double>>>&,
                       bool,
-                      const std::vector<int>&>(),
+                      const std::vector<int>&,
+                      PrecisionMode>(),
              py::arg("box"),
              py::arg("eps_p_scalar"),
              py::arg("radius") = std::vector<double>{},
@@ -145,7 +160,8 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
              py::arg("field_type") = "auto",
              py::arg("E0") = std::vector<std::vector<std::complex<double>>>{},
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("precision") = PrecisionMode::AUTO)
         .def("compute", &Dipole_Solver::compute,
              py::arg("x_part"),
              py::arg("y_part"),
@@ -157,15 +173,7 @@ PYBIND11_MODULE(_cuMPM, m, py::mod_gil_not_used()) {
         .def("get_num_particles", &Dipole_Solver::get_num_particles)
         .def("get_num_quads", &Dipole_Solver::get_num_quads)
         .def("get_num_wavevectors", &Dipole_Solver::get_num_wavevectors)
-        .def("get_num_incident_polarizations", &Dipole_Solver::get_num_incident_polarizations);
-
-    // Forward declaration of register helpers
-    void register_near_field(py::module_& m);
-    register_near_field(m);
-
-    void register_eels(py::module_& m);
-    register_eels(m);
-
-    void register_electric_fields(py::module_& m);
-    register_electric_fields(m);
+        .def("get_num_incident_polarizations", &Dipole_Solver::get_num_incident_polarizations)
+        .def("isUsingJacobiPrecond", &Dipole_Solver::getUseJacobiPrecond)
+        .def("setUseJacobiPrecond", &Dipole_Solver::setUseJacobiPrecond);
 }

@@ -1,6 +1,23 @@
 import numpy as np
 from . import _cuMPM
 
+def _parse_precision(precision):
+    if precision is None:
+        return _cuMPM.PrecisionMode.AUTO
+    if isinstance(precision, _cuMPM.PrecisionMode):
+        return precision
+    if isinstance(precision, str):
+        p_str = precision.lower()
+        if p_str in ("mixed", "fp32", "float32", "single"):
+            return _cuMPM.PrecisionMode.MIXED
+        elif p_str in ("double", "fp64", "double64"):
+            return _cuMPM.PrecisionMode.DOUBLE
+        elif p_str in ("auto",):
+            return _cuMPM.PrecisionMode.AUTO
+        else:
+            raise ValueError(f"Unknown precision mode: {precision}")
+    raise ValueError(f"Invalid precision type: {type(precision)}")
+
 class EELS:
     """
     Python wrapper for the CUDA-accelerated C++ EELS_Solver class.
@@ -9,7 +26,7 @@ class EELS:
     spectrum and self-consistent induced dipoles for a collection of particles 
     subject to the relativistic incident field of a moving electron beam.
     """
-    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None, integration_step=0.05, split_method="cubic", solve_quadrupoles=False, quad_idxs=None, asm_flag=False, asm_Nx=1, asm_Ny=1):
+    def __init__(self, box, eps_p, omega, v, eps_m=1.0, radius=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", split_dist=None, N_split=None, integration_step=0.05, split_method="cubic", solve_quadrupoles=False, quad_idxs=None, asm_flag=False, asm_Nx=1, asm_Ny=1, precision=None):
         """
         Initialize the EELS solver with system, electron, and solver parameters.
 
@@ -81,6 +98,8 @@ class EELS:
             self.split_dist = float(split_dist)
             self.N_split = int(N_split)
 
+        self.precision = _parse_precision(precision)
+
         # Store parameters for dynamic solver instantiation in compute() if splitting is enabled
         self.box = box
         self.eps_p = eps_p
@@ -130,23 +149,23 @@ class EELS:
             if eps_p_arr.ndim == 0:
                 eps_p_scalar = complex(eps_p_arr.item())
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny
+                    box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny, self.precision
                 )
             elif eps_p_arr.ndim == 1:
                 if eps_p_arr.size == 1:
                     eps_p_scalar = complex(eps_p_arr.item())
                     self._solver = _cuMPM.EELS_Solver(
-                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny
+                        box_list, eps_p_scalar, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny, self.precision
                     )
                 else:
                     eps_p_1d = [complex(x) for x in eps_p_arr]
                     self._solver = _cuMPM.EELS_Solver(
-                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny
+                        box_list, eps_p_1d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny, self.precision
                     )
             elif eps_p_arr.ndim == 2:
                 eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
                 self._solver = _cuMPM.EELS_Solver(
-                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny
+                    box_list, eps_p_2d, omega_list, float(v), radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, float(integration_step), self.solve_quadrupoles, self.quad_idxs, self.asm_flag, self.asm_Nx, self.asm_Ny, self.precision
                 )
             else:
                 raise ValueError("eps_p must be a scalar, 1D array, or 2D array")
@@ -410,7 +429,7 @@ class EELS:
                     box_list, split_eps_2d, omega_list, float(self.v), split_R.tolist(),
                     float(self.eps_m), float(self.xi), float(self.tol), bool(self.quiet),
                     self.guess_type, self.solver_type, self.field_type, float(self.integration_step),
-                    self.solve_quadrupoles, split_quad_idxs
+                    self.solve_quadrupoles, split_quad_idxs, False, 1, 1, self.precision
                 )
                 
                 # Run the solver
@@ -578,3 +597,13 @@ class EELS:
                 return [np.squeeze(p) for p in self._split_poss]
         else:
             return self.positions
+
+    @property
+    def use_jacobi_precond(self) -> bool:
+        """Get whether Jacobi diagonal preconditioning is enabled."""
+        return self._solver.isUsingJacobiPrecond()
+
+    @use_jacobi_precond.setter
+    def use_jacobi_precond(self, enable: bool):
+        """Enable or disable Jacobi diagonal preconditioning."""
+        self._solver.setUseJacobiPrecond(enable)

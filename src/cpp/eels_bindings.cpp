@@ -3,6 +3,7 @@
 #include <pybind11/complex.h>
 #include <pybind11/numpy.h>
 #include "eels_solver.h"
+#include "electric_field/direct_electric_field.h"
 
 namespace py = pybind11;
 
@@ -77,7 +78,8 @@ void register_eels(py::module_& m) {
                       const std::vector<int>&,
                       bool,
                       int,
-                      int>(),
+                      int,
+                      PrecisionMode>(),
              py::arg("box"),
              py::arg("eps_p"),
              py::arg("omega"),
@@ -95,7 +97,8 @@ void register_eels(py::module_& m) {
              py::arg("quad_idxs") = std::vector<int>{},
              py::arg("asm_flag") = false,
              py::arg("asm_Nx") = 1,
-             py::arg("asm_Ny") = 1)
+             py::arg("asm_Ny") = 1,
+             py::arg("precision") = PrecisionMode::AUTO)
         // 2. 1D eps_p
         .def(py::init<const std::vector<double>&,
                       const std::vector<Complex>&,
@@ -114,7 +117,8 @@ void register_eels(py::module_& m) {
                       const std::vector<int>&,
                       bool,
                       int,
-                      int>(),
+                      int,
+                      PrecisionMode>(),
              py::arg("box"),
              py::arg("eps_p_1d"),
              py::arg("omega"),
@@ -132,10 +136,11 @@ void register_eels(py::module_& m) {
              py::arg("quad_idxs") = std::vector<int>{},
              py::arg("asm_flag") = false,
              py::arg("asm_Nx") = 1,
-             py::arg("asm_Ny") = 1)
+             py::arg("asm_Ny") = 1,
+             py::arg("precision") = PrecisionMode::AUTO)
         // 3. Scalar eps_p
         .def(py::init<const std::vector<double>&,
-                      Complex,
+                      std::complex<double>,
                       const std::vector<double>&,
                       double,
                       const std::vector<double>&,
@@ -151,7 +156,8 @@ void register_eels(py::module_& m) {
                       const std::vector<int>&,
                       bool,
                       int,
-                      int>(),
+                      int,
+                      PrecisionMode>(),
              py::arg("box"),
              py::arg("eps_p_scalar"),
              py::arg("omega"),
@@ -169,7 +175,8 @@ void register_eels(py::module_& m) {
              py::arg("quad_idxs") = std::vector<int>{},
              py::arg("asm_flag") = false,
              py::arg("asm_Nx") = 1,
-             py::arg("asm_Ny") = 1)
+             py::arg("asm_Ny") = 1,
+             py::arg("precision") = PrecisionMode::AUTO)
         .def("compute", &EELS_Solver::compute,
              py::arg("epos"),
              py::arg("x_part"),
@@ -181,5 +188,7 @@ void register_eels(py::module_& m) {
         .def("get_num_frames", &EELS_Solver::get_num_frames)
         .def("get_num_particles", &EELS_Solver::get_num_particles)
         .def("get_num_quads", &EELS_Solver::get_num_quads)
-        .def("get_num_wavevectors", &EELS_Solver::get_num_wavevectors);
+        .def("get_num_wavevectors", &EELS_Solver::get_num_wavevectors)
+        .def("isUsingJacobiPrecond", &EELS_Solver::getUseJacobiPrecond)
+        .def("setUseJacobiPrecond", &EELS_Solver::setUseJacobiPrecond);
 }

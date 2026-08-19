@@ -17,6 +17,14 @@ void register_electric_fields(py::module_& m) {
         .value("INTERACTION_FIELD", FieldCalcMode::INTERACTION_FIELD)
         .export_values();
 
+    py::enum_<PrecisionMode>(m, "PrecisionMode")
+        .value("AUTO", PrecisionMode::AUTO)
+        .value("MIXED", PrecisionMode::MIXED)
+        .value("DOUBLE", PrecisionMode::DOUBLE)
+        .value("FP32", PrecisionMode::FP32)
+        .value("FP64", PrecisionMode::FP64)
+        .export_values();
+
     // Expose abstract base class Electric_Field
     py::class_<Electric_Field, std::unique_ptr<Electric_Field>>(m, "Electric_Field")
         .def("getDevDipoles", [](const Electric_Field& self) {
@@ -33,11 +41,14 @@ void register_electric_fields(py::module_& m) {
 
     // Expose Direct_Electric_Field
     py::class_<Direct_Electric_Field, Electric_Field, std::unique_ptr<Direct_Electric_Field>>(m, "Direct_Electric_Field")
-        .def(py::init<const std::vector<double>&, FieldCalcMode, bool, const std::vector<int>&>(),
+        .def(py::init<const std::vector<double>&, FieldCalcMode, bool, const std::vector<int>&, PrecisionMode>(),
              py::arg("radius") = std::vector<double>{},
              py::arg("mode") = FieldCalcMode::SOLVER_AX,
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("precision") = PrecisionMode::AUTO)
+        .def("isUsingFP32", &Direct_Electric_Field::isUsingFP32)
+        .def("getPrecisionMode", &Direct_Electric_Field::getPrecisionMode)
         .def("getCalcMode", &Direct_Electric_Field::getCalcMode)
         .def("getSolveQuadrupoles", &Direct_Electric_Field::getSolveQuadrupoles)
         .def("getNumQuads", &Direct_Electric_Field::getNumQuads)
@@ -112,6 +123,8 @@ void register_electric_fields(py::module_& m) {
         .def("getNumOffsets", &Ewald_Electric_Field_Base::getNumOffsets)
         .def("getSolveQuadrupoles", &Ewald_Electric_Field_Base::getSolveQuadrupoles)
         .def("getNumQuads", &Ewald_Electric_Field_Base::getNumQuads)
+        .def("isUsingAsyncStreams", &Ewald_Electric_Field_Base::isUsingAsyncStreams)
+        .def("setUseAsyncStreams", &Ewald_Electric_Field_Base::setUseAsyncStreams, py::arg("enable"))
         .def("setBlochWavevector", &Ewald_Electric_Field_Base::setBlochWavevector, py::arg("kx"), py::arg("ky"))
         // Array getters
         .def("getNumGrid", [](const Ewald_Electric_Field_Base& self) {
@@ -222,18 +235,20 @@ void register_electric_fields(py::module_& m) {
             return std::make_tuple(host_self_perp, host_perp, host_para);
         })
         .def("getEPointHost", &Ewald_Electric_Field_Base::getEPointHost)
+        .def("isUsingRecipFP32", &Ewald_Electric_Field_Base::isUsingRecipFP32)
+        .def("getRecipPrecisionMode", &Ewald_Electric_Field_Base::getRecipPrecisionMode)
         // Pipeline operations with optional custom GPU pointer support
         .def("spread", [](Ewald_Electric_Field_Base& self, std::optional<uintptr_t> grid_ptr) {
-            double* ptr = grid_ptr ? reinterpret_cast<double*>(*grid_ptr) : self.getDevFEGrid();
+            void* ptr = grid_ptr ? reinterpret_cast<void*>(*grid_ptr) : self.getDevFEGrid();
             self.spread(ptr);
         }, py::arg("grid_ptr") = py::none())
         .def("scale", [](Ewald_Electric_Field_Base& self, std::optional<uintptr_t> grid_ptr) {
-            double* ptr = grid_ptr ? reinterpret_cast<double*>(*grid_ptr) : self.getDevFEGrid();
+            void* ptr = grid_ptr ? reinterpret_cast<void*>(*grid_ptr) : self.getDevFEGrid();
             self.scale(ptr);
         }, py::arg("grid_ptr") = py::none())
         .def("contract", [](Ewald_Electric_Field_Base& self, std::optional<uintptr_t> E_point_ptr, std::optional<uintptr_t> Es_grid_ptr) {
             double* E_ptr = E_point_ptr ? reinterpret_cast<double*>(*E_point_ptr) : self.getDevEPoint();
-            const double* Es_ptr = Es_grid_ptr ? reinterpret_cast<const double*>(*Es_grid_ptr) : self.getDevFEGrid();
+            const void* Es_ptr = Es_grid_ptr ? reinterpret_cast<const void*>(*Es_grid_ptr) : self.getDevFEGrid();
             self.contract(E_ptr, Es_ptr);
         }, py::arg("E_point_ptr") = py::none(), py::arg("Es_grid_ptr") = py::none())
         .def("realSpace", [](Ewald_Electric_Field_Base& self, std::optional<uintptr_t> E_point_ptr) {
@@ -244,12 +259,13 @@ void register_electric_fields(py::module_& m) {
 
     // Expose Monodisperse_Ewald_Electric_Field
     py::class_<Monodisperse_Ewald_Electric_Field, Ewald_Electric_Field_Base, std::unique_ptr<Monodisperse_Ewald_Electric_Field>>(m, "Monodisperse_Ewald_Electric_Field")
-        .def(py::init<double, double, double, double, double, FieldCalcMode, double, bool, const std::vector<int>&>(),
+        .def(py::init<double, double, double, double, double, FieldCalcMode, double, bool, const std::vector<int>&, PrecisionMode>(),
              py::arg("box_x"), py::arg("box_y"), py::arg("box_z"),
              py::arg("errortol"), py::arg("xi"), py::arg("mode"),
              py::arg("radius") = 1.0,
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("recip_precision") = PrecisionMode::AUTO)
         .def("getDevSelfPerp", [](const Monodisperse_Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfPerp()); })
         .def("getDevKhat", [](const Monodisperse_Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevKhat()); })
         .def("computePrecalculations", &Monodisperse_Ewald_Electric_Field::computePrecalculations)
@@ -265,12 +281,13 @@ void register_electric_fields(py::module_& m) {
 
     // Expose Polydisperse_Ewald_Electric_Field
     py::class_<Polydisperse_Ewald_Electric_Field, Ewald_Electric_Field_Base, std::unique_ptr<Polydisperse_Ewald_Electric_Field>>(m, "Polydisperse_Ewald_Electric_Field")
-        .def(py::init<double, double, double, double, double, FieldCalcMode, const std::vector<double>&, bool, const std::vector<int>&>(),
+        .def(py::init<double, double, double, double, double, FieldCalcMode, const std::vector<double>&, bool, const std::vector<int>&, PrecisionMode>(),
              py::arg("box_x"), py::arg("box_y"), py::arg("box_z"),
              py::arg("errortol"), py::arg("xi"), py::arg("mode"),
              py::arg("particle_radii"),
              py::arg("solve_quadrupoles") = false,
-             py::arg("quad_idxs") = std::vector<int>{})
+             py::arg("quad_idxs") = std::vector<int>{},
+             py::arg("recip_precision") = PrecisionMode::AUTO)
         .def("getEta", &Polydisperse_Ewald_Electric_Field::getEta)
         .def("getP", &Polydisperse_Ewald_Electric_Field::getP)
         .def("getDevGPoint", [](const Polydisperse_Ewald_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevGPoint()); })

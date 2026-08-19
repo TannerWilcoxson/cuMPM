@@ -1,3 +1,32 @@
+// 24 Fibonacci sphere surface points for volume-averaged quadrupole field gradient surface integration
+static const int NUM_SURF_PTS = 24;
+static const double SURF_NORMALS[24][3] = {
+    {0.103513211760, -0.266237182252, 0.958333333333},
+    {-0.434153117023, 0.214210342839, 0.875000000000},
+    {0.586603474036, 0.170763734845, 0.791666666667},
+    {-0.366476849432, -0.603289820666, 0.708333333333},
+    {-0.151825437145, 0.765717987666, 0.625000000000},
+    {0.677521353721, -0.497556064655, 0.541666666667},
+    {-0.883582648091, -0.095980516502, 0.458333333333},
+    {0.611937956804, 0.696352595330, 0.375000000000},
+    {0.019764884031, -0.956315797692, 0.291666666667},
+    {-0.675429720010, 0.707383853046, 0.208333333333},
+    {0.989939127714, -0.066298743732, 0.125000000000},
+    {-0.780180816892, -0.624164867518, 0.041666666667},
+    {0.153663743623, 0.987244317677, -0.041666666667},
+    {0.549702702470, -0.825955167607, -0.125000000000},
+    {-0.949570160436, 0.234336793165, -0.208333333333},
+    {0.839571178631, 0.458312984288, -0.291666666667},
+    {-0.299944335697, -0.877159276006, -0.375000000000},
+    {-0.356023194571, 0.814357440245, -0.458333333333},
+    {0.768553646413, -0.340473956136, -0.541666666667},
+    {-0.739857557173, -0.248969466187, -0.625000000000},
+    {0.341237274038, 0.617916670512, -0.708333333333},
+    {0.143485399914, -0.593865160538, -0.791666666667},
+    {-0.401711570760, 0.270190329060, -0.875000000000},
+    {0.282464660330, 0.042555115870, -0.958333333333}
+};
+
 #include "eels_solver.h"
 #include "electric_field/monodisperse_ewald_electric_field.h"
 #include "electric_field/polydisperse_ewald_electric_field.h"
@@ -106,8 +135,9 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          const std::vector<int>& quad_idxs,
                          bool asm_flag,
                          int asm_Nx,
-                         int asm_Ny)
-    : box(box), eps_p(eps_p), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny) {}
+                         int asm_Ny,
+                         PrecisionMode precision)
+    : box(box), eps_p(eps_p), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny), precision(precision) {}
 
 // Constructor 2: 1D eps_p
 EELS_Solver::EELS_Solver(const std::vector<double>& box,
@@ -127,8 +157,9 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          const std::vector<int>& quad_idxs,
                          bool asm_flag,
                          int asm_Nx,
-                         int asm_Ny)
-    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny) {
+                         int asm_Ny,
+                         PrecisionMode precision)
+    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny), precision(precision) {
     this->eps_p.resize(eps_p_1d.size(), std::vector<Complex>(1, 0.0));
     for (size_t w = 0; w < eps_p_1d.size(); ++w) {
         this->eps_p[w][0] = eps_p_1d[w];
@@ -153,8 +184,9 @@ EELS_Solver::EELS_Solver(const std::vector<double>& box,
                          const std::vector<int>& quad_idxs,
                          bool asm_flag,
                          int asm_Nx,
-                         int asm_Ny)
-    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny) {
+                         int asm_Ny,
+                         PrecisionMode precision)
+    : box(box), omega(omega), v(v), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), integration_step(integration_step), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), asm_flag(asm_flag), asm_Nx(asm_Nx), asm_Ny(asm_Ny), precision(precision) {
     this->eps_p.resize(1, std::vector<Complex>(1, eps_p_scalar));
 }
 
@@ -372,11 +404,12 @@ void EELS_Solver::compute(const std::vector<double>& epos,
                 solver = std::make_unique<GMRES_Solver>();
             }
         }
+        solver->setUseJacobiPrecond(use_jacobi_precond);
         solver->initialize(num_particles * 3 + num_quads * 5);
 
         // Instantiate CUDA-accelerated Electric_Field solver
         if (field_type == "direct") {
-            EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::SOLVER_AX, solve_quadrupoles, quad_idxs);
+            EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::SOLVER_AX, solve_quadrupoles, quad_idxs, precision);
         } else {
             bool use_polydisperse = false;
             if (field_type == "polydisperse") {
@@ -450,7 +483,6 @@ void EELS_Solver::compute(const std::vector<double>& epos,
     increase_indent();
 
     Complex gamma = 1.0 / std::sqrt(Complex(1.0 - eps_m * v * v));
-    double min_frac = 1.0;
 
     std::vector<double> eels_sum(num_wavevectors, 0.0);
 
@@ -548,26 +580,57 @@ void EELS_Solver::compute(const std::vector<double>& epos,
                 if (solve_quadrupoles && num_quads > 0) {
                     for (size_t q = 0; q < num_quads; ++q) {
                         size_t p = quad_idxs.empty() ? q : quad_idxs[q];
-                        double dx = scaled_x[p] - scaled_epos[0] - Rx;
-                        double dy = scaled_y[p] - scaled_epos[1] - Ry;
-                        double r = std::sqrt(dx*dx + dy*dy);
-                        if (r < min_frac) r = min_frac;
-                        double rhat_x = dx / r;
-                        double rhat_y = dy / r;
-
-                        Complex xi_val = (2.0 * M_PI * omega_val * r) / (v * gamma);
-                        Complex beta = (2.0 * M_PI * omega_val) / (v * gamma);
-                        Complex prefactor = omega_val / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * scaled_z[p] / v));
                         
-                        Complex k0 = eval_k0(xi_val);
-                        Complex k1 = eval_k1(xi_val);
+                        // Particle radius in scaled units (1.0 for monodisperse)
+                        double R_part_scaled = 1.0;
+                        double sigma_probe = 0.5 / length_scale;
 
-                        Complex G_xx = prefactor * (beta * k0 * rhat_x * rhat_x - ((1.0 - 2.0 * rhat_x * rhat_x) / r) * k1);
-                        Complex G_yy = prefactor * (beta * k0 * rhat_y * rhat_y - ((1.0 - 2.0 * rhat_y * rhat_y) / r) * k1);
-                        Complex G_zz = -beta * prefactor * k0;
-                        Complex G_xy = prefactor * (beta * k0 * rhat_x * rhat_y + (2.0 * rhat_x * rhat_y / r) * k1);
-                        Complex G_xz = -Complex(0.0, 1.0) * 0.5 * prefactor * beta * (gamma + 1.0 / gamma) * k1 * rhat_x;
-                        Complex G_yz = -Complex(0.0, 1.0) * 0.5 * prefactor * beta * (gamma + 1.0 / gamma) * k1 * rhat_y;
+                        // Compute volume-averaged gradient <d_i E_j> via 2D surface integral over particle sphere boundary r = R_part
+                        Complex G_tensor[3][3] = {{{0.0, 0.0}}};
+
+                        for (int k = 0; k < NUM_SURF_PTS; ++k) {
+                            double nx = SURF_NORMALS[k][0];
+                            double ny = SURF_NORMALS[k][1];
+                            double nz = SURF_NORMALS[k][2];
+
+                            double surf_x = scaled_x[p] + R_part_scaled * nx;
+                            double surf_y = scaled_y[p] + R_part_scaled * ny;
+                            double surf_z = scaled_z[p] + R_part_scaled * nz;
+
+                            double dx = surf_x - scaled_epos[0] - Rx;
+                            double dy = surf_y - scaled_epos[1] - Ry;
+                            double r_perp = std::sqrt(dx*dx + dy*dy);
+                            double r_safe = std::sqrt(r_perp*r_perp + sigma_probe*sigma_probe);
+
+                            double rhat_x = dx / r_safe;
+                            double rhat_y = dy / r_safe;
+
+                            Complex xi_val = (2.0 * M_PI * omega_val * r_safe) / (v * gamma);
+                            Complex prefactor = omega_val / (v * v * gamma) * std::exp(Complex(0.0, 2.0 * M_PI * omega_val * surf_z / v));
+
+                            Complex k0 = eval_k0(xi_val);
+                            Complex k1 = eval_k1(xi_val);
+
+                            Complex E_surf[3];
+                            E_surf[0] = -prefactor * k1 * rhat_x;
+                            E_surf[1] = -prefactor * k1 * rhat_y;
+                            E_surf[2] = prefactor * Complex(0.0, 1.0) / gamma * k0;
+
+                            double n_vec[3] = {nx, ny, nz};
+                            for (int i = 0; i < 3; ++i) {
+                                for (int j = 0; j < 3; ++j) {
+                                    G_tensor[i][j] += E_surf[j] * n_vec[i];
+                                }
+                            }
+                        }
+
+                        double norm_factor = 3.0 / (R_part_scaled * NUM_SURF_PTS);
+                        Complex G_xx = G_tensor[0][0] * norm_factor;
+                        Complex G_yy = G_tensor[1][1] * norm_factor;
+                        Complex G_zz = G_tensor[2][2] * norm_factor;
+                        Complex G_xy = 0.5 * (G_tensor[0][1] + G_tensor[1][0]) * norm_factor;
+                        Complex G_xz = 0.5 * (G_tensor[0][2] + G_tensor[2][0]) * norm_factor;
+                        Complex G_yz = 0.5 * (G_tensor[1][2] + G_tensor[2][1]) * norm_factor;
 
                         Complex phase_factor(1.0, 0.0);
                         if (asm_flag) {

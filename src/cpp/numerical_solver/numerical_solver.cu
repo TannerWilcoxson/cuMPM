@@ -215,8 +215,93 @@ double Numerical_Solver::gpu_norm(const double* d_a, size_t size, double* d_redu
     return std::sqrt(host_res);
 }
 
+__global__ void jacobi_precond_kernel(
+    double* __restrict__ d_dst,
+    const double* __restrict__ d_src,
+    const double* __restrict__ d_self_r,
+    const double* __restrict__ d_self_i,
+    size_t num_particles,
+    bool solve_quadrupoles,
+    size_t num_quads,
+    const int* __restrict__ d_quad_map)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx < num_particles) {
+        double sr = d_self_r ? d_self_r[idx] : 1.0;
+        double si = d_self_i ? d_self_i[idx] : 0.0;
+        double denom = sr * sr + si * si;
+        double inv_sr = (denom > 1e-30) ? (sr / denom) : 1.0;
+        double inv_si = (denom > 1e-30) ? (-si / denom) : 0.0;
+
+        for (int c = 0; c < 3; ++c) {
+            size_t comp_idx = (idx * 3 + c) * 2;
+            double xr = d_src[comp_idx + 0];
+            double xi = d_src[comp_idx + 1];
+
+            d_dst[comp_idx + 0] = xr * inv_sr - xi * inv_si;
+            d_dst[comp_idx + 1] = xr * inv_si + xi * inv_sr;
+        }
+    }
+
+    if (solve_quadrupoles && idx < num_quads) {
+        size_t p_idx = d_quad_map ? d_quad_map[idx] : idx;
+        if (p_idx >= num_particles) p_idx = 0;
+        double sr = d_self_r ? d_self_r[p_idx] : 1.0;
+        double si = d_self_i ? d_self_i[p_idx] : 0.0;
+        double denom = sr * sr + si * si;
+        double inv_sr = (denom > 1e-30) ? (sr / denom) : 1.0;
+        double inv_si = (denom > 1e-30) ? (-si / denom) : 0.0;
+
+        size_t quad_offset = num_particles * 3 * 2;
+        for (int c = 0; c < 5; ++c) {
+            size_t comp_idx = quad_offset + (idx * 5 + c) * 2;
+            double xr = d_src[comp_idx + 0];
+            double xi = d_src[comp_idx + 1];
+
+            d_dst[comp_idx + 0] = xr * inv_sr - xi * inv_si;
+            d_dst[comp_idx + 1] = xr * inv_si + xi * inv_sr;
+        }
+    }
+}
+
+void Numerical_Solver::gpu_vector_jacobi_precond(double* d_dst, const double* d_src, const Electric_Field* EF, size_t vec_size) {
+    const Base_Electric_Field* base_ef = dynamic_cast<const Base_Electric_Field*>(EF);
+    if (!base_ef || !base_ef->getDevSelfCoefReal()) {
+        CUDA_CHECK(cudaMemcpy(d_dst, d_src, vec_size * 2 * sizeof(double), cudaMemcpyDeviceToDevice));
+        return;
+    }
+
+    size_t num_particles = base_ef->getNumParticles();
+    bool solve_quads = base_ef->getSolveQuadrupoles();
+    size_t num_quads = base_ef->getNumQuads();
+    const int* d_quad_map = base_ef->getDevQuadMap();
+
+    const double* d_self_r = base_ef->getDevSelfCoefReal();
+    const double* d_self_i = base_ef->getDevSelfCoefImag();
+
+    size_t max_items = num_particles;
+    if (solve_quads && num_quads > max_items) max_items = num_quads;
+
+    if (max_items == 0) {
+        CUDA_CHECK(cudaMemcpy(d_dst, d_src, vec_size * 2 * sizeof(double), cudaMemcpyDeviceToDevice));
+        return;
+    }
+
+    int threads = 256;
+    int blocks = (max_items + threads - 1) / threads;
+    jacobi_precond_kernel<<<blocks, threads>>>(d_dst, d_src, d_self_r, d_self_i, num_particles, solve_quads, num_quads, d_quad_map);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 void Numerical_Solver::compute_Ax(double* d_x, double* d_Ax, Electric_Field* EF, size_t vec_size) {
     CUDA_CHECK(cudaMemcpy(EF->getDevDipoles(), d_x, vec_size * 2 * sizeof(double), cudaMemcpyDeviceToDevice));
     EF->calculate();
     CUDA_CHECK(cudaMemcpy(d_Ax, EF->getDevEPoint(), vec_size * 2 * sizeof(double), cudaMemcpyDeviceToDevice));
 }
+
+void Numerical_Solver::compute_Ax_preconditioned(double* d_x, double* d_Ax, double* d_tmp, Electric_Field* EF, size_t vec_size) {
+    gpu_vector_jacobi_precond(d_tmp, d_x, EF, vec_size);
+    compute_Ax(d_tmp, d_Ax, EF, vec_size);
+}
+

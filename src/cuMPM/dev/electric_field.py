@@ -1,6 +1,6 @@
 import numpy as np
 from .. import _cuMPM
-from .._cuMPM import FieldCalcMode
+from .._cuMPM import FieldCalcMode, PrecisionMode
 
 def _to_list(val):
     if val is None:
@@ -11,11 +11,26 @@ def _to_list(val):
         return list(val)
     return [val]
 
+def _parse_precision(precision):
+    if precision is None:
+        return PrecisionMode.AUTO
+    if isinstance(precision, str):
+        p_lower = precision.lower()
+        if p_lower in ("auto",):
+            return PrecisionMode.AUTO
+        elif p_lower in ("mixed", "fp32", "single"):
+            return PrecisionMode.MIXED
+        elif p_lower in ("double", "fp64"):
+            return PrecisionMode.DOUBLE
+        else:
+            raise ValueError(f"Unknown precision mode string: '{precision}'. Must be 'auto', 'mixed', or 'double'.")
+    return precision
+
 class DirectElectricField:
     """
     Python wrapper for the C++ Direct_Electric_Field class.
     """
-    def __init__(self, radius=None, mode=None, solve_quadrupoles=False, quad_idxs=None):
+    def __init__(self, radius=None, mode=None, solve_quadrupoles=False, quad_idxs=None, precision=None):
         if radius is None:
             radius = []
         if mode is None:
@@ -24,9 +39,18 @@ class DirectElectricField:
             mode = FieldCalcMode.SOLVER_AX if mode else FieldCalcMode.INTERACTION_FIELD
         if quad_idxs is None:
             quad_idxs = []
+        prec_mode = _parse_precision(precision)
         self._ef = _cuMPM.Direct_Electric_Field(
-            _to_list(radius), mode, bool(solve_quadrupoles), [int(i) for i in quad_idxs]
+            _to_list(radius), mode, bool(solve_quadrupoles), [int(i) for i in quad_idxs], prec_mode
         )
+
+    @property
+    def is_using_fp32(self) -> bool:
+        return self._ef.isUsingFP32()
+
+    @property
+    def precision_mode(self) -> PrecisionMode:
+        return self._ef.getPrecisionMode()
 
     @property
     def box_x(self) -> float:
@@ -115,6 +139,14 @@ class DirectElectricField:
     @property
     def num_quads(self) -> int:
         return self._ef.getNumQuads()
+
+    @property
+    def use_async_streams(self) -> bool:
+        return self._ef.isUsingAsyncStreams()
+
+    @use_async_streams.setter
+    def use_async_streams(self, enable: bool):
+        self._ef.setUseAsyncStreams(enable)
 
     @property
     def num_grid(self) -> np.ndarray:
@@ -399,18 +431,27 @@ class MonodisperseEwaldElectricField:
     """
     Python wrapper for the C++ Ewald_Electric_Field class.
     """
-    def __init__(self, box_x, box_y, box_z, errortol, xi, calc_inter_dipole, radius=1.0, solve_quadrupoles=False, quad_idxs=None):
+    def __init__(self, box_x, box_y, box_z, errortol, xi, calc_inter_dipole, radius=1.0, solve_quadrupoles=False, quad_idxs=None, precision=None):
         if quad_idxs is None:
             quad_idxs = []
         if isinstance(calc_inter_dipole, bool):
             mode = FieldCalcMode.SOLVER_AX if calc_inter_dipole else FieldCalcMode.INTERACTION_FIELD
         else:
             mode = calc_inter_dipole
+        prec_mode = _parse_precision(precision)
         self._ef = _cuMPM.Monodisperse_Ewald_Electric_Field(
             float(box_x), float(box_y), float(box_z),
             float(errortol), float(xi), mode, float(radius),
-            bool(solve_quadrupoles), [int(i) for i in quad_idxs]
+            bool(solve_quadrupoles), [int(i) for i in quad_idxs], prec_mode
         )
+
+    @property
+    def is_using_recip_fp32(self) -> bool:
+        return self._ef.isUsingRecipFP32()
+
+    @property
+    def recip_precision_mode(self) -> PrecisionMode:
+        return self._ef.getRecipPrecisionMode()
 
     @property
     def box_x(self) -> float:
@@ -805,18 +846,27 @@ class PolydisperseEwaldElectricField:
     """
     Python wrapper for the C++ Polydisperse_Electric_Field class.
     """
-    def __init__(self, box_x, box_y, box_z, errortol, xi, calc_inter_dipole, particle_radii, solve_quadrupoles=False, quad_idxs=None):
+    def __init__(self, box_x, box_y, box_z, errortol, xi, calc_inter_dipole, particle_radii, solve_quadrupoles=False, quad_idxs=None, precision=None):
         if quad_idxs is None:
             quad_idxs = []
         if isinstance(calc_inter_dipole, bool):
             mode = FieldCalcMode.SOLVER_AX if calc_inter_dipole else FieldCalcMode.INTERACTION_FIELD
         else:
             mode = calc_inter_dipole
+        prec_mode = _parse_precision(precision)
         self._ef = _cuMPM.Polydisperse_Ewald_Electric_Field(
             float(box_x), float(box_y), float(box_z),
             float(errortol), float(xi), mode,
-            _to_list(particle_radii), bool(solve_quadrupoles), [int(i) for i in quad_idxs]
+            _to_list(particle_radii), bool(solve_quadrupoles), [int(i) for i in quad_idxs], prec_mode
         )
+
+    @property
+    def is_using_recip_fp32(self) -> bool:
+        return self._ef.isUsingRecipFP32()
+
+    @property
+    def recip_precision_mode(self) -> PrecisionMode:
+        return self._ef.getRecipPrecisionMode()
 
     @property
     def box_x(self) -> float:

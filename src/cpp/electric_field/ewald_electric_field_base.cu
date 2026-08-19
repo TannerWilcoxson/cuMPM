@@ -12,11 +12,25 @@
 
 Ewald_Electric_Field_Base::Ewald_Electric_Field_Base(double box_x, double box_y, double box_z,
                                                      double errortol, double xi, FieldCalcMode mode,
-                                                     bool solve_quadrupoles, const std::vector<int>& quad_idxs)
+                                                     bool solve_quadrupoles, const std::vector<int>& quad_idxs,
+                                                     PrecisionMode recip_precision)
     : Base_Electric_Field(mode, solve_quadrupoles, quad_idxs),
       box_x(box_x), box_y(box_y), box_z(box_z), errortol(errortol), xi(xi),
+      recip_precision_setting(recip_precision),
       neighbor_list(std::make_unique<NeighborList>())
 {
+    use_recip_fp32 = determineRecipPrecisionMode(recip_precision);
+    CUDA_CHECK(cudaStreamCreate(&stream_real));
+    CUDA_CHECK(cudaStreamCreate(&stream_recip));
+    CUDA_CHECK(cudaEventCreate(&event_recip_done));
+}
+
+bool Ewald_Electric_Field_Base::determineRecipPrecisionMode(PrecisionMode precision) {
+    if (precision == PrecisionMode::MIXED || precision == PrecisionMode::FP32) return true;
+    if (precision == PrecisionMode::DOUBLE || precision == PrecisionMode::FP64) return false;
+
+    // AUTO mode defaults to double precision (FP64) to maintain full accuracy by default
+    return false;
 }
 
 Ewald_Electric_Field_Base::~Ewald_Electric_Field_Base() {
@@ -57,6 +71,9 @@ Ewald_Electric_Field_Base::~Ewald_Electric_Field_Base() {
     if (d_Qfactor) { cudaFree(d_Qfactor); d_Qfactor = nullptr; }
     if (d_Qfactor_dot) { cudaFree(d_Qfactor_dot); d_Qfactor_dot = nullptr; }
     if (d_G_point) { cudaFree(d_G_point); d_G_point = nullptr; }
+    if (stream_real) { cudaStreamDestroy(stream_real); stream_real = nullptr; }
+    if (stream_recip) { cudaStreamDestroy(stream_recip); stream_recip = nullptr; }
+    if (event_recip_done) { cudaEventDestroy(event_recip_done); event_recip_done = nullptr; }
 }
 
 void Ewald_Electric_Field_Base::computeNeighborList(int max_neighbors_per_particle) {
@@ -95,7 +112,13 @@ void Ewald_Electric_Field_Base::getSpreadPrecalcsHost(std::vector<double>& host_
                                                      std::vector<int>& host_spread_idxs) const {
     host_spread_coef.resize(num_spread);
     host_spread_idxs.resize(num_spread);
-    CUDA_CHECK(cudaMemcpy(host_spread_coef.data(), d_spread_coef, num_spread * sizeof(double), cudaMemcpyDeviceToHost));
+    if (use_recip_fp32) {
+        std::vector<float> temp(num_spread);
+        CUDA_CHECK(cudaMemcpy(temp.data(), d_spread_coef, num_spread * sizeof(float), cudaMemcpyDeviceToHost));
+        for (size_t i = 0; i < num_spread; ++i) host_spread_coef[i] = static_cast<double>(temp[i]);
+    } else {
+        CUDA_CHECK(cudaMemcpy(host_spread_coef.data(), d_spread_coef, num_spread * sizeof(double), cudaMemcpyDeviceToHost));
+    }
     CUDA_CHECK(cudaMemcpy(host_spread_idxs.data(), d_spread_idxs, num_spread * sizeof(int), cudaMemcpyDeviceToHost));
 }
 
@@ -110,7 +133,13 @@ void Ewald_Electric_Field_Base::getContractPrecalcsHost(std::vector<double>& hos
     host_contract_idxs.resize(num_contract);
     CUDA_CHECK(cudaMemcpy(host_E_point.data(), d_E_point, (num_targets * 3 + num_quads * 5) * 2 * sizeof(double), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(host_particle_index.data(), d_particle_index, num_contract * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_contract_coef.data(), d_contract_coef, num_contract * sizeof(double), cudaMemcpyDeviceToHost));
+    if (use_recip_fp32) {
+        std::vector<float> temp(num_contract);
+        CUDA_CHECK(cudaMemcpy(temp.data(), d_contract_coef, num_contract * sizeof(float), cudaMemcpyDeviceToHost));
+        for (size_t i = 0; i < num_contract; ++i) host_contract_coef[i] = static_cast<double>(temp[i]);
+    } else {
+        CUDA_CHECK(cudaMemcpy(host_contract_coef.data(), d_contract_coef, num_contract * sizeof(double), cudaMemcpyDeviceToHost));
+    }
     CUDA_CHECK(cudaMemcpy(host_contract_idxs.data(), d_contract_idxs, num_contract * sizeof(int), cudaMemcpyDeviceToHost));
 }
 

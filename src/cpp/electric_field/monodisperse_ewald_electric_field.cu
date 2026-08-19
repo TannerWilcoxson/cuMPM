@@ -30,8 +30,9 @@ Monodisperse_Ewald_Electric_Field::Monodisperse_Ewald_Electric_Field(double box_
                            FieldCalcMode mode,
                            double radius,
                            bool solve_quadrupoles,
-                           const std::vector<int>& quad_idxs)
-    : Ewald_Electric_Field_Base(box_x, box_y, box_z, errortol, xi, mode, solve_quadrupoles, quad_idxs) {
+                           const std::vector<int>& quad_idxs,
+                           PrecisionMode recip_precision)
+    : Ewald_Electric_Field_Base(box_x, box_y, box_z, errortol, xi, mode, solve_quadrupoles, quad_idxs, recip_precision) {
 
     const double PI_CONST = 3.14159265358979323846;
     self_coef = -4.0 * std::pow(xi, 3.0) / (3.0 * std::sqrt(PI_CONST));
@@ -43,25 +44,28 @@ Monodisperse_Ewald_Electric_Field::Monodisperse_Ewald_Electric_Field(double box_
     computeRealSpaceTables();
 
     // Allocate grid and FFT plan
-    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
-    CUDA_CHECK(cudaMalloc(&d_fE_grid, grid_voxels * 3 * 2 * sizeof(double)));
+    size_t grid_voxels = static_cast<size_t>(num_grid[0]) * num_grid[1] * num_grid[2];
+    size_t element_size = use_recip_fp32 ? sizeof(float) : sizeof(double);
+    cufftType fft_type = use_recip_fp32 ? CUFFT_C2C : CUFFT_Z2Z;
+
+    CUDA_CHECK(cudaMalloc(&d_fE_grid, grid_voxels * 3 * 2 * element_size));
 
     int n[3] = { num_grid[0], num_grid[1], num_grid[2] };
     cufftResult plan_res = cufftPlanMany((cufftHandle*)&fft_plan, 3, n,
                                         n, 3, 1, // inembed, istride, idist
                                         n, 3, 1, // onembed, ostride, odist
-                                        CUFFT_Z2Z, 3);
+                                        fft_type, 3);
     if (plan_res != CUFFT_SUCCESS) {
         throw std::runtime_error("cuFFT plan creation failed with code: " + std::to_string(plan_res));
     }
 
     if (solve_quadrupoles) {
-        CUDA_CHECK(cudaMalloc(&d_fG_grid, grid_voxels * 5 * 2 * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_fG_grid, grid_voxels * 5 * 2 * element_size));
 
         cufftResult plan_res_G = cufftPlanMany((cufftHandle*)&fft_plan_G, 3, n,
                                               n, 5, 1, // inembed, istride, idist
                                               n, 5, 1, // onembed, ostride, odist
-                                              CUFFT_Z2Z, 5);
+                                              fft_type, 5);
         if (plan_res_G != CUFFT_SUCCESS) {
             throw std::runtime_error("cuFFT plan G creation failed with code: " + std::to_string(plan_res_G));
         }
@@ -630,7 +634,13 @@ void Monodisperse_Ewald_Electric_Field::getPrecalculationsHost(std::vector<int>&
 
     CUDA_CHECK(cudaMemcpy(host_offset.data(), d_offset, num_offsets * 3 * sizeof(int), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(host_offsetxyz.data(), d_offsetxyz, num_offsets * 3 * sizeof(double), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(host_scale_coef.data(), d_scale_coef, grid_voxels * sizeof(double), cudaMemcpyDeviceToHost));
+    if (use_recip_fp32) {
+        std::vector<float> temp(grid_voxels);
+        CUDA_CHECK(cudaMemcpy(temp.data(), d_scale_coef, grid_voxels * sizeof(float), cudaMemcpyDeviceToHost));
+        for (size_t i = 0; i < grid_voxels; ++i) host_scale_coef[i] = static_cast<double>(temp[i]);
+    } else {
+        CUDA_CHECK(cudaMemcpy(host_scale_coef.data(), d_scale_coef, grid_voxels * sizeof(double), cudaMemcpyDeviceToHost));
+    }
     CUDA_CHECK(cudaMemcpy(host_khat.data(), d_khat, grid_voxels * 3 * sizeof(double), cudaMemcpyDeviceToHost));
 }
 
@@ -669,13 +679,14 @@ __device__ static double interpolate_table_gpu(double r, const double* r_table, 
     return y_table[idx] * (1.0 - t) + y_table[idx + 1] * t;
 }
 
+template <typename RecipReal>
 __global__ void spread_precalcs_kernel(
     const double* __restrict__ x_part,
     const double* __restrict__ y_part,
     const double* __restrict__ z_part,
     const int* __restrict__ offset,
     const double* __restrict__ offsetxyz,
-    double* __restrict__ spread_coef,
+    RecipReal* __restrict__ spread_coef,
     int* __restrict__ spread_idxs,
     size_t num_particles,
     size_t num_offsets,
@@ -727,16 +738,17 @@ __global__ void spread_precalcs_kernel(
                      (gdy * gdy / spectral_split_y) +
                      (gdz * gdz / spectral_split_z);
 
-    spread_coef[idx] = const_factor * exp(-2.0 * xi * xi * div_eta);
+    spread_coef[idx] = static_cast<RecipReal>(const_factor * exp(-2.0 * xi * xi * div_eta));
 }
 
+template <typename RecipReal>
 __global__ void contract_precalcs_kernel(
     const double* __restrict__ x_field,
     const double* __restrict__ y_field,
     const double* __restrict__ z_field,
     const int* __restrict__ offset,
     const double* __restrict__ offsetxyz,
-    double* __restrict__ contract_coef,
+    RecipReal* __restrict__ contract_coef,
     int* __restrict__ contract_idxs,
     int* __restrict__ particle_index,
     size_t num_field_points,
@@ -784,8 +796,8 @@ __global__ void contract_precalcs_kernel(
     int geiz = ((giz + oz) % num_grid_z + num_grid_z) % num_grid_z;
 
     int transposed_idx = o * num_field_points + i;
+    particle_index[idx] = i;
     contract_idxs[transposed_idx] = geix * num_grid_y * num_grid_z + geiy * num_grid_z + geiz;
-    particle_index[transposed_idx] = i;
 
     double gdx = dx + oxyz_x;
     double gdy = dy + oxyz_y;
@@ -795,7 +807,7 @@ __global__ void contract_precalcs_kernel(
                      (gdy * gdy / spectral_split_y) +
                      (gdz * gdz / spectral_split_z);
 
-    contract_coef[transposed_idx] = const_factor * exp(-2.0 * xi * xi * div_eta);
+    contract_coef[transposed_idx] = static_cast<RecipReal>(const_factor * exp(-2.0 * xi * xi * div_eta));
 }
 
 __global__ void real_space_precalcs_kernel(
@@ -944,7 +956,8 @@ void Monodisperse_Ewald_Electric_Field::spreadPrecalcs() {
     if (num_particles == 0) return;
 
     num_spread = num_particles * num_offsets;
-    size_t size_coef_bytes = num_spread * sizeof(double);
+    size_t element_size = use_recip_fp32 ? sizeof(float) : sizeof(double);
+    size_t size_coef_bytes = num_spread * element_size;
     size_t size_idxs_bytes = num_spread * sizeof(int);
 
     if (d_spread_coef) CUDA_CHECK(cudaFree(d_spread_coef));
@@ -960,16 +973,29 @@ void Monodisperse_Ewald_Electric_Field::spreadPrecalcs() {
     int threadsPerBlock = 256;
     int blocksPerGrid = (num_spread + threadsPerBlock - 1) / threadsPerBlock;
 
-    spread_precalcs_kernel<<<blocksPerGrid, threadsPerBlock>>>(
-        d_x_part, d_y_part, d_z_part,
-        d_offset, d_offsetxyz,
-        d_spread_coef, d_spread_idxs,
-        num_particles, num_offsets,
-        grid_spacing[0], grid_spacing[1], grid_spacing[2],
-        num_grid[0], num_grid[1], num_grid[2],
-        spectral_split[0], spectral_split[1], spectral_split[2],
-        const_factor, xi
-    );
+    if (use_recip_fp32) {
+        spread_precalcs_kernel<float><<<blocksPerGrid, threadsPerBlock>>>(
+            d_x_part, d_y_part, d_z_part,
+            d_offset, d_offsetxyz,
+            static_cast<float*>(d_spread_coef), d_spread_idxs,
+            num_particles, num_offsets,
+            grid_spacing[0], grid_spacing[1], grid_spacing[2],
+            num_grid[0], num_grid[1], num_grid[2],
+            spectral_split[0], spectral_split[1], spectral_split[2],
+            const_factor, xi
+        );
+    } else {
+        spread_precalcs_kernel<double><<<blocksPerGrid, threadsPerBlock>>>(
+            d_x_part, d_y_part, d_z_part,
+            d_offset, d_offsetxyz,
+            static_cast<double*>(d_spread_coef), d_spread_idxs,
+            num_particles, num_offsets,
+            grid_spacing[0], grid_spacing[1], grid_spacing[2],
+            num_grid[0], num_grid[1], num_grid[2],
+            spectral_split[0], spectral_split[1], spectral_split[2],
+            const_factor, xi
+        );
+    }
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 }
@@ -978,7 +1004,8 @@ void Monodisperse_Ewald_Electric_Field::contractPrecalcs() {
     if (num_field_points == 0) return;
 
     num_contract = num_field_points * num_offsets;
-    size_t size_coef_bytes = num_contract * sizeof(double);
+    size_t element_size = use_recip_fp32 ? sizeof(float) : sizeof(double);
+    size_t size_coef_bytes = num_contract * element_size;
     size_t size_idxs_bytes = num_contract * sizeof(int);
     size_t size_part_idx_bytes = num_contract * sizeof(int);
     size_t size_epoint_bytes = (num_field_points * 3 + num_quads * 5) * 2 * sizeof(double);
@@ -1009,16 +1036,29 @@ void Monodisperse_Ewald_Electric_Field::contractPrecalcs() {
     int threadsPerBlock = 256;
     int blocksPerGrid = (num_contract + threadsPerBlock - 1) / threadsPerBlock;
 
-    contract_precalcs_kernel<<<blocksPerGrid, threadsPerBlock>>>(
-        d_x_field, d_y_field, d_z_field,
-        d_offset, d_offsetxyz,
-        d_contract_coef, d_contract_idxs, d_particle_index,
-        num_field_points, num_offsets,
-        grid_spacing[0], grid_spacing[1], grid_spacing[2],
-        num_grid[0], num_grid[1], num_grid[2],
-        spectral_split[0], spectral_split[1], spectral_split[2],
-        const_factor, xi
-    );
+    if (use_recip_fp32) {
+        contract_precalcs_kernel<float><<<blocksPerGrid, threadsPerBlock>>>(
+            d_x_field, d_y_field, d_z_field,
+            d_offset, d_offsetxyz,
+            static_cast<float*>(d_contract_coef), d_contract_idxs, d_particle_index,
+            num_field_points, num_offsets,
+            grid_spacing[0], grid_spacing[1], grid_spacing[2],
+            num_grid[0], num_grid[1], num_grid[2],
+            spectral_split[0], spectral_split[1], spectral_split[2],
+            const_factor, xi
+        );
+    } else {
+        contract_precalcs_kernel<double><<<blocksPerGrid, threadsPerBlock>>>(
+            d_x_field, d_y_field, d_z_field,
+            d_offset, d_offsetxyz,
+            static_cast<double*>(d_contract_coef), d_contract_idxs, d_particle_index,
+            num_field_points, num_offsets,
+            grid_spacing[0], grid_spacing[1], grid_spacing[2],
+            num_grid[0], num_grid[1], num_grid[2],
+            spectral_split[0], spectral_split[1], spectral_split[2],
+            const_factor, xi
+        );
+    }
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 }
@@ -1112,11 +1152,12 @@ void Monodisperse_Ewald_Electric_Field::getRealSpacePrecalcsHost(double& host_se
     }
 }
 
+template <typename RecipReal>
 __global__ void spread_kernel(
     const double* __restrict__ d_dipoles,
-    const double* __restrict__ spread_coef,
+    const RecipReal* __restrict__ spread_coef,
     const int* __restrict__ spread_idxs,
-    double* __restrict__ fE_grid,
+    RecipReal* __restrict__ fE_grid,
     size_t num_spread,
     size_t num_offsets,
     int num_grid_x,
@@ -1142,7 +1183,7 @@ __global__ void spread_kernel(
     bool active = (idx < num_spread);
 
     int gx = 0, gy = 0, gz = 0;
-    double coef = 0.0;
+    RecipReal coef = 0.0;
     double dx_r = 0.0, dx_i = 0.0;
     double dy_r = 0.0, dy_i = 0.0;
     double dz_r = 0.0, dz_i = 0.0;
@@ -1161,7 +1202,6 @@ __global__ void spread_kernel(
         dy_i = dip_y.y;
         dz_r = dip_z.x;
         dz_i = dip_z.y;
-
 
         coef = spread_coef[idx];
 
@@ -1184,7 +1224,8 @@ __global__ void spread_kernel(
     int dim_z = block_max_gz - block_min_gz + 1;
     int local_grid_size = dim_x * dim_y * dim_z;
 
-    extern __shared__ double s_grid[];
+    extern __shared__ char s_grid_raw[];
+    RecipReal* s_grid = reinterpret_cast<RecipReal*>(s_grid_raw);
 
     bool use_shared = (local_grid_size > 0 && local_grid_size <= 512);
 
@@ -1201,12 +1242,12 @@ __global__ void spread_kernel(
             int local_z = gz - block_min_gz;
             int local_idx = local_x * dim_y * dim_z + local_y * dim_z + local_z;
 
-            atomicAdd(&s_grid[(local_idx * 3 + 0) * 2 + 0], coef * dx_r);
-            atomicAdd(&s_grid[(local_idx * 3 + 0) * 2 + 1], coef * dx_i);
-            atomicAdd(&s_grid[(local_idx * 3 + 1) * 2 + 0], coef * dy_r);
-            atomicAdd(&s_grid[(local_idx * 3 + 1) * 2 + 1], coef * dy_i);
-            atomicAdd(&s_grid[(local_idx * 3 + 2) * 2 + 0], coef * dz_r);
-            atomicAdd(&s_grid[(local_idx * 3 + 2) * 2 + 1], coef * dz_i);
+            atomicAdd(&s_grid[(local_idx * 3 + 0) * 2 + 0], static_cast<RecipReal>(coef * dx_r));
+            atomicAdd(&s_grid[(local_idx * 3 + 0) * 2 + 1], static_cast<RecipReal>(coef * dx_i));
+            atomicAdd(&s_grid[(local_idx * 3 + 1) * 2 + 0], static_cast<RecipReal>(coef * dy_r));
+            atomicAdd(&s_grid[(local_idx * 3 + 1) * 2 + 1], static_cast<RecipReal>(coef * dy_i));
+            atomicAdd(&s_grid[(local_idx * 3 + 2) * 2 + 0], static_cast<RecipReal>(coef * dz_r));
+            atomicAdd(&s_grid[(local_idx * 3 + 2) * 2 + 1], static_cast<RecipReal>(coef * dz_i));
         }
         __syncthreads();
 
@@ -1224,12 +1265,12 @@ __global__ void spread_kernel(
                                   static_cast<size_t>(global_gy) * num_grid_z +
                                   static_cast<size_t>(global_gz)) * 3;
 
-            double val_x_r = s_grid[(offset * 3 + 0) * 2 + 0];
-            double val_x_i = s_grid[(offset * 3 + 0) * 2 + 1];
-            double val_y_r = s_grid[(offset * 3 + 1) * 2 + 0];
-            double val_y_i = s_grid[(offset * 3 + 1) * 2 + 1];
-            double val_z_r = s_grid[(offset * 3 + 2) * 2 + 0];
-            double val_z_i = s_grid[(offset * 3 + 2) * 2 + 1];
+            RecipReal val_x_r = s_grid[(offset * 3 + 0) * 2 + 0];
+            RecipReal val_x_i = s_grid[(offset * 3 + 0) * 2 + 1];
+            RecipReal val_y_r = s_grid[(offset * 3 + 1) * 2 + 0];
+            RecipReal val_y_i = s_grid[(offset * 3 + 1) * 2 + 1];
+            RecipReal val_z_r = s_grid[(offset * 3 + 2) * 2 + 0];
+            RecipReal val_z_i = s_grid[(offset * 3 + 2) * 2 + 1];
 
             if (val_x_r != 0.0) atomicAdd(&fE_grid[(global_idx + 0) * 2 + 0], val_x_r);
             if (val_x_i != 0.0) atomicAdd(&fE_grid[(global_idx + 0) * 2 + 1], val_x_i);
@@ -1249,24 +1290,25 @@ __global__ void spread_kernel(
                                   static_cast<size_t>(global_gy) * num_grid_z +
                                   static_cast<size_t>(global_gz)) * 3;
 
-            atomicAdd(&fE_grid[(global_idx + 0) * 2 + 0], coef * dx_r);
-            atomicAdd(&fE_grid[(global_idx + 0) * 2 + 1], coef * dx_i);
-            atomicAdd(&fE_grid[(global_idx + 1) * 2 + 0], coef * dy_r);
-            atomicAdd(&fE_grid[(global_idx + 1) * 2 + 1], coef * dy_i);
-            atomicAdd(&fE_grid[(global_idx + 2) * 2 + 0], coef * dz_r);
-            atomicAdd(&fE_grid[(global_idx + 2) * 2 + 1], coef * dz_i);
+            atomicAdd(&fE_grid[(global_idx + 0) * 2 + 0], static_cast<RecipReal>(coef * dx_r));
+            atomicAdd(&fE_grid[(global_idx + 0) * 2 + 1], static_cast<RecipReal>(coef * dx_i));
+            atomicAdd(&fE_grid[(global_idx + 1) * 2 + 0], static_cast<RecipReal>(coef * dy_r));
+            atomicAdd(&fE_grid[(global_idx + 1) * 2 + 1], static_cast<RecipReal>(coef * dy_i));
+            atomicAdd(&fE_grid[(global_idx + 2) * 2 + 0], static_cast<RecipReal>(coef * dz_r));
+            atomicAdd(&fE_grid[(global_idx + 2) * 2 + 1], static_cast<RecipReal>(coef * dz_i));
         }
     }
 }
 
+template <typename RecipReal>
 __global__ void compute_scale_coefficients_kernel(
-    double* d_scale_coef,
+    RecipReal* d_scale_coef,
     double* d_khat,
-    double* d_scale_coef_Q_imag,
-    double* d_scale_coef_GP_imag,
-    double* d_scale_coef_GQ_real,
-    double* d_Qfactor,
-    double* d_Qfactor_dot,
+    RecipReal* d_scale_coef_Q_imag,
+    RecipReal* d_scale_coef_GP_imag,
+    RecipReal* d_scale_coef_GQ_real,
+    RecipReal* d_Qfactor,
+    RecipReal* d_Qfactor_dot,
     int num_grid_x, int num_grid_y, int num_grid_z,
     double box_x, double box_y, double box_z,
     double k_x, double k_y,
@@ -1324,17 +1366,17 @@ __global__ void compute_scale_coefficients_kernel(
     d_khat[linear_idx * 3 + 2] = kh2;
 
     if (solve_quadrupoles) {
-        d_Qfactor[linear_idx * 5 + 0] = kh0 * kh0 - 1.0 / 3.0;
-        d_Qfactor[linear_idx * 5 + 1] = kh0 * kh1;
-        d_Qfactor[linear_idx * 5 + 2] = kh0 * kh2;
-        d_Qfactor[linear_idx * 5 + 3] = kh1 * kh1 - 1.0 / 3.0;
-        d_Qfactor[linear_idx * 5 + 4] = kh1 * kh2;
+        d_Qfactor[linear_idx * 5 + 0] = static_cast<RecipReal>(kh0 * kh0 - 1.0 / 3.0);
+        d_Qfactor[linear_idx * 5 + 1] = static_cast<RecipReal>(kh0 * kh1);
+        d_Qfactor[linear_idx * 5 + 2] = static_cast<RecipReal>(kh0 * kh2);
+        d_Qfactor[linear_idx * 5 + 3] = static_cast<RecipReal>(kh1 * kh1 - 1.0 / 3.0);
+        d_Qfactor[linear_idx * 5 + 4] = static_cast<RecipReal>(kh1 * kh2);
 
-        d_Qfactor_dot[linear_idx * 5 + 0] = kh0 * kh0 - kh2 * kh2;
-        d_Qfactor_dot[linear_idx * 5 + 1] = 2.0 * kh0 * kh1;
-        d_Qfactor_dot[linear_idx * 5 + 2] = 2.0 * kh0 * kh2;
-        d_Qfactor_dot[linear_idx * 5 + 3] = kh1 * kh1 - kh2 * kh2;
-        d_Qfactor_dot[linear_idx * 5 + 4] = 2.0 * kh1 * kh2;
+        d_Qfactor_dot[linear_idx * 5 + 0] = static_cast<RecipReal>(kh0 * kh0 - kh2 * kh2);
+        d_Qfactor_dot[linear_idx * 5 + 1] = static_cast<RecipReal>(2.0 * kh0 * kh1);
+        d_Qfactor_dot[linear_idx * 5 + 2] = static_cast<RecipReal>(2.0 * kh0 * kh2);
+        d_Qfactor_dot[linear_idx * 5 + 3] = static_cast<RecipReal>(kh1 * kh1 - kh2 * kh2);
+        d_Qfactor_dot[linear_idx * 5 + 4] = static_cast<RecipReal>(2.0 * kh1 * kh2);
     }
 
     double Gx_val = freq_x * 2.0 * PI / box_x;
@@ -1351,22 +1393,23 @@ __global__ void compute_scale_coefficients_kernel(
     double term = sin(kmag) / kmag - cos(kmag);
     double exp_part = exp(-etaksq / (4.0 * xi * xi));
     double scale_factor = 1.0 / static_cast<double>(grid_voxels);
-    d_scale_coef[linear_idx] = (9.0 * term * term * exp_part / (ksqsm * ksqsm)) * scale_factor;
+    d_scale_coef[linear_idx] = static_cast<RecipReal>((9.0 * term * term * exp_part / (ksqsm * ksqsm)) * scale_factor);
 
     if (solve_quadrupoles) {
         double j1 = term / kmag;
         double j2 = (3.0 / ksqsm - 1.0) * sin(kmag) / kmag - 3.0 * cos(kmag) / ksqsm;
         double expk2 = exp_part / ksqsm;
 
-        d_scale_coef_Q_imag[linear_idx] = (-22.5 * j1 * j2 * expk2) * scale_factor;
-        d_scale_coef_GP_imag[linear_idx] = (45.0 * j1 * j2 * expk2) * scale_factor;
-        d_scale_coef_GQ_real[linear_idx] = (112.5 * j2 * j2 * expk2) * scale_factor;
+        d_scale_coef_Q_imag[linear_idx] = static_cast<RecipReal>((-22.5 * j1 * j2 * expk2) * scale_factor);
+        d_scale_coef_GP_imag[linear_idx] = static_cast<RecipReal>((45.0 * j1 * j2 * expk2) * scale_factor);
+        d_scale_coef_GQ_real[linear_idx] = static_cast<RecipReal>((112.5 * j2 * j2 * expk2) * scale_factor);
     }
 }
 
+template <typename RecipReal>
 __global__ void scale_kernel(
-    double* __restrict__ fE_grid,
-    const double* __restrict__ scale_coef,
+    RecipReal* __restrict__ fE_grid,
+    const RecipReal* __restrict__ scale_coef,
     const double* __restrict__ khat,
     size_t num_voxels)
 {
@@ -1377,42 +1420,43 @@ __global__ void scale_kernel(
     double ky = khat[v * 3 + 1];
     double kz = khat[v * 3 + 2];
 
-    double sc = scale_coef[v];
+    RecipReal sc = scale_coef[v];
 
-    double fr0_r = fE_grid[(v * 3 + 0) * 2 + 0];
-    double fr1_r = fE_grid[(v * 3 + 1) * 2 + 0];
-    double fr2_r = fE_grid[(v * 3 + 2) * 2 + 0];
+    RecipReal fr0_r = fE_grid[(v * 3 + 0) * 2 + 0];
+    RecipReal fr1_r = fE_grid[(v * 3 + 1) * 2 + 0];
+    RecipReal fr2_r = fE_grid[(v * 3 + 2) * 2 + 0];
 
-    double fr0_i = fE_grid[(v * 3 + 0) * 2 + 1];
-    double fr1_i = fE_grid[(v * 3 + 1) * 2 + 1];
-    double fr2_i = fE_grid[(v * 3 + 2) * 2 + 1];
+    RecipReal fr0_i = fE_grid[(v * 3 + 0) * 2 + 1];
+    RecipReal fr1_i = fE_grid[(v * 3 + 1) * 2 + 1];
+    RecipReal fr2_i = fE_grid[(v * 3 + 2) * 2 + 1];
 
-    double dot_r = fr0_r * kx + fr1_r * ky + fr2_r * kz;
-    double dot_i = fr0_i * kx + fr1_i * ky + fr2_i * kz;
+    double dot_r = static_cast<double>(fr0_r) * kx + static_cast<double>(fr1_r) * ky + static_cast<double>(fr2_r) * kz;
+    double dot_i = static_cast<double>(fr0_i) * kx + static_cast<double>(fr1_i) * ky + static_cast<double>(fr2_i) * kz;
 
-    double sum_r = sc * dot_r;
-    double sum_i = sc * dot_i;
+    double sum_r = static_cast<double>(sc) * dot_r;
+    double sum_i = static_cast<double>(sc) * dot_i;
 
-    fE_grid[(v * 3 + 0) * 2 + 0] = kx * sum_r;
-    fE_grid[(v * 3 + 0) * 2 + 1] = kx * sum_i;
+    fE_grid[(v * 3 + 0) * 2 + 0] = static_cast<RecipReal>(kx * sum_r);
+    fE_grid[(v * 3 + 0) * 2 + 1] = static_cast<RecipReal>(kx * sum_i);
 
-    fE_grid[(v * 3 + 1) * 2 + 0] = ky * sum_r;
-    fE_grid[(v * 3 + 1) * 2 + 1] = ky * sum_i;
+    fE_grid[(v * 3 + 1) * 2 + 0] = static_cast<RecipReal>(ky * sum_r);
+    fE_grid[(v * 3 + 1) * 2 + 1] = static_cast<RecipReal>(ky * sum_i);
 
-    fE_grid[(v * 3 + 2) * 2 + 0] = kz * sum_r;
-    fE_grid[(v * 3 + 2) * 2 + 1] = kz * sum_i;
+    fE_grid[(v * 3 + 2) * 2 + 0] = static_cast<RecipReal>(kz * sum_r);
+    fE_grid[(v * 3 + 2) * 2 + 1] = static_cast<RecipReal>(kz * sum_i);
 }
 
+template <typename RecipReal>
 __global__ void scale_kernel_joint(
-    double* __restrict__ fE_grid,
-    double* __restrict__ fG_grid,
-    const double* __restrict__ scale_coef,
-    const double* __restrict__ scale_coef_Q_imag,
-    const double* __restrict__ scale_coef_GP_imag,
-    const double* __restrict__ scale_coef_GQ_real,
+    RecipReal* __restrict__ fE_grid,
+    RecipReal* __restrict__ fG_grid,
+    const RecipReal* __restrict__ scale_coef,
+    const RecipReal* __restrict__ scale_coef_Q_imag,
+    const RecipReal* __restrict__ scale_coef_GP_imag,
+    const RecipReal* __restrict__ scale_coef_GQ_real,
     const double* __restrict__ khat,
-    const double* __restrict__ Qfactor,
-    const double* __restrict__ Qfactor_dot,
+    const RecipReal* __restrict__ Qfactor,
+    const RecipReal* __restrict__ Qfactor_dot,
     size_t num_voxels)
 {
     int v = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1422,17 +1466,17 @@ __global__ void scale_kernel_joint(
     double ky = khat[v * 3 + 1];
     double kz = khat[v * 3 + 2];
 
-    double sc = scale_coef[v];
-    double sc_Q = scale_coef_Q_imag[v];
-    double sc_GP = scale_coef_GP_imag[v];
-    double sc_GQ = scale_coef_GQ_real[v];
+    double sc = static_cast<double>(scale_coef[v]);
+    double sc_Q = static_cast<double>(scale_coef_Q_imag[v]);
+    double sc_GP = static_cast<double>(scale_coef_GP_imag[v]);
+    double sc_GQ = static_cast<double>(scale_coef_GQ_real[v]);
 
-    double fr0_r = fE_grid[(v * 3 + 0) * 2 + 0];
-    double fr0_i = fE_grid[(v * 3 + 0) * 2 + 1];
-    double fr1_r = fE_grid[(v * 3 + 1) * 2 + 0];
-    double fr1_i = fE_grid[(v * 3 + 1) * 2 + 1];
-    double fr2_r = fE_grid[(v * 3 + 2) * 2 + 0];
-    double fr2_i = fE_grid[(v * 3 + 2) * 2 + 1];
+    double fr0_r = static_cast<double>(fE_grid[(v * 3 + 0) * 2 + 0]);
+    double fr0_i = static_cast<double>(fE_grid[(v * 3 + 0) * 2 + 1]);
+    double fr1_r = static_cast<double>(fE_grid[(v * 3 + 1) * 2 + 0]);
+    double fr1_i = static_cast<double>(fE_grid[(v * 3 + 1) * 2 + 1]);
+    double fr2_r = static_cast<double>(fE_grid[(v * 3 + 2) * 2 + 0]);
+    double fr2_i = static_cast<double>(fE_grid[(v * 3 + 2) * 2 + 1]);
 
     double E_dot_k_R = fr0_r * kx + fr1_r * ky + fr2_r * kz;
     double E_dot_k_I = fr0_i * kx + fr1_i * ky + fr2_i * kz;
@@ -1440,9 +1484,9 @@ __global__ void scale_kernel_joint(
     double G_dot_Qdot_R = 0.0;
     double G_dot_Qdot_I = 0.0;
     for (int c = 0; c < 5; ++c) {
-        double Qdot_c = Qfactor_dot[v * 5 + c];
-        G_dot_Qdot_R += fG_grid[(v * 5 + c) * 2 + 0] * Qdot_c;
-        G_dot_Qdot_I += fG_grid[(v * 5 + c) * 2 + 1] * Qdot_c;
+        double Qdot_c = static_cast<double>(Qfactor_dot[v * 5 + c]);
+        G_dot_Qdot_R += static_cast<double>(fG_grid[(v * 5 + c) * 2 + 0]) * Qdot_c;
+        G_dot_Qdot_I += static_cast<double>(fG_grid[(v * 5 + c) * 2 + 1]) * Qdot_c;
     }
 
     double Edot_E_R = sc * E_dot_k_R - sc_Q * G_dot_Qdot_I;
@@ -1451,24 +1495,25 @@ __global__ void scale_kernel_joint(
     double Gdot_G_R = -sc_GP * E_dot_k_I + sc_GQ * G_dot_Qdot_R;
     double Gdot_G_I = sc_GP * E_dot_k_R + sc_GQ * G_dot_Qdot_I;
 
-    fE_grid[(v * 3 + 0) * 2 + 0] = kx * Edot_E_R;
-    fE_grid[(v * 3 + 0) * 2 + 1] = kx * Edot_E_I;
-    fE_grid[(v * 3 + 1) * 2 + 0] = ky * Edot_E_R;
-    fE_grid[(v * 3 + 1) * 2 + 1] = ky * Edot_E_I;
-    fE_grid[(v * 3 + 2) * 2 + 0] = kz * Edot_E_R;
-    fE_grid[(v * 3 + 2) * 2 + 1] = kz * Edot_E_I;
+    fE_grid[(v * 3 + 0) * 2 + 0] = static_cast<RecipReal>(kx * Edot_E_R);
+    fE_grid[(v * 3 + 0) * 2 + 1] = static_cast<RecipReal>(kx * Edot_E_I);
+    fE_grid[(v * 3 + 1) * 2 + 0] = static_cast<RecipReal>(ky * Edot_E_R);
+    fE_grid[(v * 3 + 1) * 2 + 1] = static_cast<RecipReal>(ky * Edot_E_I);
+    fE_grid[(v * 3 + 2) * 2 + 0] = static_cast<RecipReal>(kz * Edot_E_R);
+    fE_grid[(v * 3 + 2) * 2 + 1] = static_cast<RecipReal>(kz * Edot_E_I);
 
     for (int c = 0; c < 5; ++c) {
-        double Qf_c = Qfactor[v * 5 + c];
-        fG_grid[(v * 5 + c) * 2 + 0] = Qf_c * Gdot_G_R;
-        fG_grid[(v * 5 + c) * 2 + 1] = Qf_c * Gdot_G_I;
+        double Qf_c = static_cast<double>(Qfactor[v * 5 + c]);
+        fG_grid[(v * 5 + c) * 2 + 0] = static_cast<RecipReal>(Qf_c * Gdot_G_R);
+        fG_grid[(v * 5 + c) * 2 + 1] = static_cast<RecipReal>(Qf_c * Gdot_G_I);
     }
 }
 
+template <typename RecipReal>
 __global__ void contract_kernel(
-    const double* __restrict__ Es_grid,
+    const RecipReal* __restrict__ Es_grid,
     const int* __restrict__ contract_idxs,
-    const double* __restrict__ contract_coef,
+    const RecipReal* __restrict__ contract_coef,
     double* __restrict__ E_point,
     size_t num_field_points,
     size_t num_offsets,
@@ -1490,31 +1535,31 @@ __global__ void contract_kernel(
         size_t idx = o * num_field_points + i;
         int v = contract_idxs[idx];
 
-        double coef = contract_coef[idx];
+        double coef = static_cast<double>(contract_coef[idx]);
 
-        E_x_r += coef * Es_grid[(v * 3 + 0) * 2 + 0];
-        E_x_i += coef * Es_grid[(v * 3 + 0) * 2 + 1];
+        E_x_r += coef * static_cast<double>(Es_grid[(v * 3 + 0) * 2 + 0]);
+        E_x_i += coef * static_cast<double>(Es_grid[(v * 3 + 0) * 2 + 1]);
 
-        E_y_r += coef * Es_grid[(v * 3 + 1) * 2 + 0];
-        E_y_i += coef * Es_grid[(v * 3 + 1) * 2 + 1];
+        E_y_r += coef * static_cast<double>(Es_grid[(v * 3 + 1) * 2 + 0]);
+        E_y_i += coef * static_cast<double>(Es_grid[(v * 3 + 1) * 2 + 1]);
 
-        E_z_r += coef * Es_grid[(v * 3 + 2) * 2 + 0];
-        E_z_i += coef * Es_grid[(v * 3 + 2) * 2 + 1];
+        E_z_r += coef * static_cast<double>(Es_grid[(v * 3 + 2) * 2 + 0]);
+        E_z_i += coef * static_cast<double>(Es_grid[(v * 3 + 2) * 2 + 1]);
     }
 
-    E_point[(i * 3 + 0) * 2 + 0] = E_x_r;
-    E_point[(i * 3 + 0) * 2 + 1] = E_x_i;
-    E_point[(i * 3 + 1) * 2 + 0] = E_y_r;
-    E_point[(i * 3 + 1) * 2 + 1] = E_y_i;
-    E_point[(i * 3 + 2) * 2 + 0] = E_z_r;
-    E_point[(i * 3 + 2) * 2 + 1] = E_z_i;
-
+    atomicAdd(&E_point[(i * 3 + 0) * 2 + 0], E_x_r);
+    atomicAdd(&E_point[(i * 3 + 0) * 2 + 1], E_x_i);
+    atomicAdd(&E_point[(i * 3 + 1) * 2 + 0], E_y_r);
+    atomicAdd(&E_point[(i * 3 + 1) * 2 + 1], E_y_i);
+    atomicAdd(&E_point[(i * 3 + 2) * 2 + 0], E_z_r);
+    atomicAdd(&E_point[(i * 3 + 2) * 2 + 1], E_z_i);
 }
 
+template <typename RecipReal>
 __global__ void contract_kernel_G(
-    const double* __restrict__ Gs_grid,
+    const RecipReal* __restrict__ Gs_grid,
     const int* __restrict__ contract_idxs,
-    const double* __restrict__ contract_coef,
+    const RecipReal* __restrict__ contract_coef,
     double* __restrict__ G_point,
     size_t num_field_points,
     size_t num_offsets,
@@ -1538,24 +1583,23 @@ __global__ void contract_kernel_G(
         size_t idx = o * num_field_points + i;
         int v = contract_idxs[idx];
 
-        double coef = contract_coef[idx];
+        double coef = static_cast<double>(contract_coef[idx]);
 
-        G_0_r += coef * Gs_grid[(v * 5 + 0) * 2 + 0];
-        G_0_i += coef * Gs_grid[(v * 5 + 0) * 2 + 1];
+        G_0_r += coef * static_cast<double>(Gs_grid[(v * 5 + 0) * 2 + 0]);
+        G_0_i += coef * static_cast<double>(Gs_grid[(v * 5 + 0) * 2 + 1]);
 
-        G_1_r += coef * Gs_grid[(v * 5 + 1) * 2 + 0];
-        G_1_i += coef * Gs_grid[(v * 5 + 1) * 2 + 1];
+        G_1_r += coef * static_cast<double>(Gs_grid[(v * 5 + 1) * 2 + 0]);
+        G_1_i += coef * static_cast<double>(Gs_grid[(v * 5 + 1) * 2 + 1]);
 
-        G_2_r += coef * Gs_grid[(v * 5 + 2) * 2 + 0];
-        G_2_i += coef * Gs_grid[(v * 5 + 2) * 2 + 1];
+        G_2_r += coef * static_cast<double>(Gs_grid[(v * 5 + 2) * 2 + 0]);
+        G_2_i += coef * static_cast<double>(Gs_grid[(v * 5 + 2) * 2 + 1]);
 
-        G_3_r += coef * Gs_grid[(v * 5 + 3) * 2 + 0];
-        G_3_i += coef * Gs_grid[(v * 5 + 3) * 2 + 1];
+        G_3_r += coef * static_cast<double>(Gs_grid[(v * 5 + 3) * 2 + 0]);
+        G_3_i += coef * static_cast<double>(Gs_grid[(v * 5 + 3) * 2 + 1]);
 
-        G_4_r += coef * Gs_grid[(v * 5 + 4) * 2 + 0];
-        G_4_i += coef * Gs_grid[(v * 5 + 4) * 2 + 1];
+        G_4_r += coef * static_cast<double>(Gs_grid[(v * 5 + 4) * 2 + 0]);
+        G_4_i += coef * static_cast<double>(Gs_grid[(v * 5 + 4) * 2 + 1]);
     }
-
 
     G_point[(i * 5 + 0) * 2 + 0] = G_0_r;
     G_point[(i * 5 + 0) * 2 + 1] = G_0_i;
@@ -1586,7 +1630,7 @@ __global__ void copy_G_to_E_kernel(
     const double* src = G_point + (p_idx * 5) * 2;
 
     for (int c = 0; c < 10; ++c) {
-        dst[c] = src[c];
+        atomicAdd(&dst[c], src[c]);
     }
 }
 
@@ -1984,12 +2028,13 @@ __global__ void real_space_neighbor_kernel_joint(
     }
 }
 
+template <typename RecipReal>
 __global__ void spread_quadrupoles_kernel(
     const double* __restrict__ d_dipoles,
     const int* __restrict__ quad_idxs,
-    const double* __restrict__ spread_coef,
+    const RecipReal* __restrict__ spread_coef,
     const int* __restrict__ spread_idxs,
-    double* __restrict__ fG_grid,
+    RecipReal* __restrict__ fG_grid,
     size_t num_quads,
     size_t num_particles,
     size_t num_offsets,
@@ -2013,7 +2058,7 @@ __global__ void spread_quadrupoles_kernel(
     bool active = (idx < total_spread_Q);
 
     int gx = 0, gy = 0, gz = 0;
-    double coef = 0.0;
+    RecipReal coef = 0.0;
     double q0_r = 0.0, q0_i = 0.0;
     double q1_r = 0.0, q1_i = 0.0;
     double q2_r = 0.0, q2_i = 0.0;
@@ -2061,7 +2106,8 @@ __global__ void spread_quadrupoles_kernel(
     int dim_z = block_max_gz - block_min_gz + 1;
     int local_grid_size = dim_x * dim_y * dim_z;
 
-    extern __shared__ double s_grid[];
+    extern __shared__ char s_grid_raw[];
+    RecipReal* s_grid = reinterpret_cast<RecipReal*>(s_grid_raw);
 
     bool use_shared = (local_grid_size > 0 && local_grid_size <= 300);
 
@@ -2078,16 +2124,16 @@ __global__ void spread_quadrupoles_kernel(
             int local_z = gz - block_min_gz;
             int local_idx = local_x * dim_y * dim_z + local_y * dim_z + local_z;
 
-            atomicAdd(&s_grid[(local_idx * 5 + 0) * 2 + 0], coef * q0_r);
-            atomicAdd(&s_grid[(local_idx * 5 + 0) * 2 + 1], coef * q0_i);
-            atomicAdd(&s_grid[(local_idx * 5 + 1) * 2 + 0], coef * q1_r);
-            atomicAdd(&s_grid[(local_idx * 5 + 1) * 2 + 1], coef * q1_i);
-            atomicAdd(&s_grid[(local_idx * 5 + 2) * 2 + 0], coef * q2_r);
-            atomicAdd(&s_grid[(local_idx * 5 + 2) * 2 + 1], coef * q2_i);
-            atomicAdd(&s_grid[(local_idx * 5 + 3) * 2 + 0], coef * q3_r);
-            atomicAdd(&s_grid[(local_idx * 5 + 3) * 2 + 1], coef * q3_i);
-            atomicAdd(&s_grid[(local_idx * 5 + 4) * 2 + 0], coef * q4_r);
-            atomicAdd(&s_grid[(local_idx * 5 + 4) * 2 + 1], coef * q4_i);
+            atomicAdd(&s_grid[(local_idx * 5 + 0) * 2 + 0], static_cast<RecipReal>(coef * q0_r));
+            atomicAdd(&s_grid[(local_idx * 5 + 0) * 2 + 1], static_cast<RecipReal>(coef * q0_i));
+            atomicAdd(&s_grid[(local_idx * 5 + 1) * 2 + 0], static_cast<RecipReal>(coef * q1_r));
+            atomicAdd(&s_grid[(local_idx * 5 + 1) * 2 + 1], static_cast<RecipReal>(coef * q1_i));
+            atomicAdd(&s_grid[(local_idx * 5 + 2) * 2 + 0], static_cast<RecipReal>(coef * q2_r));
+            atomicAdd(&s_grid[(local_idx * 5 + 2) * 2 + 1], static_cast<RecipReal>(coef * q2_i));
+            atomicAdd(&s_grid[(local_idx * 5 + 3) * 2 + 0], static_cast<RecipReal>(coef * q3_r));
+            atomicAdd(&s_grid[(local_idx * 5 + 3) * 2 + 1], static_cast<RecipReal>(coef * q3_i));
+            atomicAdd(&s_grid[(local_idx * 5 + 4) * 2 + 0], static_cast<RecipReal>(coef * q4_r));
+            atomicAdd(&s_grid[(local_idx * 5 + 4) * 2 + 1], static_cast<RecipReal>(coef * q4_i));
         }
         __syncthreads();
 
@@ -2105,16 +2151,16 @@ __global__ void spread_quadrupoles_kernel(
                                   static_cast<size_t>(global_gy) * num_grid_z +
                                   static_cast<size_t>(global_gz)) * 5;
 
-            double val_0_r = s_grid[(offset * 5 + 0) * 2 + 0];
-            double val_0_i = s_grid[(offset * 5 + 0) * 2 + 1];
-            double val_1_r = s_grid[(offset * 5 + 1) * 2 + 0];
-            double val_1_i = s_grid[(offset * 5 + 1) * 2 + 1];
-            double val_2_r = s_grid[(offset * 5 + 2) * 2 + 0];
-            double val_2_i = s_grid[(offset * 5 + 2) * 2 + 1];
-            double val_3_r = s_grid[(offset * 5 + 3) * 2 + 0];
-            double val_3_i = s_grid[(offset * 5 + 3) * 2 + 1];
-            double val_4_r = s_grid[(offset * 5 + 4) * 2 + 0];
-            double val_4_i = s_grid[(offset * 5 + 4) * 2 + 1];
+            RecipReal val_0_r = s_grid[(offset * 5 + 0) * 2 + 0];
+            RecipReal val_0_i = s_grid[(offset * 5 + 0) * 2 + 1];
+            RecipReal val_1_r = s_grid[(offset * 5 + 1) * 2 + 0];
+            RecipReal val_1_i = s_grid[(offset * 5 + 1) * 2 + 1];
+            RecipReal val_2_r = s_grid[(offset * 5 + 2) * 2 + 0];
+            RecipReal val_2_i = s_grid[(offset * 5 + 2) * 2 + 1];
+            RecipReal val_3_r = s_grid[(offset * 5 + 3) * 2 + 0];
+            RecipReal val_3_i = s_grid[(offset * 5 + 3) * 2 + 1];
+            RecipReal val_4_r = s_grid[(offset * 5 + 4) * 2 + 0];
+            RecipReal val_4_i = s_grid[(offset * 5 + 4) * 2 + 1];
 
             if (val_0_r != 0.0) atomicAdd(&fG_grid[(global_idx + 0) * 2 + 0], val_0_r);
             if (val_0_i != 0.0) atomicAdd(&fG_grid[(global_idx + 0) * 2 + 1], val_0_i);
@@ -2138,111 +2184,165 @@ __global__ void spread_quadrupoles_kernel(
                                   static_cast<size_t>(global_gy) * num_grid_z +
                                   static_cast<size_t>(global_gz)) * 5;
 
-            atomicAdd(&fG_grid[(global_idx + 0) * 2 + 0], coef * q0_r);
-            atomicAdd(&fG_grid[(global_idx + 0) * 2 + 1], coef * q0_i);
-            atomicAdd(&fG_grid[(global_idx + 1) * 2 + 0], coef * q1_r);
-            atomicAdd(&fG_grid[(global_idx + 1) * 2 + 1], coef * q1_i);
-            atomicAdd(&fG_grid[(global_idx + 2) * 2 + 0], coef * q2_r);
-            atomicAdd(&fG_grid[(global_idx + 2) * 2 + 1], coef * q2_i);
-            atomicAdd(&fG_grid[(global_idx + 3) * 2 + 0], coef * q3_r);
-            atomicAdd(&fG_grid[(global_idx + 3) * 2 + 1], coef * q3_i);
-            atomicAdd(&fG_grid[(global_idx + 4) * 2 + 0], coef * q4_r);
-            atomicAdd(&fG_grid[(global_idx + 4) * 2 + 1], coef * q4_i);
+            atomicAdd(&fG_grid[(global_idx + 0) * 2 + 0], static_cast<RecipReal>(coef * q0_r));
+            atomicAdd(&fG_grid[(global_idx + 0) * 2 + 1], static_cast<RecipReal>(coef * q0_i));
+            atomicAdd(&fG_grid[(global_idx + 1) * 2 + 0], static_cast<RecipReal>(coef * q1_r));
+            atomicAdd(&fG_grid[(global_idx + 1) * 2 + 1], static_cast<RecipReal>(coef * q1_i));
+            atomicAdd(&fG_grid[(global_idx + 2) * 2 + 0], static_cast<RecipReal>(coef * q2_r));
+            atomicAdd(&fG_grid[(global_idx + 2) * 2 + 1], static_cast<RecipReal>(coef * q2_i));
+            atomicAdd(&fG_grid[(global_idx + 3) * 2 + 0], static_cast<RecipReal>(coef * q3_r));
+            atomicAdd(&fG_grid[(global_idx + 3) * 2 + 1], static_cast<RecipReal>(coef * q3_i));
+            atomicAdd(&fG_grid[(global_idx + 4) * 2 + 0], static_cast<RecipReal>(coef * q4_r));
+            atomicAdd(&fG_grid[(global_idx + 4) * 2 + 1], static_cast<RecipReal>(coef * q4_i));
         }
     }
 }
 
-void Monodisperse_Ewald_Electric_Field::spread(double* d_fE_grid) {
-    if (num_spread == 0 || d_spread_coef == nullptr || d_spread_idxs == nullptr || d_fE_grid == nullptr) {
+void Monodisperse_Ewald_Electric_Field::spread(void* d_fE_grid_in) {
+    if (num_spread == 0 || d_spread_coef == nullptr || d_spread_idxs == nullptr || d_fE_grid_in == nullptr) {
         throw std::runtime_error("spread: Buffers/Precalcs are not allocated.");
     }
 
-    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
-    CUDA_CHECK(cudaMemset(d_fE_grid, 0, grid_voxels * 3 * 2 * sizeof(double)));
+    cudaStream_t s_recip = use_async_streams ? stream_recip : 0;
+    size_t grid_voxels = static_cast<size_t>(num_grid[0]) * num_grid[1] * num_grid[2];
+    size_t element_size = use_recip_fp32 ? sizeof(float) : sizeof(double);
+    CUDA_CHECK(cudaMemsetAsync(d_fE_grid_in, 0, grid_voxels * 3 * 2 * element_size, s_recip));
 
     int threadsPerBlock = 256;
     int blocksPerGrid = (num_spread + threadsPerBlock - 1) / threadsPerBlock;
 
-    spread_kernel<<<blocksPerGrid, threadsPerBlock, 24576>>>(
-        d_dipoles,
-        d_spread_coef, d_spread_idxs,
-        d_fE_grid,
-        num_spread, num_offsets,
-        num_grid[0], num_grid[1], num_grid[2],
-        d_x_part, d_y_part,
-        k_x, k_y
-    );
+    if (use_recip_fp32) {
+        spread_kernel<float><<<blocksPerGrid, threadsPerBlock, 24576, s_recip>>>(
+            d_dipoles,
+            static_cast<const float*>(d_spread_coef), d_spread_idxs,
+            static_cast<float*>(d_fE_grid_in),
+            num_spread, num_offsets,
+            num_grid[0], num_grid[1], num_grid[2],
+            d_x_part, d_y_part,
+            k_x, k_y
+        );
+    } else {
+        spread_kernel<double><<<blocksPerGrid, threadsPerBlock, 24576, s_recip>>>(
+            d_dipoles,
+            static_cast<const double*>(d_spread_coef), d_spread_idxs,
+            static_cast<double*>(d_fE_grid_in),
+            num_spread, num_offsets,
+            num_grid[0], num_grid[1], num_grid[2],
+            d_x_part, d_y_part,
+            k_x, k_y
+        );
+    }
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Monodisperse_Ewald_Electric_Field::scale(double* d_fE_grid) {
-    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
-    if (grid_voxels == 0 || d_scale_coef == nullptr || d_khat == nullptr || d_fE_grid == nullptr) {
+void Monodisperse_Ewald_Electric_Field::scale(void* d_fE_grid_in) {
+    size_t grid_voxels = static_cast<size_t>(num_grid[0]) * num_grid[1] * num_grid[2];
+    if (grid_voxels == 0 || d_scale_coef == nullptr || d_khat == nullptr || d_fE_grid_in == nullptr) {
         throw std::runtime_error("scale: Buffers/Precalcs are not allocated.");
     }
 
+    cudaStream_t s_recip = use_async_streams ? stream_recip : 0;
     int threadsPerBlock = 256;
     int blocksPerGrid = (grid_voxels + threadsPerBlock - 1) / threadsPerBlock;
 
-    if (solve_quadrupoles && num_quads > 0 && d_fG_grid != nullptr) {
-        scale_kernel_joint<<<blocksPerGrid, threadsPerBlock>>>(
-            d_fE_grid,
-            d_fG_grid,
-            d_scale_coef,
-            d_scale_coef_Q_imag,
-            d_scale_coef_GP_imag,
-            d_scale_coef_GQ_real,
-            d_khat,
-            d_Qfactor,
-            d_Qfactor_dot,
-            grid_voxels
-        );
+    if (use_recip_fp32) {
+        if (solve_quadrupoles) {
+            scale_kernel_joint<float><<<blocksPerGrid, threadsPerBlock, 0, s_recip>>>(
+                static_cast<float*>(d_fE_grid_in),
+                static_cast<float*>(d_fG_grid),
+                static_cast<const float*>(d_scale_coef),
+                static_cast<const float*>(d_scale_coef_Q_imag),
+                static_cast<const float*>(d_scale_coef_GP_imag),
+                static_cast<const float*>(d_scale_coef_GQ_real),
+                d_khat,
+                static_cast<const float*>(d_Qfactor),
+                static_cast<const float*>(d_Qfactor_dot),
+                grid_voxels
+            );
+        } else {
+            scale_kernel<float><<<blocksPerGrid, threadsPerBlock, 0, s_recip>>>(
+                static_cast<float*>(d_fE_grid_in),
+                static_cast<const float*>(d_scale_coef),
+                d_khat,
+                grid_voxels
+            );
+        }
     } else {
-        scale_kernel<<<blocksPerGrid, threadsPerBlock>>>(
-            d_fE_grid,
-            d_scale_coef,
-            d_khat,
-            grid_voxels
-        );
+        if (solve_quadrupoles) {
+            scale_kernel_joint<double><<<blocksPerGrid, threadsPerBlock, 0, s_recip>>>(
+                static_cast<double*>(d_fE_grid_in),
+                static_cast<double*>(d_fG_grid),
+                static_cast<const double*>(d_scale_coef),
+                static_cast<const double*>(d_scale_coef_Q_imag),
+                static_cast<const double*>(d_scale_coef_GP_imag),
+                static_cast<const double*>(d_scale_coef_GQ_real),
+                d_khat,
+                static_cast<const double*>(d_Qfactor),
+                static_cast<const double*>(d_Qfactor_dot),
+                grid_voxels
+            );
+        } else {
+            scale_kernel<double><<<blocksPerGrid, threadsPerBlock, 0, s_recip>>>(
+                static_cast<double*>(d_fE_grid_in),
+                static_cast<const double*>(d_scale_coef),
+                d_khat,
+                grid_voxels
+            );
+        }
     }
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Monodisperse_Ewald_Electric_Field::contract(double* d_E_point, const double* d_Es_grid) {
+void Monodisperse_Ewald_Electric_Field::contract(double* d_E_point, const void* d_Es_grid_in) {
     if (num_contract == 0 || d_particle_index == nullptr || d_contract_coef == nullptr ||
-        d_contract_idxs == nullptr || d_E_point == nullptr || d_Es_grid == nullptr) {
+        d_contract_idxs == nullptr || d_E_point == nullptr || d_Es_grid_in == nullptr) {
         throw std::runtime_error("contract: Buffers/Precalcs are not allocated.");
     }
 
+    cudaStream_t s_recip = use_async_streams ? stream_recip : 0;
     int threadsPerBlock = 256;
     int blocksPerGrid = (num_field_points + threadsPerBlock - 1) / threadsPerBlock;
 
-    contract_kernel<<<blocksPerGrid, threadsPerBlock>>>(
-        d_Es_grid,
-        d_contract_idxs,
-        d_contract_coef,
-        d_E_point,
-        num_field_points,
-        num_offsets,
-        num_grid[1],
-        num_grid[2],
-        d_x_field, d_y_field,
-        k_x, k_y
-    );
+    if (use_recip_fp32) {
+        contract_kernel<float><<<blocksPerGrid, threadsPerBlock, 0, s_recip>>>(
+            static_cast<const float*>(d_Es_grid_in),
+            d_contract_idxs,
+            static_cast<const float*>(d_contract_coef),
+            d_E_point,
+            num_field_points,
+            num_offsets,
+            num_grid[1],
+            num_grid[2],
+            d_x_field, d_y_field,
+            k_x, k_y
+        );
+    } else {
+        contract_kernel<double><<<blocksPerGrid, threadsPerBlock, 0, s_recip>>>(
+            static_cast<const double*>(d_Es_grid_in),
+            d_contract_idxs,
+            static_cast<const double*>(d_contract_coef),
+            d_E_point,
+            num_field_points,
+            num_offsets,
+            num_grid[1],
+            num_grid[2],
+            d_x_field, d_y_field,
+            k_x, k_y
+        );
+    }
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 void Monodisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
     if (num_particles == 0 || d_E_point == nullptr) return;
 
+    cudaStream_t s_real = use_async_streams ? stream_real : 0;
+
     if (mode == FieldCalcMode::SOLVER_AX) {
         int threadsPerBlock = 256;
         int blocksPerGrid = (num_particles + threadsPerBlock - 1) / threadsPerBlock;
 
-        real_space_self_kernel_joint<<<blocksPerGrid, threadsPerBlock>>>(
+        real_space_self_kernel_joint<<<blocksPerGrid, threadsPerBlock, 0, s_real>>>(
             d_dipoles, d_self_coef_r, d_self_coef_i,
             d_quad_idxs, d_quad_map,
             self_perp_val,
@@ -2254,7 +2354,6 @@ void Monodisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
             mode
         );
         CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
     }
 
     size_t num_pairs = neighbor_list ? neighbor_list->get_num_pairs() : 0;
@@ -2266,7 +2365,7 @@ void Monodisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
         int threadsPerBlock = 256;
         int blocksPerGrid = (num_particles + threadsPerBlock - 1) / threadsPerBlock;
 
-        real_space_neighbor_kernel_joint<<<blocksPerGrid, threadsPerBlock>>>(
+        real_space_neighbor_kernel_joint<<<blocksPerGrid, threadsPerBlock, 0, s_real>>>(
             d_x_part, d_y_part, d_z_part,
             d_x_field, d_y_field, d_z_field,
             d_dipoles,
@@ -2286,11 +2385,8 @@ void Monodisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
             k_y
         );
         CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
     }
 }
-
-
 
 __global__ void negate_vector_kernel(double* vec, size_t size) {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -2300,97 +2396,168 @@ __global__ void negate_vector_kernel(double* vec, size_t size) {
 }
 
 void Monodisperse_Ewald_Electric_Field::electricField() {
+    if (d_E_point == nullptr) {
+        throw std::runtime_error("electricField: d_E_point has not been allocated (contractPrecalcs not run).");
+    }
+
+    cudaStream_t s_real = use_async_streams ? stream_real : 0;
+    cudaStream_t s_recip = use_async_streams ? stream_recip : 0;
+
+    size_t size_epoint_bytes = (num_field_points * 3 + num_quads * 5) * 2 * sizeof(double);
+    CUDA_CHECK(cudaMemsetAsync(d_E_point, 0, size_epoint_bytes, s_real));
+
+    // Bind cuFFT to reciprocal stream
+    if (fft_plan) cufftSetStream((cufftHandle)fft_plan, s_recip);
+    if (fft_plan_G) cufftSetStream((cufftHandle)fft_plan_G, s_recip);
+
+    // --- Reciprocal-space pipeline (on s_recip) ---
     spread(d_fE_grid);
     
-    
-    cufftResult plan_res = cufftExecZ2Z((cufftHandle)fft_plan,
-                                       (cufftDoubleComplex*)d_fE_grid,
-                                       (cufftDoubleComplex*)d_fE_grid,
-                                       CUFFT_FORWARD);
-    if (plan_res != CUFFT_SUCCESS) {
-        throw std::runtime_error("cuFFT forward execution failed with code: " + std::to_string(plan_res));
+    if (use_recip_fp32) {
+        cufftResult plan_res = cufftExecC2C((cufftHandle)fft_plan,
+                                           (cufftComplex*)d_fE_grid,
+                                           (cufftComplex*)d_fE_grid,
+                                           CUFFT_FORWARD);
+        if (plan_res != CUFFT_SUCCESS) {
+            throw std::runtime_error("cuFFT forward execution failed with code: " + std::to_string(plan_res));
+        }
+    } else {
+        cufftResult plan_res = cufftExecZ2Z((cufftHandle)fft_plan,
+                                           (cufftDoubleComplex*)d_fE_grid,
+                                           (cufftDoubleComplex*)d_fE_grid,
+                                           CUFFT_FORWARD);
+        if (plan_res != CUFFT_SUCCESS) {
+            throw std::runtime_error("cuFFT forward execution failed with code: " + std::to_string(plan_res));
+        }
     }
     
     if (solve_quadrupoles && num_quads > 0 && d_fG_grid != nullptr) {
-        size_t grid_voxels_Q = num_grid[0] * num_grid[1] * num_grid[2];
-        CUDA_CHECK(cudaMemset(d_fG_grid, 0, grid_voxels_Q * 5 * 2 * sizeof(double)));
+        size_t grid_voxels_Q = static_cast<size_t>(num_grid[0]) * num_grid[1] * num_grid[2];
+        size_t element_size = use_recip_fp32 ? sizeof(float) : sizeof(double);
+        CUDA_CHECK(cudaMemsetAsync(d_fG_grid, 0, grid_voxels_Q * 5 * 2 * element_size, s_recip));
 
         int threadsPerBlock = 256;
         size_t total_spread_Q = num_quads * num_offsets;
         int blocksPerGrid = (total_spread_Q + threadsPerBlock - 1) / threadsPerBlock;
 
-        spread_quadrupoles_kernel<<<blocksPerGrid, threadsPerBlock, 24576>>>(
-            d_dipoles,
-            d_quad_idxs,
-            d_spread_coef, d_spread_idxs,
-            d_fG_grid,
-            num_quads, num_particles, num_offsets,
-            num_grid[0], num_grid[1], num_grid[2]
-        );
-        CUDA_CHECK(cudaGetLastError());
-        
-        plan_res = cufftExecZ2Z((cufftHandle)fft_plan_G,
-                               (cufftDoubleComplex*)d_fG_grid,
-                               (cufftDoubleComplex*)d_fG_grid,
-                               CUFFT_FORWARD);
-        if (plan_res != CUFFT_SUCCESS) {
-            throw std::runtime_error("cuFFT forward execution G failed with code: " + std::to_string(plan_res));
+        if (use_recip_fp32) {
+            spread_quadrupoles_kernel<float><<<blocksPerGrid, threadsPerBlock, 24576, s_recip>>>(
+                d_dipoles,
+                d_quad_idxs,
+                static_cast<const float*>(d_spread_coef), d_spread_idxs,
+                static_cast<float*>(d_fG_grid),
+                num_quads, num_particles, num_offsets,
+                num_grid[0], num_grid[1], num_grid[2]
+            );
+            CUDA_CHECK(cudaGetLastError());
+            
+            cufftResult plan_res_G = cufftExecC2C((cufftHandle)fft_plan_G,
+                                                 (cufftComplex*)d_fG_grid,
+                                                 (cufftComplex*)d_fG_grid,
+                                                 CUFFT_FORWARD);
+            if (plan_res_G != CUFFT_SUCCESS) {
+                throw std::runtime_error("cuFFT forward execution G failed with code: " + std::to_string(plan_res_G));
+            }
+        } else {
+            spread_quadrupoles_kernel<double><<<blocksPerGrid, threadsPerBlock, 24576, s_recip>>>(
+                d_dipoles,
+                d_quad_idxs,
+                static_cast<const double*>(d_spread_coef), d_spread_idxs,
+                static_cast<double*>(d_fG_grid),
+                num_quads, num_particles, num_offsets,
+                num_grid[0], num_grid[1], num_grid[2]
+            );
+            CUDA_CHECK(cudaGetLastError());
+            
+            cufftResult plan_res_G = cufftExecZ2Z((cufftHandle)fft_plan_G,
+                                                 (cufftDoubleComplex*)d_fG_grid,
+                                                 (cufftDoubleComplex*)d_fG_grid,
+                                                 CUFFT_FORWARD);
+            if (plan_res_G != CUFFT_SUCCESS) {
+                throw std::runtime_error("cuFFT forward execution G failed with code: " + std::to_string(plan_res_G));
+            }
         }
     }
-    CUDA_CHECK(cudaDeviceSynchronize());
     
     scale(d_fE_grid);
     
-    plan_res = cufftExecZ2Z((cufftHandle)fft_plan,
-                           (cufftDoubleComplex*)d_fE_grid,
-                           (cufftDoubleComplex*)d_fE_grid,
-                           CUFFT_INVERSE);
-    if (plan_res != CUFFT_SUCCESS) {
-        throw std::runtime_error("cuFFT inverse execution failed with code: " + std::to_string(plan_res));
+    if (use_recip_fp32) {
+        cufftResult plan_res = cufftExecC2C((cufftHandle)fft_plan,
+                                           (cufftComplex*)d_fE_grid,
+                                           (cufftComplex*)d_fE_grid,
+                                           CUFFT_INVERSE);
+        if (plan_res != CUFFT_SUCCESS) {
+            throw std::runtime_error("cuFFT inverse execution failed with code: " + std::to_string(plan_res));
+        }
+    } else {
+        cufftResult plan_res = cufftExecZ2Z((cufftHandle)fft_plan,
+                                           (cufftDoubleComplex*)d_fE_grid,
+                                           (cufftDoubleComplex*)d_fE_grid,
+                                           CUFFT_INVERSE);
+        if (plan_res != CUFFT_SUCCESS) {
+            throw std::runtime_error("cuFFT inverse execution failed with code: " + std::to_string(plan_res));
+        }
     }
     
     if (solve_quadrupoles && num_quads > 0 && d_fG_grid != nullptr) {
-        plan_res = cufftExecZ2Z((cufftHandle)fft_plan_G,
-                               (cufftDoubleComplex*)d_fG_grid,
-                               (cufftDoubleComplex*)d_fG_grid,
-                               CUFFT_INVERSE);
-        if (plan_res != CUFFT_SUCCESS) {
-            throw std::runtime_error("cuFFT inverse execution G failed with code: " + std::to_string(plan_res));
+        if (use_recip_fp32) {
+            cufftResult plan_res_G = cufftExecC2C((cufftHandle)fft_plan_G,
+                                                 (cufftComplex*)d_fG_grid,
+                                                 (cufftComplex*)d_fG_grid,
+                                                 CUFFT_INVERSE);
+            if (plan_res_G != CUFFT_SUCCESS) {
+                throw std::runtime_error("cuFFT inverse execution G failed with code: " + std::to_string(plan_res_G));
+            }
+        } else {
+            cufftResult plan_res_G = cufftExecZ2Z((cufftHandle)fft_plan_G,
+                                                 (cufftDoubleComplex*)d_fG_grid,
+                                                 (cufftDoubleComplex*)d_fG_grid,
+                                                 CUFFT_INVERSE);
+            if (plan_res_G != CUFFT_SUCCESS) {
+                throw std::runtime_error("cuFFT inverse execution G failed with code: " + std::to_string(plan_res_G));
+            }
         }
     }
-    CUDA_CHECK(cudaDeviceSynchronize());
-    
-    if (d_E_point == nullptr) {
-        throw std::runtime_error("electricField: d_E_point has not been allocated (contractPrecalcs not run).");
-    }
-    size_t size_epoint_bytes = (num_field_points * 3 + num_quads * 5) * 2 * sizeof(double);
-    CUDA_CHECK(cudaMemset(d_E_point, 0, size_epoint_bytes));
     
     contract(d_E_point, d_fE_grid);
     
     if (solve_quadrupoles && num_quads > 0 && d_G_point != nullptr) {
-        CUDA_CHECK(cudaMemset(d_G_point, 0, num_field_points * 5 * 2 * sizeof(double)));
+        CUDA_CHECK(cudaMemsetAsync(d_G_point, 0, num_field_points * 5 * 2 * sizeof(double), s_recip));
         
         int contract_threads = 256;
         int contract_blocks = (num_field_points + contract_threads - 1) / contract_threads;
-        contract_kernel_G<<<contract_blocks, contract_threads>>>(
-            d_fG_grid,
-            d_contract_idxs,
-            d_contract_coef,
-            d_G_point,
-            num_field_points,
-            num_offsets,
-            num_grid[1],
-            num_grid[2],
-            d_x_field, d_y_field,
-            k_x, k_y
-        );
+        if (use_recip_fp32) {
+            contract_kernel_G<float><<<contract_blocks, contract_threads, 0, s_recip>>>(
+                static_cast<const float*>(d_fG_grid),
+                d_contract_idxs,
+                static_cast<const float*>(d_contract_coef),
+                d_G_point,
+                num_field_points,
+                num_offsets,
+                num_grid[1],
+                num_grid[2],
+                d_x_field, d_y_field,
+                k_x, k_y
+            );
+        } else {
+            contract_kernel_G<double><<<contract_blocks, contract_threads, 0, s_recip>>>(
+                static_cast<const double*>(d_fG_grid),
+                d_contract_idxs,
+                static_cast<const double*>(d_contract_coef),
+                d_G_point,
+                num_field_points,
+                num_offsets,
+                num_grid[1],
+                num_grid[2],
+                d_x_field, d_y_field,
+                k_x, k_y
+            );
+        }
         CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
 
         int copy_threads = 256;
         int copy_blocks = (num_quads + copy_threads - 1) / copy_threads;
-        copy_G_to_E_kernel<<<copy_blocks, copy_threads>>>(
+        copy_G_to_E_kernel<<<copy_blocks, copy_threads, 0, s_recip>>>(
             d_G_point,
             d_quad_idxs,
             d_E_point,
@@ -2398,7 +2565,18 @@ void Monodisperse_Ewald_Electric_Field::electricField() {
             num_field_points
         );
         CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
+    }
+
+    if (use_async_streams) {
+        CUDA_CHECK(cudaEventRecord(event_recip_done, s_recip));
+    }
+
+    // --- Real-space pipeline (on s_real) ---
+    realSpace(d_E_point);
+
+    // --- Synchronize real stream with reciprocal event ---
+    if (use_async_streams) {
+        CUDA_CHECK(cudaStreamWaitEvent(s_real, event_recip_done, 0));
     }
 
     if (mode == FieldCalcMode::INTERACTION_FIELD) {
@@ -2407,30 +2585,41 @@ void Monodisperse_Ewald_Electric_Field::electricField() {
         if (num_doubles_E > 0) {
             int threads = 256;
             int blocks = (num_doubles_E + threads - 1) / threads;
-            negate_vector_kernel<<<blocks, threads>>>(d_E_point, num_doubles_E);
+            negate_vector_kernel<<<blocks, threads, 0, s_real>>>(d_E_point, num_doubles_E);
             CUDA_CHECK(cudaGetLastError());
-            CUDA_CHECK(cudaDeviceSynchronize());
         }
     }
-    realSpace(d_E_point);
+
+    if (use_async_streams) {
+        CUDA_CHECK(cudaStreamSynchronize(s_real));
+    } else {
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
 }
 
 void Monodisperse_Ewald_Electric_Field::computeScalePrecalcs() {
-    size_t grid_voxels = num_grid[0] * num_grid[1] * num_grid[2];
+    size_t grid_voxels = static_cast<size_t>(num_grid[0]) * num_grid[1] * num_grid[2];
+    size_t element_size = use_recip_fp32 ? sizeof(float) : sizeof(double);
 
-    if (!d_scale_coef) {
-        CUDA_CHECK(cudaMalloc(&d_scale_coef, grid_voxels * sizeof(double)));
+    if (d_scale_coef) CUDA_CHECK(cudaFree(d_scale_coef));
+    CUDA_CHECK(cudaMalloc(&d_scale_coef, grid_voxels * element_size));
+
+    if (!d_khat) {
         CUDA_CHECK(cudaMalloc(&d_khat, grid_voxels * 3 * sizeof(double)));
     }
 
     if (solve_quadrupoles) {
-        if (!d_scale_coef_Q_imag) {
-            CUDA_CHECK(cudaMalloc(&d_scale_coef_Q_imag, grid_voxels * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_scale_coef_GP_imag, grid_voxels * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_scale_coef_GQ_real, grid_voxels * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_Qfactor, grid_voxels * 5 * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_Qfactor_dot, grid_voxels * 5 * sizeof(double)));
-        }
+        if (d_scale_coef_Q_imag) CUDA_CHECK(cudaFree(d_scale_coef_Q_imag));
+        if (d_scale_coef_GP_imag) CUDA_CHECK(cudaFree(d_scale_coef_GP_imag));
+        if (d_scale_coef_GQ_real) CUDA_CHECK(cudaFree(d_scale_coef_GQ_real));
+        if (d_Qfactor) CUDA_CHECK(cudaFree(d_Qfactor));
+        if (d_Qfactor_dot) CUDA_CHECK(cudaFree(d_Qfactor_dot));
+
+        CUDA_CHECK(cudaMalloc(&d_scale_coef_Q_imag, grid_voxels * element_size));
+        CUDA_CHECK(cudaMalloc(&d_scale_coef_GP_imag, grid_voxels * element_size));
+        CUDA_CHECK(cudaMalloc(&d_scale_coef_GQ_real, grid_voxels * element_size));
+        CUDA_CHECK(cudaMalloc(&d_Qfactor, grid_voxels * 5 * element_size));
+        CUDA_CHECK(cudaMalloc(&d_Qfactor_dot, grid_voxels * 5 * element_size));
     } else {
         d_scale_coef_Q_imag = nullptr;
         d_scale_coef_GP_imag = nullptr;
@@ -2442,22 +2631,41 @@ void Monodisperse_Ewald_Electric_Field::computeScalePrecalcs() {
     int threads = 256;
     int blocks = (grid_voxels + threads - 1) / threads;
 
-    compute_scale_coefficients_kernel<<<blocks, threads>>>(
-        d_scale_coef,
-        d_khat,
-        d_scale_coef_Q_imag,
-        d_scale_coef_GP_imag,
-        d_scale_coef_GQ_real,
-        d_Qfactor,
-        d_Qfactor_dot,
-        num_grid[0], num_grid[1], num_grid[2],
-        box_x, box_y, box_z,
-        k_x, k_y,
-        xi,
-        spectral_split[0], spectral_split[1], spectral_split[2],
-        solve_quadrupoles,
-        grid_voxels
-    );
+    if (use_recip_fp32) {
+        compute_scale_coefficients_kernel<float><<<blocks, threads>>>(
+            static_cast<float*>(d_scale_coef),
+            d_khat,
+            static_cast<float*>(d_scale_coef_Q_imag),
+            static_cast<float*>(d_scale_coef_GP_imag),
+            static_cast<float*>(d_scale_coef_GQ_real),
+            static_cast<float*>(d_Qfactor),
+            static_cast<float*>(d_Qfactor_dot),
+            num_grid[0], num_grid[1], num_grid[2],
+            box_x, box_y, box_z,
+            k_x, k_y,
+            xi,
+            spectral_split[0], spectral_split[1], spectral_split[2],
+            solve_quadrupoles,
+            grid_voxels
+        );
+    } else {
+        compute_scale_coefficients_kernel<double><<<blocks, threads>>>(
+            static_cast<double*>(d_scale_coef),
+            d_khat,
+            static_cast<double*>(d_scale_coef_Q_imag),
+            static_cast<double*>(d_scale_coef_GP_imag),
+            static_cast<double*>(d_scale_coef_GQ_real),
+            static_cast<double*>(d_Qfactor),
+            static_cast<double*>(d_Qfactor_dot),
+            num_grid[0], num_grid[1], num_grid[2],
+            box_x, box_y, box_z,
+            k_x, k_y,
+            xi,
+            spectral_split[0], spectral_split[1], spectral_split[2],
+            solve_quadrupoles,
+            grid_voxels
+        );
+    }
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 }

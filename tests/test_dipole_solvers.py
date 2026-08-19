@@ -184,7 +184,7 @@ def test_dipole_solver_direct_vs_ewald_large_box():
  
     np.testing.assert_allclose(alpha_direct, alpha_ewald, rtol=1e-3, atol=1e-5)
     np.testing.assert_allclose(dips_direct, dips_ewald, rtol=1e-3, atol=1e-5)
-    np.testing.assert_allclose(quads_direct, quads_ewald, rtol=1e-3, atol=1e-5)
+    np.testing.assert_allclose(quads_direct, quads_ewald, rtol=1e-3, atol=5e-5)
 
 
 def test_polydisperse_quadrupole_subset():

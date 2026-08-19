@@ -91,6 +91,10 @@ std::vector<Complex> GMRES_Solver::solve(
         compute_Ax(d_x, d_r, EF, vec_size);
         // d_r = d_b - d_r
         gpu_vector_sub(d_r, d_b, d_r, vec_size);
+        if (use_jacobi_precond) {
+            gpu_vector_jacobi_precond(d_w, d_r, EF, vec_size);
+            CUDA_CHECK(cudaMemcpy(d_r, d_w, vec_size * sizeof(Complex), cudaMemcpyDeviceToDevice));
+        }
 
         double r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
         if (r_norm < tol * b_norm) {
@@ -113,6 +117,10 @@ std::vector<Complex> GMRES_Solver::solve(
 
             // w = A(V_k)
             compute_Ax(d_Vk, d_w, EF, vec_size);
+            if (use_jacobi_precond) {
+                gpu_vector_jacobi_precond(d_r, d_w, EF, vec_size);
+                CUDA_CHECK(cudaMemcpy(d_w, d_r, vec_size * sizeof(Complex), cudaMemcpyDeviceToDevice));
+            }
 
             // Arnoldi Gram-Schmidt orthogonalization
             for (size_t i = 0; i <= k; ++i) {

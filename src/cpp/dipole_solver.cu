@@ -45,8 +45,9 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
                              const std::string& field_type,
                              const std::vector<std::vector<Complex>>& E0,
                              bool solve_quadrupoles,
-                             const std::vector<int>& quad_idxs)
-    : box(box), eps_p(eps_p), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs) {
+                             const std::vector<int>& quad_idxs,
+                             PrecisionMode precision)
+    : box(box), eps_p(eps_p), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), precision(precision) {
     if (this->E0.empty()) {
         this->E0 = {
             {1.0, 0.0, 0.0},
@@ -70,8 +71,9 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
                              const std::string& field_type,
                              const std::vector<std::vector<Complex>>& E0,
                              bool solve_quadrupoles,
-                             const std::vector<int>& quad_idxs)
-    : box(box), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs) {
+                             const std::vector<int>& quad_idxs,
+                             PrecisionMode precision)
+    : box(box), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), precision(precision) {
     if (this->E0.empty()) {
         this->E0 = {
             {1.0, 0.0, 0.0},
@@ -101,8 +103,9 @@ Dipole_Solver::Dipole_Solver(const std::vector<double>& box,
                              const std::string& field_type,
                              const std::vector<std::vector<Complex>>& E0,
                              bool solve_quadrupoles,
-                             const std::vector<int>& quad_idxs)
-    : box(box), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs) {
+                             const std::vector<int>& quad_idxs,
+                             PrecisionMode precision)
+    : box(box), radius(radius), eps_m(eps_m), xi(xi), tol(tol), quiet(quiet), guess_type(guess_type), solver_type(solver_type), field_type(field_type), E0(E0), solve_quadrupoles(solve_quadrupoles), quad_idxs(quad_idxs), precision(precision) {
     if (this->E0.empty()) {
         this->E0 = {
             {1.0, 0.0, 0.0},
@@ -512,11 +515,12 @@ void Dipole_Solver::compute(const std::vector<double>& x_part,
                 solver = std::make_unique<GMRES_Solver>();
             }
         }
+        solver->setUseJacobiPrecond(use_jacobi_precond);
         solver->initialize(num_particles * 3 + num_quads * 5);
 
         // Instantiate CUDA-accelerated Electric_Field solver
         if (field_type == "direct") {
-            EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::SOLVER_AX, solve_quadrupoles, quad_idxs);
+            EF = std::make_unique<Direct_Electric_Field>(radius, FieldCalcMode::SOLVER_AX, solve_quadrupoles, quad_idxs, precision);
         } else {
             bool use_polydisperse = false;
             if (field_type == "polydisperse") {

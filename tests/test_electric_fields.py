@@ -284,3 +284,78 @@ def test_polydisperse_bloch_wavevector():
     np.testing.assert_allclose(G_mono, G_poly, rtol=1e-3, atol=1e-3)
 
 
+def test_direct_electric_field_precision_modes():
+    from cuMPM._cuMPM import PrecisionMode
+
+    radius = np.array([1.0, 1.2, 1.5])
+
+    # 1. Explicit FP64 Direct Field
+    ef_64 = DirectElectricField(radius, mode=False, precision=PrecisionMode.FP64)
+    assert not ef_64.is_using_fp32
+    assert ef_64.precision_mode == PrecisionMode.FP64
+
+    # 2. Explicit FP32 Direct Field
+    ef_32 = DirectElectricField(radius, mode=False, precision=PrecisionMode.FP32)
+    assert ef_32.is_using_fp32
+    assert ef_32.precision_mode == PrecisionMode.FP32
+
+    x = np.array([0.0, 2.0, 4.0])
+    y = np.array([0.0, 0.0, 0.0])
+    z = np.array([0.0, 0.0, 0.0])
+
+    ef_64.update_particle_coordinates(x, y, z)
+    ef_64.update_field_coordinates([1.0, 3.0], [0.0, 0.0], [0.0, 0.0])
+    ef_64.update_dipoles_complex(np.ones(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3))
+    ef_64.set_self_coef(np.ones(3), np.zeros(3))
+    ef_64.calculate()
+    epoint_64 = ef_64.get_epoint_host()
+
+    ef_32.update_particle_coordinates(x, y, z)
+    ef_32.update_field_coordinates([1.0, 3.0], [0.0, 0.0], [0.0, 0.0])
+    ef_32.update_dipoles_complex(np.ones(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3))
+    ef_32.set_self_coef(np.ones(3), np.zeros(3))
+    ef_32.calculate()
+    epoint_32 = ef_32.get_epoint_host()
+
+    # FP32 and FP64 results should match to single-precision float tolerance (~1e-5)
+    np.testing.assert_allclose(epoint_32, epoint_64, rtol=1e-5, atol=1e-5)
+
+
+def test_ewald_electric_field_precision_modes():
+    from cuMPM._cuMPM import PrecisionMode
+
+    box = (50.0, 50.0, 50.0)
+    errortol = 1e-4
+    xi = 0.5
+    radius = 1.0
+
+    # 1. Monodisperse Ewald in DOUBLE mode vs MIXED mode
+    ef_mono_double = MonodisperseEwaldElectricField(*box, errortol, xi, calc_inter_dipole=True, radius=radius, precision="double")
+    assert not ef_mono_double.is_using_recip_fp32
+    assert ef_mono_double.recip_precision_mode == PrecisionMode.DOUBLE
+
+    ef_mono_mixed = MonodisperseEwaldElectricField(*box, errortol, xi, calc_inter_dipole=True, radius=radius, precision="mixed")
+    assert ef_mono_mixed.is_using_recip_fp32
+    assert ef_mono_mixed.recip_precision_mode == PrecisionMode.MIXED
+
+    x = np.array([0.0, 2.0, 4.0])
+    y = np.array([0.0, 0.0, 0.0])
+    z = np.array([0.0, 0.0, 0.0])
+    dip_x = np.ones(3)
+
+    ef_mono_double.update_particle_coordinates(x, y, z)
+    ef_mono_double.update_dipoles(dip_x, np.zeros(3), np.zeros(3))
+    ef_mono_double.calculate()
+    epoint_double = ef_mono_double.get_epoint_host()
+
+    ef_mono_mixed.update_particle_coordinates(x, y, z)
+    ef_mono_mixed.update_dipoles(dip_x, np.zeros(3), np.zeros(3))
+    ef_mono_mixed.calculate()
+    epoint_mixed = ef_mono_mixed.get_epoint_host()
+
+    # Reciprocal FP32 and FP64 results should match within single precision tolerance (~1e-4)
+    np.testing.assert_allclose(epoint_mixed, epoint_double, rtol=1e-4, atol=1e-4)
+
+
+
+

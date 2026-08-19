@@ -59,7 +59,7 @@ class dipole_solver:
     a GPU-resident restarted complex GMRES or BiCGSTAB solver and uses 3D Ewald summation 
     to evaluate the dipole-dipole interactions efficiently.
     """
-    def __init__(self, box, eps_p, radius=1.0, eps_m=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", E0=None, quadrupoles=False):
+    def __init__(self, box, eps_p, radius=1.0, eps_m=1.0, xi=0.5, tol=1e-3, quiet=False, guess_type="derivative", solver_type="gmres", field_type="auto", E0=None, quadrupoles=False, precision=None):
         """
         Initialize the dipole solver with system and solver parameters.
 
@@ -87,9 +87,29 @@ class dipole_solver:
             Field grid type: "auto", "monodisperse", "polydisperse", or "direct" (open BCs). Defaults to "auto".
         E0 : array_like, optional
             The electric polarization of the incident field (a 3-element vector or a list/array of 3-element vectors). Defaults to None.
+        precision : str or PrecisionMode, optional
+            Precision mode for direct field solver: "auto", "fp32", "fp64". Defaults to None ("auto").
         """
         if field_type not in ("auto", "monodisperse", "polydisperse", "direct"):
             raise ValueError(f"field_type must be 'auto', 'monodisperse', 'polydisperse', or 'direct', got {field_type}")
+
+        # Parse precision
+        if precision is None:
+            prec_enum = _cuMPM.PrecisionMode.AUTO
+        elif isinstance(precision, _cuMPM.PrecisionMode):
+            prec_enum = precision
+        elif isinstance(precision, str):
+            p_str = precision.lower()
+            if p_str in ("mixed", "fp32", "float32", "single"):
+                prec_enum = _cuMPM.PrecisionMode.MIXED
+            elif p_str in ("double", "fp64", "double64"):
+                prec_enum = _cuMPM.PrecisionMode.DOUBLE
+            elif p_str in ("auto",):
+                prec_enum = _cuMPM.PrecisionMode.AUTO
+            else:
+                raise ValueError(f"Unknown precision mode: {precision}")
+        else:
+            raise ValueError(f"Invalid precision type: {type(precision)}")
 
         # Convert box to a list of 3 floats
         box_list = [float(x) for x in box]
@@ -108,12 +128,10 @@ class dipole_solver:
             E0_arr = np.asarray(E0)
             if E0_arr.ndim == 1:
                 if E0_arr.size % 3 != 0:
-                    raise ValueError("Incident field vector size must be a multiple of 3")
-                E0_list = [[complex(x) for x in E0_arr]]
+                    raise ValueError("E0 size must be divisible by 3")
+                E0_list = [[complex(x) for x in E0_arr[i:i+3]] for i in range(0, E0_arr.size, 3)]
             elif E0_arr.ndim == 2:
-                if E0_arr.shape[1] == 3:
-                    E0_list = [[complex(x) for x in row] for row in E0_arr]
-                elif E0_arr.shape[1] % 3 == 0:
+                if E0_arr.shape[1] == 3 or E0_arr.shape[1] % 3 == 0:
                     E0_list = [[complex(x) for x in row] for row in E0_arr]
                 else:
                     raise ValueError("Each vector in E0 must be 3-dimensional or have a size that is a multiple of 3")
@@ -141,25 +159,25 @@ class dipole_solver:
             # Scalar
             eps_p_scalar = complex(eps_p_arr.item())
             self._solver = _cuMPM.Dipole_Solver(
-                box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list
+                box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list, prec_enum
             )
         elif eps_p_arr.ndim == 1:
             # 1D array
             if eps_p_arr.size == 1:
                 eps_p_scalar = complex(eps_p_arr.item())
                 self._solver = _cuMPM.Dipole_Solver(
-                    box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list
+                    box_list, eps_p_scalar, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list, prec_enum
                 )
             else:
                 eps_p_1d = [complex(x) for x in eps_p_arr]
                 self._solver = _cuMPM.Dipole_Solver(
-                    box_list, eps_p_1d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list
+                    box_list, eps_p_1d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list, prec_enum
                 )
         elif eps_p_arr.ndim == 2:
             # 2D array
             eps_p_2d = [[complex(x) for x in row] for row in eps_p_arr]
             self._solver = _cuMPM.Dipole_Solver(
-                box_list, eps_p_2d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list
+                box_list, eps_p_2d, radius_list, float(eps_m), float(xi), float(tol), bool(quiet), guess_type, solver_type, field_type, E0_list, solve_quadrupoles, quad_idxs_list, prec_enum
             )
         else:
             raise ValueError("eps_p must be a scalar, 1D array, or 2D array")
@@ -241,3 +259,13 @@ class dipole_solver:
         Deprecated. Use get_dipoles and get_eff_polarizability instead.
         """
         return self.get_eff_polarizability(), self.get_dipoles()
+
+    @property
+    def use_jacobi_precond(self) -> bool:
+        """Get whether Jacobi diagonal preconditioning is enabled."""
+        return self._solver.isUsingJacobiPrecond()
+
+    @use_jacobi_precond.setter
+    def use_jacobi_precond(self, enable: bool):
+        """Enable or disable Jacobi diagonal preconditioning."""
+        self._solver.setUseJacobiPrecond(enable)

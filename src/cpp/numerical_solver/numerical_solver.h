@@ -16,10 +16,18 @@ protected:
     Complex gpu_dot_product(const double* d_a, const double* d_b, size_t size, double* d_reduce_buf);
     Complex gpu_dot_product_unconjugated(const double* d_a, const double* d_b, size_t size, double* d_reduce_buf);
     double gpu_norm(const double* d_a, size_t size, double* d_reduce_buf);
+    void gpu_vector_jacobi_precond(double* d_dst, const double* d_src, const Electric_Field* EF, size_t vec_size);
     void compute_Ax(double* d_x, double* d_Ax, Electric_Field* EF, size_t vec_size);
+    void compute_Ax_preconditioned(double* d_x, double* d_Ax, double* d_tmp, Electric_Field* EF, size_t vec_size);
+
+protected:
+    bool use_jacobi_precond = true;
 
 public:
     virtual ~Numerical_Solver() = default;
+
+    bool isUsingJacobiPrecond() const { return use_jacobi_precond; }
+    void setUseJacobiPrecond(bool enable) { use_jacobi_precond = enable; }
 
     virtual void initialize(size_t vec_size) {}
 

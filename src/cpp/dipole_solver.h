@@ -6,6 +6,7 @@
 #include <string>
 #include <memory>
 #include "electric_field/electric_field.h"
+#include "electric_field/direct_electric_field.h"
 #include "numerical_solver/numerical_solver.h"
 
 using Complex = std::complex<double>;
@@ -67,6 +68,8 @@ private:
 
     // System solve (delegates to Numerical_Solver)
     std::vector<Complex> compute_spectrum(const std::vector<Complex>& initial_guess, std::vector<Complex>& frame_quad);
+    PrecisionMode precision = PrecisionMode::AUTO;
+
     void compute_tensor(const std::vector<Complex>& dip_guess, 
                          std::vector<Complex>& frame_cap, 
                          std::vector<Complex>& frame_dip,
@@ -93,7 +96,8 @@ public:
                   const std::string& field_type = "auto",
                   const std::vector<std::vector<Complex>>& E0 = {},
                   bool solve_quadrupoles = false,
-                  const std::vector<int>& quad_idxs = {});
+                  const std::vector<int>& quad_idxs = {},
+                  PrecisionMode precision = PrecisionMode::AUTO);
 
     // 2. 1D eps_p (wavelength-dependent, same for all particles)
     Dipole_Solver(const std::vector<double>& box,
@@ -108,7 +112,8 @@ public:
                   const std::string& field_type = "auto",
                   const std::vector<std::vector<Complex>>& E0 = {},
                   bool solve_quadrupoles = false,
-                  const std::vector<int>& quad_idxs = {});
+                  const std::vector<int>& quad_idxs = {},
+                  PrecisionMode precision = PrecisionMode::AUTO);
 
     // 3. Scalar eps_p (single wavelength, same for all particles)
     Dipole_Solver(const std::vector<double>& box,
@@ -123,7 +128,8 @@ public:
                   const std::string& field_type = "auto",
                   const std::vector<std::vector<Complex>>& E0 = {},
                   bool solve_quadrupoles = false,
-                  const std::vector<int>& quad_idxs = {});
+                  const std::vector<int>& quad_idxs = {},
+                  PrecisionMode precision = PrecisionMode::AUTO);
 
     ~Dipole_Solver();
 
@@ -150,6 +156,11 @@ public:
     size_t get_num_quads() const { return num_quads; }
     size_t get_num_wavevectors() const { return num_wavevectors; }
     size_t get_num_incident_polarizations() const { return E0.size(); }
+
+    bool getUseJacobiPrecond() const { return use_jacobi_precond; }
+    void setUseJacobiPrecond(bool enable) { use_jacobi_precond = enable; if (solver) solver->setUseJacobiPrecond(enable); }
+private:
+    bool use_jacobi_precond = true;
 };
 
 #endif // DIPOLE_SOLVER_H

@@ -92,8 +92,11 @@ void Base_Electric_Field::updateParticleCoordinates(
             CUDA_CHECK(cudaMalloc(&d_y_part, N * sizeof(double)));
             CUDA_CHECK(cudaMalloc(&d_z_part, N * sizeof(double)));
             CUDA_CHECK(cudaMalloc(&d_dipoles, (N * 3 + num_quads * 5) * 2 * sizeof(double)));
+            CUDA_CHECK(cudaMemset(d_dipoles, 0, (N * 3 + num_quads * 5) * 2 * sizeof(double)));
             CUDA_CHECK(cudaMalloc(&d_self_coef_r, N * sizeof(double)));
             CUDA_CHECK(cudaMalloc(&d_self_coef_i, N * sizeof(double)));
+            CUDA_CHECK(cudaMemset(d_self_coef_r, 0, N * sizeof(double)));
+            CUDA_CHECK(cudaMemset(d_self_coef_i, 0, N * sizeof(double)));
 
             size_t num_targets = num_field_points > 0 ? num_field_points : N;
             CUDA_CHECK(cudaMalloc(&d_E_point, (num_targets * 3 + num_quads * 5) * 2 * sizeof(double)));

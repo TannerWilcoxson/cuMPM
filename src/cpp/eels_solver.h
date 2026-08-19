@@ -6,6 +6,7 @@
 #include <string>
 #include <memory>
 #include "electric_field/electric_field.h"
+#include "electric_field/direct_electric_field.h"
 #include "numerical_solver/numerical_solver.h"
 
 using Complex = std::complex<double>;
@@ -55,6 +56,8 @@ private:
     // shape: num_frames * num_wavevectors * num_quads * 5
     std::vector<Complex> quads;
 
+    PrecisionMode precision = PrecisionMode::AUTO;
+
     // Helper functions
     void set_dims(size_t num_p);
     void nondimensionalize();
@@ -96,7 +99,8 @@ public:
                 const std::vector<int>& quad_idxs = {},
                 bool asm_flag = false,
                 int asm_Nx = 1,
-                int asm_Ny = 1);
+                int asm_Ny = 1,
+                PrecisionMode precision = PrecisionMode::AUTO);
 
     // 2. 1D eps_p
     EELS_Solver(const std::vector<double>& box,
@@ -116,7 +120,8 @@ public:
                 const std::vector<int>& quad_idxs = {},
                 bool asm_flag = false,
                 int asm_Nx = 1,
-                int asm_Ny = 1);
+                int asm_Ny = 1,
+                PrecisionMode precision = PrecisionMode::AUTO);
 
     // 3. Scalar eps_p
     EELS_Solver(const std::vector<double>& box,
@@ -136,7 +141,8 @@ public:
                 const std::vector<int>& quad_idxs = {},
                 bool asm_flag = false,
                 int asm_Nx = 1,
-                int asm_Ny = 1);
+                int asm_Ny = 1,
+                PrecisionMode precision = PrecisionMode::AUTO);
 
     ~EELS_Solver();
 
@@ -168,6 +174,11 @@ public:
     size_t get_num_particles() const { return num_particles; }
     size_t get_num_quads() const { return num_quads; }
     size_t get_num_wavevectors() const { return num_wavevectors; }
+
+    bool getUseJacobiPrecond() const { return use_jacobi_precond; }
+    void setUseJacobiPrecond(bool enable) { use_jacobi_precond = enable; if (solver) solver->setUseJacobiPrecond(enable); }
+private:
+    bool use_jacobi_precond = true;
 };
 
 #endif // EELS_SOLVER_H

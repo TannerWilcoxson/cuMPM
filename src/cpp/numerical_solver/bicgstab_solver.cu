@@ -84,6 +84,10 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
     // 3. Compute initial residual r = b - A(x0)
     compute_Ax(d_x, d_tmp, EF, vec_size);
     gpu_vector_sub(d_r, d_b, d_tmp, vec_size);
+    if (use_jacobi_precond) {
+        gpu_vector_jacobi_precond(d_tmp, d_r, EF, vec_size);
+        CUDA_CHECK(cudaMemcpy(d_r, d_tmp, size_bytes, cudaMemcpyDeviceToDevice));
+    }
 
     double r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
     if (r_norm < tol * b_norm) {
@@ -124,6 +128,10 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
 
         // v = A(p)
         compute_Ax(d_p, d_v, EF, vec_size);
+        if (use_jacobi_precond) {
+            gpu_vector_jacobi_precond(d_tmp, d_v, EF, vec_size);
+            CUDA_CHECK(cudaMemcpy(d_v, d_tmp, size_bytes, cudaMemcpyDeviceToDevice));
+        }
 
         Complex r0tilde_dot_v = gpu_dot_product_unconjugated(d_r0tilde, d_v, vec_size, d_reduce_buf);
         if (std::abs(r0tilde_dot_v) < 1e-16) {
@@ -145,6 +153,10 @@ std::vector<Complex> BiCGSTAB_Solver::solve(
 
         // t = A(s)
         compute_Ax(d_s, d_t, EF, vec_size);
+        if (use_jacobi_precond) {
+            gpu_vector_jacobi_precond(d_tmp, d_t, EF, vec_size);
+            CUDA_CHECK(cudaMemcpy(d_t, d_tmp, size_bytes, cudaMemcpyDeviceToDevice));
+        }
 
         // omega = dot(t, s) / dot(t, t)
         Complex t_dot_s = gpu_dot_product(d_t, d_s, vec_size, d_reduce_buf);

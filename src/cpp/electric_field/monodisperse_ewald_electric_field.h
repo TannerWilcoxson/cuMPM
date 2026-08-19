@@ -26,7 +26,8 @@ public:
                                       FieldCalcMode mode,
                                       double radius = 1.0,
                                       bool solve_quadrupoles = false,
-                                      const std::vector<int>& quad_idxs = {});
+                                      const std::vector<int>& quad_idxs = {},
+                                      PrecisionMode recip_precision = PrecisionMode::AUTO);
 
     ~Monodisperse_Ewald_Electric_Field();
 
@@ -69,9 +70,9 @@ public:
                                   std::vector<double>& host_perp,
                                   std::vector<double>& host_para) const;
 
-    void spread(double* d_fE_grid) override;
-    void scale(double* d_fE_grid) override;
-    void contract(double* d_E_point, const double* d_Es_grid) override;
+    void spread(void* d_fE_grid) override;
+    void scale(void* d_fE_grid) override;
+    void contract(double* d_E_point, const void* d_Es_grid) override;
     void realSpace(double* d_E_point) override;
 
     void calculate() override;
