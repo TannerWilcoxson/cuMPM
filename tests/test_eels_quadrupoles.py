@@ -22,7 +22,7 @@ def test_eels_quadrupoles_basic_and_equivalence():
     # 1. Direct Solver
     solver_direct = cuMPM.EELS(
         box, eps_p, omega, v, eps_m=eps_m, radius=radius, tol=tol,
-        field_type='direct', quiet=True, solve_quadrupoles=True
+        field_type='direct', quiet=True, solve_quadrupoles=True, precision="double"
     )
     solver_direct.compute(epos, pos)
     eels_direct = solver_direct.get_eels()
@@ -36,7 +36,7 @@ def test_eels_quadrupoles_basic_and_equivalence():
     # 2. Ewald Solver
     solver_ewald = cuMPM.EELS(
         box, eps_p, omega, v, eps_m=eps_m, radius=radius, tol=tol,
-        field_type='monodisperse', quiet=True, solve_quadrupoles=True, xi=0.35
+        field_type='monodisperse', quiet=True, solve_quadrupoles=True, xi=0.35, precision="double"
     )
     solver_ewald.compute(epos, pos)
     eels_ewald = solver_ewald.get_eels()
@@ -68,7 +68,7 @@ def test_eels_quadrupoles_subset():
     quad_idxs = [0, 2]
     solver = cuMPM.EELS(
         box, eps_p, omega, v, radius=radius, tol=tol,
-        field_type='direct', quiet=True, solve_quadrupoles=True, quad_idxs=quad_idxs
+        field_type='direct', quiet=True, solve_quadrupoles=True, quad_idxs=quad_idxs, precision="double"
     )
     solver.compute(epos, pos)
     

@@ -63,8 +63,8 @@ Evaluating self-consistent dipoles across 10 frequency points for a 2D hexagonal
 | Implementation | Total Time (10 Freqs) | Time / Frequency | Speedup |
 | :--- | :---: | :---: | :---: |
 | **[pyMPM](https://github.com/truskett-group-ut/pyMPM)** (CPU) | 75.10 s | 7,510 ms | 1.0x |
-| **cuMPM** (GPU - BiCGSTAB) | **2.16 s** | **216 ms** | **34.8x** |
-| **cuMPM** (GPU - GMRES) | **2.59 s** | **259 ms** | **29.0x** |
+| **cuMPM** (GPU - BiCGSTAB) | **1.36 s** | **136 ms** | **55.4x** |
+| **cuMPM** (GPU - GMRES) | **1.32 s** | **132 ms** | **56.9x** |
 
 *Benchmark script available at `benchmarks/benchmark_cumpm_vs_pympm.py`.*
 

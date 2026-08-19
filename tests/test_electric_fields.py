@@ -4,7 +4,7 @@ from cuMPM.dev import DirectElectricField, MonodisperseEwaldElectricField, Polyd
 
 def test_direct_electric_field():
     radius = np.array([1.0, 1.2, 1.5])
-    ef = DirectElectricField(radius, mode=False)
+    ef = DirectElectricField(radius, mode=False, precision="double")
     
     x = np.array([0.0, 2.0, 4.0])
     y = np.array([0.0, 0.0, 0.0])
@@ -50,13 +50,13 @@ def test_ewald_equivalence_and_splits():
     self_coef_i = np.zeros(num_particles)
 
     # 1. Monodisperse Ewald
-    ef_mono = MonodisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole)
+    ef_mono = MonodisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, precision="double")
     ef_mono.update_particle_coordinates(x, y, z)
     ef_mono.update_dipoles(dip_x, dip_y, dip_z)
     ef_mono.set_self_coef(self_coef_r, self_coef_i)
 
     # 2. Polydisperse Ewald (initialized with radius = 1.0 for monodisperse equivalence)
-    ef_poly = PolydisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles)
+    ef_poly = PolydisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles, precision="double")
     ef_poly.update_particle_coordinates(x, y, z)
     ef_poly.update_dipoles(dip_x, dip_y, dip_z)
     ef_poly.set_self_coef(self_coef_r, self_coef_i)
@@ -113,7 +113,7 @@ def test_ewald_quadrupoles_equivalence_and_splits():
     # 1. Monodisperse Ewald with Quadrupoles
     ef_mono = MonodisperseEwaldElectricField(
         box_x, box_y, box_z, errortol, xi, calc_inter_dipole,
-        solve_quadrupoles=True, quad_idxs=quad_idxs
+        solve_quadrupoles=True, quad_idxs=quad_idxs, precision="double"
     )
     ef_mono.update_particle_coordinates(x, y, z)
     ef_mono.update_dipoles(dip_x, dip_y, dip_z)
@@ -123,7 +123,7 @@ def test_ewald_quadrupoles_equivalence_and_splits():
     # 2. Polydisperse Ewald with Quadrupoles (radius = 1.0)
     ef_poly = PolydisperseEwaldElectricField(
         box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles,
-        solve_quadrupoles=True, quad_idxs=quad_idxs
+        solve_quadrupoles=True, quad_idxs=quad_idxs, precision="double"
     )
     ef_poly.update_particle_coordinates(x, y, z)
     ef_poly.update_dipoles(dip_x, dip_y, dip_z)
@@ -180,10 +180,10 @@ def test_polydisperse_quadrupole_subset_electric_fields():
 
     # Initialize field classes
     ef_mono = MonodisperseEwaldElectricField(
-        box[0], box[1], box[2], tol, xi, True, radius=radius, solve_quadrupoles=solve_quadrupoles, quad_idxs=quad_idxs
+        box[0], box[1], box[2], tol, xi, True, radius=radius, solve_quadrupoles=solve_quadrupoles, quad_idxs=quad_idxs, precision="double"
     )
     ef_poly = PolydisperseEwaldElectricField(
-        box[0], box[1], box[2], tol, xi, True, particle_radii=[radius] * num_particles, solve_quadrupoles=solve_quadrupoles, quad_idxs=quad_idxs
+        box[0], box[1], box[2], tol, xi, True, particle_radii=[radius] * num_particles, solve_quadrupoles=solve_quadrupoles, quad_idxs=quad_idxs, precision="double"
     )
 
     # Set coordinates
@@ -244,8 +244,8 @@ def test_polydisperse_bloch_wavevector():
     x, y, z = pos[:, 0], pos[:, 1], pos[:, 2]
 
     # Initialize solvers
-    ef_mono = MonodisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, solve_quadrupoles=True, quad_idxs=quad_idxs)
-    ef_poly = PolydisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles, solve_quadrupoles=True, quad_idxs=quad_idxs)
+    ef_mono = MonodisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, solve_quadrupoles=True, quad_idxs=quad_idxs, precision="double")
+    ef_poly = PolydisperseEwaldElectricField(box_x, box_y, box_z, errortol, xi, calc_inter_dipole, [1.0]*num_particles, solve_quadrupoles=True, quad_idxs=quad_idxs, precision="double")
 
     # Set Bloch wavevectors
     kx, ky = 0.15, -0.22

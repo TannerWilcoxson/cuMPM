@@ -422,8 +422,8 @@ bool Direct_Electric_Field::determinePrecisionMode(PrecisionMode precision) {
     if (precision == PrecisionMode::MIXED || precision == PrecisionMode::FP32) return true;
     if (precision == PrecisionMode::DOUBLE || precision == PrecisionMode::FP64) return false;
 
-    // AUTO mode defaults to double precision (FP64) to maintain full accuracy by default
-    return false;
+    // AUTO mode defaults to mixed precision (FP32)
+    return true;
 }
 
 void Direct_Electric_Field::freeFloatBuffers() {

@@ -29,8 +29,8 @@ bool Ewald_Electric_Field_Base::determineRecipPrecisionMode(PrecisionMode precis
     if (precision == PrecisionMode::MIXED || precision == PrecisionMode::FP32) return true;
     if (precision == PrecisionMode::DOUBLE || precision == PrecisionMode::FP64) return false;
 
-    // AUTO mode defaults to double precision (FP64) to maintain full accuracy by default
-    return false;
+    // AUTO mode defaults to mixed precision (FP32)
+    return true;
 }
 
 Ewald_Electric_Field_Base::~Ewald_Electric_Field_Base() {

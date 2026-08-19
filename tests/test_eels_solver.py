@@ -66,7 +66,7 @@ def test_eels_direct_vs_python():
     ])
     epos = np.array([5.0, 0.0])
     
-    eels_solver = cuMPM.EELS(box, eps_p, omega, v, eps_m=eps_m, radius=radius, tol=tol, field_type="direct", integration_step=0.01 * radius)
+    eels_solver = cuMPM.EELS(box, eps_p, omega, v, eps_m=eps_m, radius=radius, tol=tol, field_type="direct", integration_step=0.01 * radius, precision="double")
     eels_solver.compute(epos, pos)
     
     eels_val_cu = eels_solver.get_eels()
@@ -81,7 +81,7 @@ def test_eels_direct_vs_python():
     E_inc = Ebeam_Field_py(scaled_epos, scaled_pos, scaled_omega, eps_m=1.0, v=v)
     
     E0_input = E_inc[np.newaxis, ...]
-    solver_ref = cuMPM.dipole_solver(box, eps_p, radius=radius, eps_m=eps_m, tol=tol, field_type="direct", E0=E0_input)
+    solver_ref = cuMPM.dipole_solver(box, eps_p, radius=radius, eps_m=eps_m, tol=tol, field_type="direct", E0=E0_input, precision="double")
     solver_ref.compute(pos)
     dips_ref = solver_ref.get_dipoles()
     
@@ -161,7 +161,7 @@ def test_eels_vs_python_module():
     
     cu_solver = cuMPM.EELS(
         box=box, eps_p=eps_p, omega=omega_nm, v=v, eps_m=eps_m, radius=R, xi=0.5,
-        tol=1e-3, field_type="direct", solver_type="bicgstab", integration_step=0.01 * R
+        tol=1e-3, field_type="direct", solver_type="bicgstab", integration_step=0.01 * R, precision="double"
     )
     cu_solver.compute(e_pos, points)
     
@@ -177,7 +177,7 @@ def test_eels_splitting():
     with pytest.raises(ValueError, match="Both split_dist and N_split must be specified"):
         cuMPM.EELS(box=[50, 50, 50], eps_p=[4.0], omega=[0.1], v=0.3, split_dist=2.0)
 
-    solver = cuMPM.EELS(box=[100, 100, 100], eps_p=[4.0], omega=[0.15], v=0.3, radius=2.0, split_dist=4.0, N_split=27, field_type="direct")
+    solver = cuMPM.EELS(box=[100, 100, 100], eps_p=[4.0], omega=[0.15], v=0.3, radius=2.0, split_dist=4.0, N_split=27, field_type="direct", precision="double")
     pos = np.array([
         [0.0, 0.0, 0.0],
         [10.0, 0.0, 0.0]
@@ -199,7 +199,8 @@ def test_eels_fcc_splitting():
         split_dist=4.0,
         N_split=50,
         split_method="fcc",
-        field_type="direct"
+        field_type="direct",
+        precision="double"
     )
     pos = np.array([
         [0.0, 0.0, 0.0],

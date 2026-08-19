@@ -32,7 +32,7 @@ def test_dipole_solver_monodisperse_vs_pyMPM():
     # 1. cuMPM Solver
     mpm_cu = cuMPM.dipole_solver(
         box, eps_p_matrix, radius=radius, eps_m=eps_m, tol=1e-4,
-        field_type="monodisperse", solver_type="bicgstab", quiet=True
+        field_type="monodisperse", solver_type="bicgstab", quiet=True, precision="double"
     )
     mpm_cu.compute(pos)
     alpha_cu = mpm_cu.get_eff_polarizability(physical=False)
@@ -80,7 +80,7 @@ def test_dipole_solver_quadrupoles_monodisperse_vs_reference():
     # 1. C++ Solver
     solver_cpp = cuMPM.dipole_solver(
         box, eps_p, radius=radius, eps_m=eps_m, xi=xi, tol=1e-8,
-        field_type='monodisperse', quiet=True, quadrupoles=True
+        field_type='monodisperse', quiet=True, quadrupoles=True, precision="double"
     )
     solver_cpp.compute(pos)
     dips_cpp = solver_cpp.get_dipoles()
@@ -165,7 +165,7 @@ def test_dipole_solver_direct_vs_ewald_large_box():
     # 1. Direct Solver
     solver_direct = cuMPM.dipole_solver(
         box, eps_p, radius=radius, eps_m=eps_m, tol=1e-5,
-        field_type='direct', quiet=True, quadrupoles=True
+        field_type='direct', quiet=True, quadrupoles=True, precision="double"
     )
     solver_direct.compute(pos)
     alpha_direct = solver_direct.get_eff_polarizability()
@@ -175,7 +175,7 @@ def test_dipole_solver_direct_vs_ewald_large_box():
     # 2. Ewald Solver
     solver_ewald = cuMPM.dipole_solver(
         box, eps_p, radius=radius, eps_m=eps_m, xi=0.4, tol=1e-5,
-        field_type='monodisperse', quiet=True, quadrupoles=True
+        field_type='monodisperse', quiet=True, quadrupoles=True, precision="double"
     )
     solver_ewald.compute(pos)
     alpha_ewald = solver_ewald.get_eff_polarizability()
@@ -218,7 +218,7 @@ def test_polydisperse_quadrupole_subset():
     # 1. Monodisperse solver
     mpm_mono = cuMPM.dipole_solver(
         box, eps_p_matrix, radius=1.0, eps_m=eps_m, tol=1e-6,
-        field_type="monodisperse", quadrupoles=quad_idxs
+        field_type="monodisperse", quadrupoles=quad_idxs, precision="double"
     )
     mpm_mono.compute(pos)
     alpha_mono = mpm_mono.get_eff_polarizability()
@@ -228,7 +228,7 @@ def test_polydisperse_quadrupole_subset():
     # 2. Polydisperse solver
     mpm_poly = cuMPM.dipole_solver(
         box, eps_p_matrix, radius=1.0, eps_m=eps_m, tol=1e-6,
-        field_type="polydisperse", quadrupoles=quad_idxs
+        field_type="polydisperse", quadrupoles=quad_idxs, precision="double"
     )
     mpm_poly.compute(pos)
     alpha_poly = mpm_poly.get_eff_polarizability()
@@ -275,7 +275,7 @@ def test_polydisperse_solver_direct_vs_ewald_mixed_radii():
     # 1. Direct Solver
     mpm_direct = cuMPM.dipole_solver(
         box, eps_p_matrix, radius=radii, eps_m=eps_m, tol=1e-6,
-        field_type="direct", quadrupoles=quad_idxs
+        field_type="direct", quadrupoles=quad_idxs, precision="double"
     )
     mpm_direct.compute(pos)
     alpha_direct = mpm_direct.get_eff_polarizability()
@@ -285,7 +285,7 @@ def test_polydisperse_solver_direct_vs_ewald_mixed_radii():
     # 2. Polydisperse Ewald Solver
     mpm_ewald = cuMPM.dipole_solver(
         box, eps_p_matrix, radius=radii, eps_m=eps_m, xi=0.4, tol=1e-6,
-        field_type="polydisperse", quadrupoles=quad_idxs
+        field_type="polydisperse", quadrupoles=quad_idxs, precision="double"
     )
     mpm_ewald.compute(pos)
     alpha_ewald = mpm_ewald.get_eff_polarizability()
