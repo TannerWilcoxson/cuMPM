@@ -56,15 +56,28 @@ For complete, executable simulation setups (such as Drude ITO hexatic lattice mo
 
 ## Performance & Benchmarks
 
+### 1. GPU Acceleration vs CPU Baseline ($N = 4,000$ Particles)
+
 Evaluating self-consistent dipoles across 10 frequency points for a 2D hexagonal monolayer ($N = 4,000$ particles):
 
 | Implementation | Total Time (10 Freqs) | Time / Frequency | Speedup |
 | :--- | :---: | :---: | :---: |
-| **[pyMPM](https://github.com/truskett-group-ut/pyMPM)** (CPU) | 81.77 s | 8,176 ms | 1.0x |
-| **cuMPM** (GPU - BiCGSTAB) | 2.67 s | 267 ms | **30.6x** |
-| **cuMPM** (GPU - GMRES) | 2.59 s | 259 ms | **31.5x** |
+| **[pyMPM](https://github.com/truskett-group-ut/pyMPM)** (CPU) | 75.10 s | 7,510 ms | 1.0x |
+| **cuMPM** (GPU - BiCGSTAB) | **2.16 s** | **216 ms** | **34.8x** |
+| **cuMPM** (GPU - GMRES) | **2.59 s** | **259 ms** | **29.0x** |
 
 *Benchmark script available at `benchmarks/benchmark_cumpm_vs_pympm.py`.*
+
+### 2. Jacobi Preconditioning Speedup ($N = 1,000$ Polydisperse Particles)
+
+Convergence speedup on polydisperse clusters with mixed radii ($1.0\text{ nm}$ to $4.0\text{ nm}$) across 20 frequency steps (`tol = 1e-6`):
+
+| Solver Mode | Total Execution Time | Time / Frequency | Speedup / Time Saved |
+| :--- | :---: | :---: | :---: |
+| **Jacobi Preconditioning OFF** | 103.17 s | 5,158 ms | Baseline |
+| **Jacobi Preconditioning ON** | **7.50 s** | **375 ms** | **13.76x Faster (+92.73% time saved)** |
+
+*Benchmark script available at `benchmarks/benchmark_jacobi.py`.*
 
 ---
 
