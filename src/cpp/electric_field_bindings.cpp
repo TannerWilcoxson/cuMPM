@@ -36,8 +36,8 @@ void register_electric_fields(py::module_& m) {
         .def("calculate", &Electric_Field::calculate)
         .def("updateParticleCoordinates", &Electric_Field::updateParticleCoordinates,
              py::arg("x_part"), py::arg("y_part"), py::arg("z_part"))
-        .def("setSelfCoef", &Electric_Field::setSelfCoef,
-             py::arg("self_coef_r"), py::arg("self_coef_i"));
+        .def("setSelfCoef", py::overload_cast<const std::vector<std::complex<double>>&>(&Electric_Field::setSelfCoef), py::arg("self_coef"))
+        .def("setSelfCoef", py::overload_cast<const std::vector<double>&, const std::vector<double>&>(&Electric_Field::setSelfCoef), py::arg("self_coef_r"), py::arg("self_coef_i"));
 
     // Expose Direct_Electric_Field
     py::class_<Direct_Electric_Field, Electric_Field, std::unique_ptr<Direct_Electric_Field>>(m, "Direct_Electric_Field")
@@ -69,8 +69,7 @@ void register_electric_fields(py::module_& m) {
         .def("getDevXField", [](const Direct_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevXField()); })
         .def("getDevYField", [](const Direct_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevYField()); })
         .def("getDevZField", [](const Direct_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevZField()); })
-        .def("getDevSelfCoefReal", [](const Direct_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoefReal()); })
-        .def("getDevSelfCoefImag", [](const Direct_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoefImag()); })
+        .def("getDevSelfCoef", [](const Direct_Electric_Field& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoef()); })
         .def("updateDipoles", &Direct_Electric_Field::updateDipoles,
              py::arg("dip_x"), py::arg("dip_y"), py::arg("dip_z"))
         .def("updateDipolesComplex", &Direct_Electric_Field::updateDipolesComplex,
@@ -146,8 +145,7 @@ void register_electric_fields(py::module_& m) {
         .def("getDevXField", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevXField()); })
         .def("getDevYField", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevYField()); })
         .def("getDevZField", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevZField()); })
-        .def("getDevSelfCoefReal", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoefReal()); })
-        .def("getDevSelfCoefImag", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoefImag()); })
+        .def("getDevSelfCoef", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevSelfCoef()); })
         .def("getDevSpreadCoef", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevSpreadCoef()); })
         .def("getDevSpreadIdxs", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevSpreadIdxs()); })
         .def("getDevParticleIndex", [](const Ewald_Electric_Field_Base& self) { return reinterpret_cast<uintptr_t>(self.getDevParticleIndex()); })
@@ -247,12 +245,12 @@ void register_electric_fields(py::module_& m) {
             self.scale(ptr);
         }, py::arg("grid_ptr") = py::none())
         .def("contract", [](Ewald_Electric_Field_Base& self, std::optional<uintptr_t> E_point_ptr, std::optional<uintptr_t> Es_grid_ptr) {
-            double* E_ptr = E_point_ptr ? reinterpret_cast<double*>(*E_point_ptr) : self.getDevEPoint();
+            double2* E_ptr = E_point_ptr ? reinterpret_cast<double2*>(*E_point_ptr) : self.getDevEPoint();
             const void* Es_ptr = Es_grid_ptr ? reinterpret_cast<const void*>(*Es_grid_ptr) : self.getDevFEGrid();
             self.contract(E_ptr, Es_ptr);
         }, py::arg("E_point_ptr") = py::none(), py::arg("Es_grid_ptr") = py::none())
         .def("realSpace", [](Ewald_Electric_Field_Base& self, std::optional<uintptr_t> E_point_ptr) {
-            double* ptr = E_point_ptr ? reinterpret_cast<double*>(*E_point_ptr) : self.getDevEPoint();
+            double2* ptr = E_point_ptr ? reinterpret_cast<double2*>(*E_point_ptr) : self.getDevEPoint();
             self.realSpace(ptr);
         }, py::arg("E_point_ptr") = py::none())
         .def("clearEPoint", &Ewald_Electric_Field_Base::clearEPoint);

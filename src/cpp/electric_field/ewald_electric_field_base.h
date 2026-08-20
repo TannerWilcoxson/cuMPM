@@ -83,7 +83,8 @@ protected:
     void* d_Qfactor = nullptr;
     void* d_Qfactor_dot = nullptr;
 
-    double* d_G_point = nullptr;
+    double2* d_G_point = nullptr;
+    float2* d_float_dipoles = nullptr;
 
     cudaStream_t stream_real = nullptr;
     cudaStream_t stream_recip = nullptr;
@@ -192,8 +193,8 @@ public:
 
     virtual void spread(void* d_fE_grid) = 0;
     virtual void scale(void* d_fE_grid) = 0;
-    virtual void contract(double* d_E_point, const void* d_Es_grid) = 0;
-    virtual void realSpace(double* d_E_point) = 0;
+    virtual void contract(double2* d_E_point, const void* d_Es_grid) = 0;
+    virtual void realSpace(double2* d_E_point) = 0;
 
     void calculate() override = 0;
 };

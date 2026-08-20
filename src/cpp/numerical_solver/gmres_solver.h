@@ -5,11 +5,11 @@
 
 class GMRES_Solver : public Numerical_Solver {
 private:
-    double* d_x = nullptr;
-    double* d_b = nullptr;
-    double* d_r = nullptr;
-    double* d_w = nullptr;
-    double* d_V = nullptr;
+    double2* d_x = nullptr;
+    double2* d_b = nullptr;
+    double2* d_r = nullptr;
+    double2* d_w = nullptr;
+    double2* d_V = nullptr;
     double* d_reduce_buf = nullptr;
     size_t allocated_vec_size = 0;
     size_t restart = 50;

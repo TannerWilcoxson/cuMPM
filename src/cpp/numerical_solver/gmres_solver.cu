@@ -93,7 +93,7 @@ std::vector<Complex> GMRES_Solver::solve(
         gpu_vector_sub(d_r, d_b, d_r, vec_size);
         if (use_jacobi_precond) {
             gpu_vector_jacobi_precond(d_w, d_r, EF, vec_size);
-            CUDA_CHECK(cudaMemcpy(d_r, d_w, vec_size * sizeof(Complex), cudaMemcpyDeviceToDevice));
+            CUDA_CHECK(cudaMemcpy(d_r, d_w, vec_size * sizeof(double2), cudaMemcpyDeviceToDevice));
         }
 
         double r_norm = gpu_norm(d_r, vec_size, d_reduce_buf);
@@ -107,24 +107,24 @@ std::vector<Complex> GMRES_Solver::solve(
         }
 
         // V_0 = d_r / r_norm
-        CUDA_CHECK(cudaMemcpy(d_V, d_r, vec_size * sizeof(Complex), cudaMemcpyDeviceToDevice));
+        CUDA_CHECK(cudaMemcpy(d_V, d_r, vec_size * sizeof(double2), cudaMemcpyDeviceToDevice));
         gpu_vector_scale(d_V, 1.0 / r_norm, vec_size);
 
         size_t k = 0;
         for (k = 0; k < active_restart && iter < active_maxiter; ++k, ++iter) {
-            double* d_Vk = d_V + k * vec_size * 2;
-            double* d_Vk1 = d_V + (k + 1) * vec_size * 2;
+            double2* d_Vk = d_V + k * vec_size;
+            double2* d_Vk1 = d_V + (k + 1) * vec_size;
 
             // w = A(V_k)
             compute_Ax(d_Vk, d_w, EF, vec_size);
             if (use_jacobi_precond) {
                 gpu_vector_jacobi_precond(d_r, d_w, EF, vec_size);
-                CUDA_CHECK(cudaMemcpy(d_w, d_r, vec_size * sizeof(Complex), cudaMemcpyDeviceToDevice));
+                CUDA_CHECK(cudaMemcpy(d_w, d_r, vec_size * sizeof(double2), cudaMemcpyDeviceToDevice));
             }
 
             // Arnoldi Gram-Schmidt orthogonalization
             for (size_t i = 0; i <= k; ++i) {
-                double* d_Vi = d_V + i * vec_size * 2;
+                double2* d_Vi = d_V + i * vec_size;
                 H[i][k] = gpu_dot_product(d_Vi, d_w, vec_size, d_reduce_buf);
                 gpu_vector_add(d_w, d_Vi, -H[i][k], vec_size);
             }
@@ -133,7 +133,7 @@ std::vector<Complex> GMRES_Solver::solve(
             H[k + 1][k] = w_norm;
 
             if (w_norm > 0.0) {
-                CUDA_CHECK(cudaMemcpy(d_Vk1, d_w, vec_size * sizeof(Complex), cudaMemcpyDeviceToDevice));
+                CUDA_CHECK(cudaMemcpy(d_Vk1, d_w, vec_size * sizeof(double2), cudaMemcpyDeviceToDevice));
                 gpu_vector_scale(d_Vk1, 1.0 / w_norm, vec_size);
             }
 
@@ -196,7 +196,7 @@ std::vector<Complex> GMRES_Solver::solve(
 
         // Update solution x = x + V * y
         for (size_t i = 0; i < k; ++i) {
-            double* d_Vi = d_V + i * vec_size * 2;
+            double2* d_Vi = d_V + i * vec_size;
             gpu_vector_add(d_x, d_Vi, y[i], vec_size);
         }
     }

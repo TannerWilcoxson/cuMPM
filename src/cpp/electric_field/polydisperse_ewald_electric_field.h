@@ -47,7 +47,7 @@ public:
 
     double getEta() const { return eta_scalar; }
     int getP() const { return P_support; }
-    double* getDevGPoint() const { return d_G_point; }
+    double2* getDevGPoint() const { return d_G_point; }
     int* getDevQuadIdxs() const { return d_quad_idxs; }
     int* getDevQuadMap() const { return d_quad_map; }
     void* getDevSpreadCoefQ() const { return d_spread_coef_Q; }
@@ -70,8 +70,8 @@ public:
 
     void spread(void* d_fE_grid) override;
     void scale(void* d_fE_grid) override;
-    void contract(double* d_E_point, const void* d_Es_grid) override;
-    void realSpace(double* d_E_point) override;
+    void contract(double2* d_E_point, const void* d_Es_grid) override;
+    void realSpace(double2* d_E_point) override;
 
     void calculate() override;
 };

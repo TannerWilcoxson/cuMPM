@@ -28,13 +28,12 @@ private:
     float* d_float_y_part = nullptr;
     float* d_float_z_part = nullptr;
     float* d_float_radius = nullptr;
-    float* d_float_dipoles = nullptr;
-    float* d_float_self_coef_r = nullptr;
-    float* d_float_self_coef_i = nullptr;
+    float2* d_float_dipoles = nullptr;
+    float2* d_float_self_coef = nullptr;
     float* d_float_x_field = nullptr;
     float* d_float_y_field = nullptr;
     float* d_float_z_field = nullptr;
-    float* d_float_E_point = nullptr;
+    float2* d_float_E_point = nullptr;
 
     size_t fp32_num_particles = 0;
     size_t fp32_num_field_points = 0;

@@ -1,4 +1,5 @@
 #include "polydisperse_ewald_electric_field.h"
+#include "cuda_complex_ops.h"
 #include <cuda_runtime.h>
 #include <cufft.h>
 #include <cmath>
@@ -439,12 +440,12 @@ __global__ void real_space_precalcs_kernel_polydisperse(
     }
 }
 
-template <typename RecipReal>
+template <typename Real, typename Vec2 = typename Real2Traits<Real>::Vec2>
 __global__ void spread_kernel_polydisperse(
-    const double* __restrict__ d_dipoles,
-    const RecipReal* __restrict__ spread_coef,
+    const Vec2* __restrict__ d_dipoles,
+    const Real* __restrict__ spread_coef,
     const int* __restrict__ spread_idxs,
-    RecipReal* __restrict__ fE_grid,
+    Vec2* __restrict__ fE_grid,
     size_t num_spread,
     size_t num_offsets,
     int num_grid_x,
@@ -466,30 +467,21 @@ __global__ void spread_kernel_polydisperse(
     bool active = (idx < num_spread);
 
     int gx = 0, gy = 0, gz = 0;
-    RecipReal val_r = 0.0, val_i = 0.0;
+    Vec2 val = Real2Traits<Real>::make(0.0, 0.0);
 
     if (active) {
         int i = idx / num_offsets;
 
-        const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
-        double2 dip_x = d_dipoles_d2[i * 3 + 0];
-        double2 dip_y = d_dipoles_d2[i * 3 + 1];
-        double2 dip_z = d_dipoles_d2[i * 3 + 2];
+        Vec2 dip_x = d_dipoles[i * 3 + 0];
+        Vec2 dip_y = d_dipoles[i * 3 + 1];
+        Vec2 dip_z = d_dipoles[i * 3 + 2];
 
-        double px_r = dip_x.x;
-        double px_i = dip_x.y;
-        double py_r = dip_y.x;
-        double py_i = dip_y.y;
-        double pz_r = dip_z.x;
-        double pz_i = dip_z.y;
-
-        RecipReal cx = spread_coef[idx * 3 + 0];
-        RecipReal cy = spread_coef[idx * 3 + 1];
-        RecipReal cz = spread_coef[idx * 3 + 2];
+        Real cx = spread_coef[idx * 3 + 0];
+        Real cy = spread_coef[idx * 3 + 1];
+        Real cz = spread_coef[idx * 3 + 2];
 
         // Dot product: C . p
-        val_r = static_cast<RecipReal>(static_cast<double>(cx) * px_r + static_cast<double>(cy) * py_r + static_cast<double>(cz) * pz_r);
-        val_i = static_cast<RecipReal>(static_cast<double>(cx) * px_i + static_cast<double>(cy) * py_i + static_cast<double>(cz) * pz_i);
+        val = cx * dip_x + cy * dip_y + cz * dip_z;
 
         uint32_t packed = spread_idxs[idx];
         gx = static_cast<int>(packed >> 20) - 256;
@@ -511,14 +503,14 @@ __global__ void spread_kernel_polydisperse(
     int local_grid_size = dim_x * dim_y * dim_z;
 
     extern __shared__ char s_grid_raw[];
-    RecipReal* s_grid = reinterpret_cast<RecipReal*>(s_grid_raw);
+    Vec2* s_grid = reinterpret_cast<Vec2*>(s_grid_raw);
 
     bool use_shared = (local_grid_size > 0 && local_grid_size <= 512);
 
     if (use_shared) {
         // Initialize shared memory
-        for (int offset = threadIdx.x; offset < local_grid_size * 2; offset += blockDim.x) {
-            s_grid[offset] = 0.0;
+        for (int offset = threadIdx.x; offset < local_grid_size; offset += blockDim.x) {
+            s_grid[offset] = Real2Traits<Real>::make(0.0, 0.0);
         }
         __syncthreads();
 
@@ -528,8 +520,8 @@ __global__ void spread_kernel_polydisperse(
             int local_z = gz - block_min_gz;
             int local_idx = local_x * dim_y * dim_z + local_y * dim_z + local_z;
 
-            atomicAdd(&s_grid[local_idx * 2 + 0], val_r);
-            atomicAdd(&s_grid[local_idx * 2 + 1], val_i);
+            atomicAdd(&s_grid[local_idx].x, val.x);
+            atomicAdd(&s_grid[local_idx].y, val.y);
         }
         __syncthreads();
 
@@ -547,11 +539,10 @@ __global__ void spread_kernel_polydisperse(
                                 static_cast<size_t>(global_gy) * num_grid_z +
                                 static_cast<size_t>(global_gz);
 
-            RecipReal v_r = s_grid[offset * 2 + 0];
-            RecipReal v_i = s_grid[offset * 2 + 1];
+            Vec2 v_s = s_grid[offset];
 
-            if (v_r != 0.0) atomicAdd(&fE_grid[global_idx * 2 + 0], v_r);
-            if (v_i != 0.0) atomicAdd(&fE_grid[global_idx * 2 + 1], v_i);
+            if (v_s.x != static_cast<Real>(0.0)) atomicAdd(&fE_grid[global_idx].x, v_s.x);
+            if (v_s.y != static_cast<Real>(0.0)) atomicAdd(&fE_grid[global_idx].y, v_s.y);
         }
     } else {
         // Fallback to direct global memory writes
@@ -564,8 +555,8 @@ __global__ void spread_kernel_polydisperse(
                                 static_cast<size_t>(global_gy) * num_grid_z +
                                 static_cast<size_t>(global_gz);
 
-            atomicAdd(&fE_grid[global_idx * 2 + 0], val_r);
-            atomicAdd(&fE_grid[global_idx * 2 + 1], val_i);
+            atomicAdd(&fE_grid[global_idx].x, val.x);
+            atomicAdd(&fE_grid[global_idx].y, val.y);
         }
     }
 }
@@ -646,26 +637,25 @@ __global__ void compute_scale_coefficients_polydisperse_kernel(
     }
 }
 
-template <typename RecipReal>
+template <typename Real, typename Vec2 = typename Real2Traits<Real>::Vec2>
 __global__ void scale_kernel_polydisperse(
-    RecipReal* __restrict__ fE_grid,
-    const RecipReal* __restrict__ scale_coef,
+    Vec2* __restrict__ fE_grid,
+    const Real* __restrict__ scale_coef,
     size_t num_voxels)
 {
     int v = blockIdx.x * blockDim.x + threadIdx.x;
     if (v >= num_voxels) return;
 
-    RecipReal sc = scale_coef[v];
-    fE_grid[v * 2 + 0] = static_cast<RecipReal>(static_cast<double>(fE_grid[v * 2 + 0]) * static_cast<double>(sc));
-    fE_grid[v * 2 + 1] = static_cast<RecipReal>(static_cast<double>(fE_grid[v * 2 + 1]) * static_cast<double>(sc));
+    Real sc = scale_coef[v];
+    fE_grid[v] = fE_grid[v] * sc;
 }
 
-template <typename RecipReal>
+template <typename Real, typename Vec2 = typename Real2Traits<Real>::Vec2>
 __global__ void contract_kernel_polydisperse(
-    const RecipReal* __restrict__ fE_grid,
-    const RecipReal* __restrict__ contract_coef,
+    const Vec2* __restrict__ fE_grid,
+    const Real* __restrict__ contract_coef,
     const int* __restrict__ contract_idxs,
-    double* __restrict__ E_point,
+    double2* __restrict__ E_point,
     size_t num_field_points,
     size_t num_offsets,
     int num_grid_x,
@@ -676,9 +666,8 @@ __global__ void contract_kernel_polydisperse(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_field_points) return;
 
-    double E_x_r = 0.0, E_x_i = 0.0;
-    double E_y_r = 0.0, E_y_i = 0.0;
-    double E_z_r = 0.0, E_z_i = 0.0;
+    Vec2 zero = Real2Traits<Real>::make(0.0, 0.0);
+    Vec2 E_x = zero, E_y = zero, E_z = zero;
 
     size_t num_contract = num_field_points * num_offsets;
 
@@ -686,74 +675,56 @@ __global__ void contract_kernel_polydisperse(
         size_t idx = o * num_field_points + i;
         int v = contract_idxs[idx];
 
-        double grid_r = static_cast<double>(fE_grid[v * 2 + 0]);
-        double grid_i = static_cast<double>(fE_grid[v * 2 + 1]);
+        Vec2 grid_v = fE_grid[v];
 
-        double cx = static_cast<double>(contract_coef[0 * num_contract + idx]);
-        double cy = static_cast<double>(contract_coef[1 * num_contract + idx]);
-        double cz = static_cast<double>(contract_coef[2 * num_contract + idx]);
+        Real cx = contract_coef[0 * num_contract + idx];
+        Real cy = contract_coef[1 * num_contract + idx];
+        Real cz = contract_coef[2 * num_contract + idx];
 
-        E_x_r += cx * grid_r;
-        E_x_i += cx * grid_i;
-
-        E_y_r += cy * grid_r;
-        E_y_i += cy * grid_i;
-
-        E_z_r += cz * grid_r;
-        E_z_i += cz * grid_i;
+        E_x += grid_v * cx;
+        E_y += grid_v * cy;
+        E_z += grid_v * cz;
     }
 
     double scale = prod_h;
-    E_point[(i * 3 + 0) * 2 + 0] = scale * E_x_r;
-    E_point[(i * 3 + 0) * 2 + 1] = scale * E_x_i;
-    E_point[(i * 3 + 1) * 2 + 0] = scale * E_y_r;
-    E_point[(i * 3 + 1) * 2 + 1] = scale * E_y_i;
-    E_point[(i * 3 + 2) * 2 + 0] = scale * E_z_r;
-    E_point[(i * 3 + 2) * 2 + 1] = scale * E_z_i;
+    E_point[i * 3 + 0] = make_double2(scale * static_cast<double>(E_x.x), scale * static_cast<double>(E_x.y));
+    E_point[i * 3 + 1] = make_double2(scale * static_cast<double>(E_y.x), scale * static_cast<double>(E_y.y));
+    E_point[i * 3 + 2] = make_double2(scale * static_cast<double>(E_z.x), scale * static_cast<double>(E_z.y));
 }
 
 __global__ void real_space_self_kernel_polydisperse(
-    const double* __restrict__ d_dipoles,
-    const double* __restrict__ d_self_coef_r,
-    const double* __restrict__ d_self_coef_i,
+    const double2* __restrict__ d_dipoles,
+    const double2* __restrict__ d_self_coef,
     const int* __restrict__ radius_idx,
     const double* __restrict__ d_self_perp_uniq,
-    double* __restrict__ E_point,
+    double2* __restrict__ E_point,
     size_t num_particles,
     FieldCalcMode mode)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_particles) return;
 
-    double sc_r = d_self_coef_r[i];
-    double sc_i = d_self_coef_i[i];
+    double2 sc = d_self_coef[i];
 
     int radius_idx_i = radius_idx[i];
     double self_perp_val = d_self_perp_uniq[radius_idx_i];
 
-    double factor_r = sc_r + self_perp_val;
-    double factor_i = sc_i;
+    double2 self_factor = make_double2(sc.x + self_perp_val, sc.y);
 
-    const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
-    double2 dip_x = d_dipoles_d2[i * 3 + 0];
-    double2 dip_y = d_dipoles_d2[i * 3 + 1];
-    double2 dip_z = d_dipoles_d2[i * 3 + 2];
+    double2 dip_x = d_dipoles[i * 3 + 0];
+    double2 dip_y = d_dipoles[i * 3 + 1];
+    double2 dip_z = d_dipoles[i * 3 + 2];
 
-    double dx_r = dip_x.x;
-    double dx_i = dip_x.y;
-    double dy_r = dip_y.x;
-    double dy_i = dip_y.y;
-    double dz_r = dip_z.x;
-    double dz_i = dip_z.y;
+    double2 ex = self_factor * dip_x;
+    double2 ey = self_factor * dip_y;
+    double2 ez = self_factor * dip_z;
 
-    atomicAdd(&E_point[(i * 3 + 0) * 2 + 0], factor_r * dx_r - factor_i * dx_i);
-    atomicAdd(&E_point[(i * 3 + 0) * 2 + 1], factor_r * dx_i + factor_i * dx_r);
-
-    atomicAdd(&E_point[(i * 3 + 1) * 2 + 0], factor_r * dy_r - factor_i * dy_i);
-    atomicAdd(&E_point[(i * 3 + 1) * 2 + 1], factor_r * dy_i + factor_i * dy_r);
-
-    atomicAdd(&E_point[(i * 3 + 2) * 2 + 0], factor_r * dz_r - factor_i * dz_i);
-    atomicAdd(&E_point[(i * 3 + 2) * 2 + 1], factor_r * dz_i + factor_i * dz_r);
+    atomicAdd(&E_point[i * 3 + 0].x, ex.x);
+    atomicAdd(&E_point[i * 3 + 0].y, ex.y);
+    atomicAdd(&E_point[i * 3 + 1].x, ey.x);
+    atomicAdd(&E_point[i * 3 + 1].y, ey.y);
+    atomicAdd(&E_point[i * 3 + 2].x, ez.x);
+    atomicAdd(&E_point[i * 3 + 2].y, ez.y);
 }
 
 __global__ void real_space_neighbor_kernel_polydisperse(
@@ -763,13 +734,13 @@ __global__ void real_space_neighbor_kernel_polydisperse(
     const double* __restrict__ x_field,
     const double* __restrict__ y_field,
     const double* __restrict__ z_field,
-    const double* __restrict__ d_dipoles,
+    const double2* __restrict__ d_dipoles,
     const int* __restrict__ neighbor_list,
     const int* __restrict__ neighbor_counts,
     const int* __restrict__ particle_offsets,
     const double* __restrict__ perp,
     const double* __restrict__ para,
-    double* __restrict__ E_point,
+    double2* __restrict__ E_point,
     size_t num_particles,
     int max_neighbors,
     double box_x,
@@ -812,60 +783,40 @@ __global__ void real_space_neighbor_kernel_polydisperse(
             double delta_z = rz / d_eff;
 
             // neighbor dipoles
-            const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
-            double2 dip_x = d_dipoles_d2[i * 3 + 0];
-            double2 dip_y = d_dipoles_d2[i * 3 + 1];
-            double2 dip_z = d_dipoles_d2[i * 3 + 2];
+            double2 dip_x = d_dipoles[i * 3 + 0];
+            double2 dip_y = d_dipoles[i * 3 + 1];
+            double2 dip_z = d_dipoles[i * 3 + 2];
 
-            double dip_x_r = dip_x.x;
-            double dip_x_i = dip_x.y;
-            double dip_y_r = dip_y.x;
-            double dip_y_i = dip_y.y;
-            double dip_z_r = dip_z.x;
-            double dip_z_i = dip_z.y;
-
-            double delta_dip_r = dip_x_r * delta_x + dip_y_r * delta_y + dip_z_r * delta_z;
-            double delta_dip_i = dip_x_i * delta_x + dip_y_i * delta_y + dip_z_i * delta_z;
+            double2 r_P = dip_x * delta_x + dip_y * delta_y + dip_z * delta_z;
 
             double perp_val = perp[start_idx + k];
             double para_val = para[start_idx + k];
 
-            double contrib_x_r = perp_val * (dip_x_r - delta_x * delta_dip_r) + para_val * delta_x * delta_dip_r;
-            double contrib_x_i = perp_val * (dip_x_i - delta_x * delta_dip_i) + para_val * delta_x * delta_dip_i;
-
-            double contrib_y_r = perp_val * (dip_y_r - delta_y * delta_dip_r) + para_val * delta_y * delta_dip_r;
-            double contrib_y_i = perp_val * (dip_y_i - delta_y * delta_dip_i) + para_val * delta_y * delta_dip_i;
-
-            double contrib_z_r = perp_val * (dip_z_r - delta_z * delta_dip_r) + para_val * delta_z * delta_dip_r;
-            double contrib_z_i = perp_val * (dip_z_i - delta_z * delta_dip_i) + para_val * delta_z * delta_dip_i;
+            double2 contrib_x = (dip_x - r_P * delta_x) * perp_val + (r_P * delta_x) * para_val;
+            double2 contrib_y = (dip_y - r_P * delta_y) * perp_val + (r_P * delta_y) * para_val;
+            double2 contrib_z = (dip_z - r_P * delta_z) * perp_val + (r_P * delta_z) * para_val;
 
             if (k_x != 0.0 || k_y != 0.0) {
                 double phase = - (k_x * rx + k_y * ry);
-                double c = cos(phase);
-                double s = sin(phase);
-                double t_r, t_i;
+                double2 phase_factor = make_double2(cos(phase), sin(phase));
 
-                t_r = contrib_x_r * c - contrib_x_i * s;
-                t_i = contrib_x_r * s + contrib_x_i * c;
-                contrib_x_r = t_r; contrib_x_i = t_i;
-
-                t_r = contrib_y_r * c - contrib_y_i * s;
-                t_i = contrib_y_r * s + contrib_y_i * c;
-                contrib_y_r = t_r; contrib_y_i = t_i;
-
-                t_r = contrib_z_r * c - contrib_z_i * s;
-                t_i = contrib_z_r * s + contrib_z_i * c;
-                contrib_z_r = t_r; contrib_z_i = t_i;
+                contrib_x = contrib_x * phase_factor;
+                contrib_y = contrib_y * phase_factor;
+                contrib_z = contrib_z * phase_factor;
             }
 
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], sign * contrib_x_r);
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], sign * contrib_x_i);
+            contrib_x = contrib_x * sign;
+            contrib_y = contrib_y * sign;
+            contrib_z = contrib_z * sign;
 
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], sign * contrib_y_r);
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], sign * contrib_y_i);
+            atomicAdd(&E_point[j * 3 + 0].x, contrib_x.x);
+            atomicAdd(&E_point[j * 3 + 0].y, contrib_x.y);
 
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], sign * contrib_z_r);
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], sign * contrib_z_i);
+            atomicAdd(&E_point[j * 3 + 1].x, contrib_y.x);
+            atomicAdd(&E_point[j * 3 + 1].y, contrib_y.y);
+
+            atomicAdd(&E_point[j * 3 + 2].x, contrib_z.x);
+            atomicAdd(&E_point[j * 3 + 2].y, contrib_z.y);
         }
     }
 }
@@ -966,65 +917,57 @@ __global__ void contract_precalcs_kernel_point(
     double gdz = dz + oxyz_z;
 
     double d_sq = gdx * gdx + gdy * gdy + gdz * gdz;
-
     int transposed_idx = o * num_field_points + i;
     contract_coef_Q[transposed_idx] = static_cast<RecipReal>(const_factor * exp(-2.0 * xi * xi * d_sq));
 }
 
-template <typename RecipReal>
+template <typename Real, typename Vec2 = typename Real2Traits<Real>::Vec2>
 __global__ void scale_kernel_joint_polydisperse(
-    RecipReal* __restrict__ fE_grid,
-    RecipReal* __restrict__ fG_grid,
-    const RecipReal* __restrict__ scale_coef,
-    const RecipReal* __restrict__ scale_coef_Q_imag,
-    const RecipReal* __restrict__ scale_coef_GP_imag,
-    const RecipReal* __restrict__ scale_coef_GQ_real,
-    const RecipReal* __restrict__ Qfactor,
-    const RecipReal* __restrict__ Qfactor_dot,
+    Vec2* __restrict__ fE_grid,
+    Vec2* __restrict__ fG_grid,
+    const Real* __restrict__ scale_coef,
+    const Real* __restrict__ scale_coef_Q_imag,
+    const Real* __restrict__ scale_coef_GP_imag,
+    const Real* __restrict__ scale_coef_GQ_real,
+    const Real* __restrict__ Qfactor,
+    const Real* __restrict__ Qfactor_dot,
     size_t num_voxels)
 {
     int v = blockIdx.x * blockDim.x + threadIdx.x;
     if (v >= num_voxels) return;
 
-    double sc = static_cast<double>(scale_coef[v]);
-    double sc_Q = static_cast<double>(scale_coef_Q_imag[v]);
-    double sc_GP = static_cast<double>(scale_coef_GP_imag[v]);
-    double sc_GQ = static_cast<double>(scale_coef_GQ_real[v]);
+    Real sc = scale_coef[v];
+    Real sc_Q = scale_coef_Q_imag[v];
+    Real sc_GP = scale_coef_GP_imag[v];
+    Real sc_GQ = scale_coef_GQ_real[v];
 
-    double S_R = static_cast<double>(fE_grid[v * 2 + 0]);
-    double S_I = static_cast<double>(fE_grid[v * 2 + 1]);
+    Vec2 fe_v = fE_grid[v];
 
-    double G_dot_Qdot_R = 0.0;
-    double G_dot_Qdot_I = 0.0;
+    Vec2 zero = Real2Traits<Real>::make(0.0, 0.0);
+    Vec2 G_dot_Qdot = zero;
     for (int c = 0; c < 5; ++c) {
-        double Qdot_c = static_cast<double>(Qfactor_dot[v * 5 + c]);
-        G_dot_Qdot_R += static_cast<double>(fG_grid[(v * 5 + c) * 2 + 0]) * Qdot_c;
-        G_dot_Qdot_I += static_cast<double>(fG_grid[(v * 5 + c) * 2 + 1]) * Qdot_c;
+        Real Qdot_c = Qfactor_dot[v * 5 + c];
+        G_dot_Qdot += fG_grid[v * 5 + c] * Qdot_c;
     }
 
-    double S_new_R = sc * S_R + sc_Q * G_dot_Qdot_R;
-    double S_new_I = sc * S_I + sc_Q * G_dot_Qdot_I;
+    Vec2 S_new = fe_v * sc + G_dot_Qdot * sc_Q;
+    Vec2 Gdot_G = (fe_v * (-sc_GP)) - (G_dot_Qdot * sc_GQ);
 
-    double Gdot_G_R = -sc_GP * S_R - sc_GQ * G_dot_Qdot_R;
-    double Gdot_G_I = -sc_GP * S_I - sc_GQ * G_dot_Qdot_I;
-
-    fE_grid[v * 2 + 0] = static_cast<RecipReal>(S_new_R);
-    fE_grid[v * 2 + 1] = static_cast<RecipReal>(S_new_I);
+    fE_grid[v] = S_new;
 
     for (int c = 0; c < 5; ++c) {
-        double Qf_c = static_cast<double>(Qfactor[v * 5 + c]);
-        fG_grid[(v * 5 + c) * 2 + 0] = static_cast<RecipReal>(Qf_c * Gdot_G_R);
-        fG_grid[(v * 5 + c) * 2 + 1] = static_cast<RecipReal>(Qf_c * Gdot_G_I);
+        Real Qf_c = Qfactor[v * 5 + c];
+        fG_grid[v * 5 + c] = Gdot_G * Qf_c;
     }
 }
 
-template <typename RecipReal>
+template <typename Real, typename Vec2 = typename Real2Traits<Real>::Vec2>
 __global__ void spread_quadrupoles_kernel_polydisperse(
-    const double* __restrict__ d_dipoles,
+    const Vec2* __restrict__ d_dipoles,
     const int* __restrict__ quad_idxs,
-    const RecipReal* __restrict__ spread_coef,
+    const Real* __restrict__ spread_coef,
     const int* __restrict__ spread_idxs,
-    RecipReal* __restrict__ fG_grid,
+    Vec2* __restrict__ fG_grid,
     size_t num_quads,
     size_t num_particles,
     size_t num_offsets,
@@ -1048,36 +991,21 @@ __global__ void spread_quadrupoles_kernel_polydisperse(
     bool active = (idx < total_spread_Q);
 
     int gx = 0, gy = 0, gz = 0;
-    RecipReal coef = 0.0;
-    double q0_r = 0.0, q0_i = 0.0;
-    double q1_r = 0.0, q1_i = 0.0;
-    double q2_r = 0.0, q2_i = 0.0;
-    double q3_r = 0.0, q3_i = 0.0;
-    double q4_r = 0.0, q4_i = 0.0;
+    Real coef = static_cast<Real>(0.0);
+    Vec2 q_val[5];
+    for (int c = 0; c < 5; ++c) q_val[c] = Real2Traits<Real>::make(0.0, 0.0);
 
     if (active) {
         int q = idx / num_offsets;
-        int o = idx % num_offsets;
+        const Vec2* quads = d_dipoles + num_particles * 3;
 
-        int p_idx = quad_idxs[q];
-        int part_spread_idx = p_idx * num_offsets + o;
+        for (int c = 0; c < 5; ++c) {
+            q_val[c] = quads[q * 5 + c];
+        }
 
-        const double2* d_quad_d2 = reinterpret_cast<const double2*>(d_dipoles + num_particles * 3 * 2);
-        double2 q0 = d_quad_d2[q * 5 + 0];
-        double2 q1 = d_quad_d2[q * 5 + 1];
-        double2 q2 = d_quad_d2[q * 5 + 2];
-        double2 q3 = d_quad_d2[q * 5 + 3];
-        double2 q4 = d_quad_d2[q * 5 + 4];
+        coef = spread_coef[idx];
 
-        q0_r = q0.x; q0_i = q0.y;
-        q1_r = q1.x; q1_i = q1.y;
-        q2_r = q2.x; q2_i = q2.y;
-        q3_r = q3.x; q3_i = q3.y;
-        q4_r = q4.x; q4_i = q4.y;
-
-        coef = spread_coef[part_spread_idx];
-
-        uint32_t packed = spread_idxs[part_spread_idx];
+        uint32_t packed = spread_idxs[idx];
         gx = static_cast<int>(packed >> 20) - 256;
         gy = static_cast<int>((packed >> 10) & 0x3FF) - 256;
         gz = static_cast<int>(packed & 0x3FF) - 256;
@@ -1097,13 +1025,13 @@ __global__ void spread_quadrupoles_kernel_polydisperse(
     int local_grid_size = dim_x * dim_y * dim_z;
 
     extern __shared__ char s_grid_raw[];
-    RecipReal* s_grid = reinterpret_cast<RecipReal*>(s_grid_raw);
+    Vec2* s_grid = reinterpret_cast<Vec2*>(s_grid_raw);
 
     bool use_shared = (local_grid_size > 0 && local_grid_size <= 300);
 
     if (use_shared) {
-        for (int offset = threadIdx.x; offset < local_grid_size * 10; offset += blockDim.x) {
-            s_grid[offset] = 0.0;
+        for (int offset = threadIdx.x; offset < local_grid_size * 5; offset += blockDim.x) {
+            s_grid[offset] = Real2Traits<Real>::make(0.0, 0.0);
         }
         __syncthreads();
 
@@ -1113,16 +1041,11 @@ __global__ void spread_quadrupoles_kernel_polydisperse(
             int local_z = gz - block_min_gz;
             int local_idx = local_x * dim_y * dim_z + local_y * dim_z + local_z;
 
-            atomicAdd(&s_grid[(local_idx * 5 + 0) * 2 + 0], static_cast<RecipReal>(coef * q0_r));
-            atomicAdd(&s_grid[(local_idx * 5 + 0) * 2 + 1], static_cast<RecipReal>(coef * q0_i));
-            atomicAdd(&s_grid[(local_idx * 5 + 1) * 2 + 0], static_cast<RecipReal>(coef * q1_r));
-            atomicAdd(&s_grid[(local_idx * 5 + 1) * 2 + 1], static_cast<RecipReal>(coef * q1_i));
-            atomicAdd(&s_grid[(local_idx * 5 + 2) * 2 + 0], static_cast<RecipReal>(coef * q2_r));
-            atomicAdd(&s_grid[(local_idx * 5 + 2) * 2 + 1], static_cast<RecipReal>(coef * q2_i));
-            atomicAdd(&s_grid[(local_idx * 5 + 3) * 2 + 0], static_cast<RecipReal>(coef * q3_r));
-            atomicAdd(&s_grid[(local_idx * 5 + 3) * 2 + 1], static_cast<RecipReal>(coef * q3_i));
-            atomicAdd(&s_grid[(local_idx * 5 + 4) * 2 + 0], static_cast<RecipReal>(coef * q4_r));
-            atomicAdd(&s_grid[(local_idx * 5 + 4) * 2 + 1], static_cast<RecipReal>(coef * q4_i));
+            for (int c = 0; c < 5; ++c) {
+                Vec2 val_c = coef * q_val[c];
+                atomicAdd(&s_grid[local_idx * 5 + c].x, val_c.x);
+                atomicAdd(&s_grid[local_idx * 5 + c].y, val_c.y);
+            }
         }
         __syncthreads();
 
@@ -1139,27 +1062,11 @@ __global__ void spread_quadrupoles_kernel_polydisperse(
                                   static_cast<size_t>(global_gy) * num_grid_z +
                                   static_cast<size_t>(global_gz)) * 5;
 
-            RecipReal val_0_r = s_grid[(offset * 5 + 0) * 2 + 0];
-            RecipReal val_0_i = s_grid[(offset * 5 + 0) * 2 + 1];
-            RecipReal val_1_r = s_grid[(offset * 5 + 1) * 2 + 0];
-            RecipReal val_1_i = s_grid[(offset * 5 + 1) * 2 + 1];
-            RecipReal val_2_r = s_grid[(offset * 5 + 2) * 2 + 0];
-            RecipReal val_2_i = s_grid[(offset * 5 + 2) * 2 + 1];
-            RecipReal val_3_r = s_grid[(offset * 5 + 3) * 2 + 0];
-            RecipReal val_3_i = s_grid[(offset * 5 + 3) * 2 + 1];
-            RecipReal val_4_r = s_grid[(offset * 5 + 4) * 2 + 0];
-            RecipReal val_4_i = s_grid[(offset * 5 + 4) * 2 + 1];
-
-            if (val_0_r != 0.0) atomicAdd(&fG_grid[(global_idx + 0) * 2 + 0], val_0_r);
-            if (val_0_i != 0.0) atomicAdd(&fG_grid[(global_idx + 0) * 2 + 1], val_0_i);
-            if (val_1_r != 0.0) atomicAdd(&fG_grid[(global_idx + 1) * 2 + 0], val_1_r);
-            if (val_1_i != 0.0) atomicAdd(&fG_grid[(global_idx + 1) * 2 + 1], val_1_i);
-            if (val_2_r != 0.0) atomicAdd(&fG_grid[(global_idx + 2) * 2 + 0], val_2_r);
-            if (val_2_i != 0.0) atomicAdd(&fG_grid[(global_idx + 2) * 2 + 1], val_2_i);
-            if (val_3_r != 0.0) atomicAdd(&fG_grid[(global_idx + 3) * 2 + 0], val_3_r);
-            if (val_3_i != 0.0) atomicAdd(&fG_grid[(global_idx + 3) * 2 + 1], val_3_i);
-            if (val_4_r != 0.0) atomicAdd(&fG_grid[(global_idx + 4) * 2 + 0], val_4_r);
-            if (val_4_i != 0.0) atomicAdd(&fG_grid[(global_idx + 4) * 2 + 1], val_4_i);
+            for (int c = 0; c < 5; ++c) {
+                Vec2 val_c = s_grid[offset * 5 + c];
+                if (val_c.x != static_cast<Real>(0.0)) atomicAdd(&fG_grid[global_idx + c].x, val_c.x);
+                if (val_c.y != static_cast<Real>(0.0)) atomicAdd(&fG_grid[global_idx + c].y, val_c.y);
+            }
         }
     } else {
         if (active) {
@@ -1171,26 +1078,21 @@ __global__ void spread_quadrupoles_kernel_polydisperse(
                                   static_cast<size_t>(global_gy) * num_grid_z +
                                   static_cast<size_t>(global_gz)) * 5;
 
-            atomicAdd(&fG_grid[(global_idx + 0) * 2 + 0], static_cast<RecipReal>(coef * q0_r));
-            atomicAdd(&fG_grid[(global_idx + 0) * 2 + 1], static_cast<RecipReal>(coef * q0_i));
-            atomicAdd(&fG_grid[(global_idx + 1) * 2 + 0], static_cast<RecipReal>(coef * q1_r));
-            atomicAdd(&fG_grid[(global_idx + 1) * 2 + 1], static_cast<RecipReal>(coef * q1_i));
-            atomicAdd(&fG_grid[(global_idx + 2) * 2 + 0], static_cast<RecipReal>(coef * q2_r));
-            atomicAdd(&fG_grid[(global_idx + 2) * 2 + 1], static_cast<RecipReal>(coef * q2_i));
-            atomicAdd(&fG_grid[(global_idx + 3) * 2 + 0], static_cast<RecipReal>(coef * q3_r));
-            atomicAdd(&fG_grid[(global_idx + 3) * 2 + 1], static_cast<RecipReal>(coef * q3_i));
-            atomicAdd(&fG_grid[(global_idx + 4) * 2 + 0], static_cast<RecipReal>(coef * q4_r));
-            atomicAdd(&fG_grid[(global_idx + 4) * 2 + 1], static_cast<RecipReal>(coef * q4_i));
+            for (int c = 0; c < 5; ++c) {
+                Vec2 val_c = coef * q_val[c];
+                atomicAdd(&fG_grid[global_idx + c].x, val_c.x);
+                atomicAdd(&fG_grid[global_idx + c].y, val_c.y);
+            }
         }
     }
 }
 
-template <typename RecipReal>
+template <typename Real, typename Vec2 = typename Real2Traits<Real>::Vec2>
 __global__ void contract_kernel_G_polydisperse(
-    const RecipReal* __restrict__ Gs_grid,
+    const Vec2* __restrict__ Gs_grid,
     const int* __restrict__ contract_idxs,
-    const RecipReal* __restrict__ contract_coef,
-    double* __restrict__ G_point,
+    const Real* __restrict__ contract_coef,
+    double2* __restrict__ G_point,
     size_t num_field_points,
     size_t num_offsets,
     int num_grid_y,
@@ -1199,50 +1101,33 @@ __global__ void contract_kernel_G_polydisperse(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_field_points) return;
 
-    double G_0_r = 0.0, G_0_i = 0.0;
-    double G_1_r = 0.0, G_1_i = 0.0;
-    double G_2_r = 0.0, G_2_i = 0.0;
-    double G_3_r = 0.0, G_3_i = 0.0;
-    double G_4_r = 0.0, G_4_i = 0.0;
+    Vec2 zero = Real2Traits<Real>::make(0.0, 0.0);
+    Vec2 G_0 = zero, G_1 = zero, G_2 = zero, G_3 = zero, G_4 = zero;
 
     for (size_t o = 0; o < num_offsets; ++o) {
         size_t idx = o * num_field_points + i;
         int v = contract_idxs[idx];
 
-        double coef = static_cast<double>(contract_coef[idx]);
+        Real coef = contract_coef[idx];
 
-        G_0_r += coef * static_cast<double>(Gs_grid[(v * 5 + 0) * 2 + 0]);
-        G_0_i += coef * static_cast<double>(Gs_grid[(v * 5 + 0) * 2 + 1]);
-
-        G_1_r += coef * static_cast<double>(Gs_grid[(v * 5 + 1) * 2 + 0]);
-        G_1_i += coef * static_cast<double>(Gs_grid[(v * 5 + 1) * 2 + 1]);
-
-        G_2_r += coef * static_cast<double>(Gs_grid[(v * 5 + 2) * 2 + 0]);
-        G_2_i += coef * static_cast<double>(Gs_grid[(v * 5 + 2) * 2 + 1]);
-
-        G_3_r += coef * static_cast<double>(Gs_grid[(v * 5 + 3) * 2 + 0]);
-        G_3_i += coef * static_cast<double>(Gs_grid[(v * 5 + 3) * 2 + 1]);
-
-        G_4_r += coef * static_cast<double>(Gs_grid[(v * 5 + 4) * 2 + 0]);
-        G_4_i += coef * static_cast<double>(Gs_grid[(v * 5 + 4) * 2 + 1]);
+        G_0 += Gs_grid[v * 5 + 0] * coef;
+        G_1 += Gs_grid[v * 5 + 1] * coef;
+        G_2 += Gs_grid[v * 5 + 2] * coef;
+        G_3 += Gs_grid[v * 5 + 3] * coef;
+        G_4 += Gs_grid[v * 5 + 4] * coef;
     }
 
-    G_point[(i * 5 + 0) * 2 + 0] = G_0_r;
-    G_point[(i * 5 + 0) * 2 + 1] = G_0_i;
-    G_point[(i * 5 + 1) * 2 + 0] = G_1_r;
-    G_point[(i * 5 + 1) * 2 + 1] = G_1_i;
-    G_point[(i * 5 + 2) * 2 + 0] = G_2_r;
-    G_point[(i * 5 + 2) * 2 + 1] = G_2_i;
-    G_point[(i * 5 + 3) * 2 + 0] = G_3_r;
-    G_point[(i * 5 + 3) * 2 + 1] = G_3_i;
-    G_point[(i * 5 + 4) * 2 + 0] = G_4_r;
-    G_point[(i * 5 + 4) * 2 + 1] = G_4_i;
+    G_point[i * 5 + 0] = make_double2(static_cast<double>(G_0.x), static_cast<double>(G_0.y));
+    G_point[i * 5 + 1] = make_double2(static_cast<double>(G_1.x), static_cast<double>(G_1.y));
+    G_point[i * 5 + 2] = make_double2(static_cast<double>(G_2.x), static_cast<double>(G_2.y));
+    G_point[i * 5 + 3] = make_double2(static_cast<double>(G_3.x), static_cast<double>(G_3.y));
+    G_point[i * 5 + 4] = make_double2(static_cast<double>(G_4.x), static_cast<double>(G_4.y));
 }
 
 __global__ void copy_G_to_E_kernel_polydisperse(
-    const double* __restrict__ G_point,
+    const double2* __restrict__ G_point,
     const int* __restrict__ quad_idxs,
-    double* __restrict__ E_point,
+    double2* __restrict__ E_point,
     size_t num_quads,
     size_t num_field_points)
 {
@@ -1252,25 +1137,24 @@ __global__ void copy_G_to_E_kernel_polydisperse(
     int p_idx = quad_idxs[q];
     if (p_idx < 0 || p_idx >= num_field_points) return;
 
-    double* dst = E_point + (num_field_points * 3 + q * 5) * 2;
-    const double* src = G_point + (p_idx * 5) * 2;
+    double2* dst = E_point + num_field_points * 3 + q * 5;
+    const double2* src = G_point + p_idx * 5;
 
-    for (int c = 0; c < 10; ++c) {
+    for (int c = 0; c < 5; ++c) {
         dst[c] = src[c];
     }
 }
 
 __global__ void real_space_self_kernel_polydisperse_joint(
-    const double* __restrict__ d_dipoles,
-    const double* __restrict__ d_self_coef_r,
-    const double* __restrict__ d_self_coef_i,
+    const double2* __restrict__ d_dipoles,
+    const double2* __restrict__ d_self_coef,
     const int* __restrict__ radius_idx,
     const double* __restrict__ d_self_perp_uniq,
     const int* __restrict__ quad_idxs,
     const int* __restrict__ quad_map,
     const double* __restrict__ d_self_G2_uniq,
     const double* __restrict__ d_radii,
-    double* __restrict__ E_point,
+    double2* __restrict__ E_point,
     size_t num_particles,
     size_t num_quads,
     bool solve_quadrupoles,
@@ -1279,70 +1163,33 @@ __global__ void real_space_self_kernel_polydisperse_joint(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_particles) return;
 
-    double sc_r = d_self_coef_r[i];
-    double sc_i = d_self_coef_i[i];
-
+    double2 sc = d_self_coef[i];
     int radius_idx_i = radius_idx[i];
     double self_perp_val = d_self_perp_uniq[radius_idx_i];
 
-    double factor_r = sc_r + self_perp_val;
-    double factor_i = sc_i;
+    double2 self_factor = make_double2(sc.x + self_perp_val, sc.y);
 
-    const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
-    double2 dip_x = d_dipoles_d2[i * 3 + 0];
-    double2 dip_y = d_dipoles_d2[i * 3 + 1];
-    double2 dip_z = d_dipoles_d2[i * 3 + 2];
+    double2 dip_x = d_dipoles[i * 3 + 0];
+    double2 dip_y = d_dipoles[i * 3 + 1];
+    double2 dip_z = d_dipoles[i * 3 + 2];
 
-    double dx_r = dip_x.x; double dx_i = dip_x.y;
-    double dy_r = dip_y.x; double dy_i = dip_y.y;
-    double dz_r = dip_z.x; double dz_i = dip_z.y;
-
-    E_point[(i * 3 + 0) * 2 + 0] += factor_r * dx_r - factor_i * dx_i;
-    E_point[(i * 3 + 0) * 2 + 1] += factor_r * dx_i + factor_i * dx_r;
-
-    E_point[(i * 3 + 1) * 2 + 0] += factor_r * dy_r - factor_i * dy_i;
-    E_point[(i * 3 + 1) * 2 + 1] += factor_r * dy_i + factor_i * dy_r;
-
-    E_point[(i * 3 + 2) * 2 + 0] += factor_r * dz_r - factor_i * dz_i;
-    E_point[(i * 3 + 2) * 2 + 1] += factor_r * dz_i + factor_i * dz_r;
+    E_point[i * 3 + 0] += self_factor * dip_x;
+    E_point[i * 3 + 1] += self_factor * dip_y;
+    E_point[i * 3 + 2] += self_factor * dip_z;
 
     if (solve_quadrupoles) {
         int q = quad_map[i];
         if (q >= 0 && q < num_quads) {
             double a_j = d_radii[i];
             double self_G2_val = d_self_G2_uniq[radius_idx_i];
-            double q_sc_r = 2.5 * sc_r / (a_j * a_j) + 0.5 * self_G2_val;
-            double q_sc_i = 2.5 * sc_i / (a_j * a_j);
+            double2 q_self_factor = make_double2(2.5 * sc.x / (a_j * a_j) + 0.5 * self_G2_val, 2.5 * sc.y / (a_j * a_j));
 
-            const double2* d_quad_d2 = reinterpret_cast<const double2*>(d_dipoles + num_particles * 3 * 2);
-            double2 q0 = d_quad_d2[q * 5 + 0];
-            double2 q1 = d_quad_d2[q * 5 + 1];
-            double2 q2 = d_quad_d2[q * 5 + 2];
-            double2 q3 = d_quad_d2[q * 5 + 3];
-            double2 q4 = d_quad_d2[q * 5 + 4];
+            const double2* d_quad_d2 = d_dipoles + num_particles * 3;
+            double2* G_point = E_point + num_particles * 3;
 
-            double q0_r = q0.x; double q0_i = q0.y;
-            double q1_r = q1.x; double q1_i = q1.y;
-            double q2_r = q2.x; double q2_i = q2.y;
-            double q3_r = q3.x; double q3_i = q3.y;
-            double q4_r = q4.x; double q4_i = q4.y;
-
-            double* G_point = E_point + num_particles * 3 * 2;
-
-            G_point[(q * 5 + 0) * 2 + 0] += q_sc_r * q0_r - q_sc_i * q0_i;
-            G_point[(q * 5 + 0) * 2 + 1] += q_sc_r * q0_i + q_sc_i * q0_r;
-
-            G_point[(q * 5 + 1) * 2 + 0] += q_sc_r * q1_r - q_sc_i * q1_i;
-            G_point[(q * 5 + 1) * 2 + 1] += q_sc_r * q1_i + q_sc_i * q1_r;
-
-            G_point[(q * 5 + 2) * 2 + 0] += q_sc_r * q2_r - q_sc_i * q2_i;
-            G_point[(q * 5 + 2) * 2 + 1] += q_sc_r * q2_i + q_sc_i * q2_r;
-
-            G_point[(q * 5 + 3) * 2 + 0] += q_sc_r * q3_r - q_sc_i * q3_i;
-            G_point[(q * 5 + 3) * 2 + 1] += q_sc_r * q3_i + q_sc_i * q3_r;
-
-            G_point[(q * 5 + 4) * 2 + 0] += q_sc_r * q4_r - q_sc_i * q4_i;
-            G_point[(q * 5 + 4) * 2 + 1] += q_sc_r * q4_i + q_sc_i * q4_r;
+            for (int c = 0; c < 5; ++c) {
+                G_point[q * 5 + c] += q_self_factor * d_quad_d2[q * 5 + c];
+            }
         }
     }
 }
@@ -1354,7 +1201,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
     const double* __restrict__ x_field,
     const double* __restrict__ y_field,
     const double* __restrict__ z_field,
-    const double* __restrict__ d_dipoles,
+    const double2* __restrict__ d_dipoles,
     const int* __restrict__ neighbor_list,
     const int* __restrict__ neighbor_counts,
     const int* __restrict__ particle_offsets,
@@ -1369,7 +1216,7 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
     const double* __restrict__ G2,
     const double* __restrict__ G3,
     const double* __restrict__ G4,
-    double* __restrict__ E_point,
+    double2* __restrict__ E_point,
     size_t num_particles,
     size_t num_quads,
     int max_neighbors,
@@ -1394,42 +1241,32 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
     double yi = y_part[i];
     double zi = z_part[i];
 
-    const double2* d_dipoles_d2 = reinterpret_cast<const double2*>(d_dipoles);
-    double2 dip_x = d_dipoles_d2[i * 3 + 0];
-    double2 dip_y = d_dipoles_d2[i * 3 + 1];
-    double2 dip_z = d_dipoles_d2[i * 3 + 2];
-
-    double px_r = dip_x.x; double px_i = dip_x.y;
-    double py_r = dip_y.x; double py_i = dip_y.y;
-    double pz_r = dip_z.x; double pz_i = dip_z.y;
+    double2 dip_x = d_dipoles[i * 3 + 0];
+    double2 dip_y = d_dipoles[i * 3 + 1];
+    double2 dip_z = d_dipoles[i * 3 + 2];
 
     int q_src = -1;
-    double q0_r = 0.0, q0_i = 0.0;
-    double q1_r = 0.0, q1_i = 0.0;
-    double q2_r = 0.0, q2_i = 0.0;
-    double q3_r = 0.0, q3_i = 0.0;
-    double q4_r = 0.0, q4_i = 0.0;
+    double2 q0 = make_double2(0.0, 0.0);
+    double2 q1 = make_double2(0.0, 0.0);
+    double2 q2 = make_double2(0.0, 0.0);
+    double2 q3 = make_double2(0.0, 0.0);
+    double2 q4 = make_double2(0.0, 0.0);
 
     if (solve_quadrupoles) {
         q_src = quad_map[i];
         if (q_src >= 0 && q_src < num_quads) {
-            const double2* d_quad_d2 = reinterpret_cast<const double2*>(d_dipoles + num_particles * 3 * 2);
-            double2 q0 = d_quad_d2[q_src * 5 + 0];
-            double2 q1 = d_quad_d2[q_src * 5 + 1];
-            double2 q2 = d_quad_d2[q_src * 5 + 2];
-            double2 q3 = d_quad_d2[q_src * 5 + 3];
-            double2 q4 = d_quad_d2[q_src * 5 + 4];
-
-            q0_r = q0.x; q0_i = q0.y;
-            q1_r = q1.x; q1_i = q1.y;
-            q2_r = q2.x; q2_i = q2.y;
-            q3_r = q3.x; q3_i = q3.y;
-            q4_r = q4.x; q4_i = q4.y;
+            const double2* d_quad_d2 = d_dipoles + num_particles * 3;
+            q0 = d_quad_d2[q_src * 5 + 0];
+            q1 = d_quad_d2[q_src * 5 + 1];
+            q2 = d_quad_d2[q_src * 5 + 2];
+            q3 = d_quad_d2[q_src * 5 + 3];
+            q4 = d_quad_d2[q_src * 5 + 4];
         }
     }
 
-    double* G_point = E_point + num_particles * 3 * 2;
+    double2* G_point = E_point + num_particles * 3;
     const double I_arr[5] = {1.0, 0.0, 0.0, 1.0, 0.0};
+    double2 zero = make_double2(0.0, 0.0);
 
     for (int k = 0; k < count; ++k) {
         int j = neighbor_list[i * max_neighbors + k];
@@ -1465,87 +1302,61 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
             rr_std[4] = delta_y * delta_z;
 
             // 1. Dipole contributions to E
-            double r_P_r = px_r * delta_x + py_r * delta_y + pz_r * delta_z;
-            double r_P_i = px_i * delta_x + py_i * delta_y + pz_i * delta_z;
+            double2 r_P = dip_x * delta_x + dip_y * delta_y + dip_z * delta_z;
 
             double perp_val = perp[start_idx + k];
             double para_val = para[start_idx + k];
 
-            double E_dip_x_r = perp_val * (px_r - delta_x * r_P_r) + para_val * delta_x * r_P_r;
-            double E_dip_x_i = perp_val * (px_i - delta_x * r_P_i) + para_val * delta_x * r_P_i;
+            double2 E_dip_x = (dip_x - r_P * delta_x) * perp_val + (r_P * delta_x) * para_val;
+            double2 E_dip_y = (dip_y - r_P * delta_y) * perp_val + (r_P * delta_y) * para_val;
+            double2 E_dip_z = (dip_z - r_P * delta_z) * perp_val + (r_P * delta_z) * para_val;
 
-            double E_dip_y_r = perp_val * (py_r - delta_y * r_P_r) + para_val * delta_y * r_P_r;
-            double E_dip_y_i = perp_val * (py_i - delta_y * r_P_i) + para_val * delta_y * r_P_i;
-
-            double E_dip_z_r = perp_val * (pz_r - delta_z * r_P_r) + para_val * delta_z * r_P_r;
-            double E_dip_z_i = perp_val * (pz_i - delta_z * r_P_i) + para_val * delta_z * r_P_i;
-
-            double E_quad_x_r = 0.0, E_quad_x_i = 0.0;
-            double E_quad_y_r = 0.0, E_quad_y_i = 0.0;
-            double E_quad_z_r = 0.0, E_quad_z_i = 0.0;
+            double2 E_quad_x = zero;
+            double2 E_quad_y = zero;
+            double2 E_quad_z = zero;
 
             if (solve_quadrupoles && q_src >= 0) {
                 // Quadrupole contributions to E
-                double Q_r_vec_r[3];
-                Q_r_vec_r[0] = q0_r * delta_x + q1_r * delta_y + q2_r * delta_z;
-                Q_r_vec_r[1] = q1_r * delta_x + q3_r * delta_y + q4_r * delta_z;
-                Q_r_vec_r[2] = q2_r * delta_x + q4_r * delta_y - (q0_r + q3_r) * delta_z;
+                double2 Q_r_vec[3];
+                Q_r_vec[0] = q0 * delta_x + q1 * delta_y + q2 * delta_z;
+                Q_r_vec[1] = q1 * delta_x + q3 * delta_y + q4 * delta_z;
+                Q_r_vec[2] = q2 * delta_x + q4 * delta_y - (q0 + q3) * delta_z;
 
-                double Q_r_vec_i[3];
-                Q_r_vec_i[0] = q0_i * delta_x + q1_i * delta_y + q2_i * delta_z;
-                Q_r_vec_i[1] = q1_i * delta_x + q3_i * delta_y + q4_i * delta_z;
-                Q_r_vec_i[2] = q2_i * delta_x + q4_i * delta_y - (q0_i + q3_i) * delta_z;
-
-                double Q__rr_r = q0_r * __rr[0] + q1_r * __rr[1] + q2_r * __rr[2] + q3_r * __rr[3] + q4_r * __rr[4];
-                double Q__rr_i = q0_i * __rr[0] + q1_i * __rr[1] + q2_i * __rr[2] + q3_i * __rr[3] + q4_i * __rr[4];
+                double2 Q__rr = q0 * __rr[0] + q1 * __rr[1] + q2 * __rr[2] + q3 * __rr[3] + q4 * __rr[4];
 
                 double Q1_val = perp_Q[start_idx + k];
                 double Q2_val = para_Q[start_idx + k];
 
-                E_quad_x_r = 0.5 * (Q1_val * Q__rr_r * delta_x + 2.0 * Q2_val * Q_r_vec_r[0]);
-                E_quad_x_i = 0.5 * (Q1_val * Q__rr_i * delta_x + 2.0 * Q2_val * Q_r_vec_i[0]);
-
-                E_quad_y_r = 0.5 * (Q1_val * Q__rr_r * delta_y + 2.0 * Q2_val * Q_r_vec_r[1]);
-                E_quad_y_i = 0.5 * (Q1_val * Q__rr_i * delta_y + 2.0 * Q2_val * Q_r_vec_i[1]);
-
-                E_quad_z_r = 0.5 * (Q1_val * Q__rr_r * delta_z + 2.0 * Q2_val * Q_r_vec_r[2]);
-                E_quad_z_i = 0.5 * (Q1_val * Q__rr_i * delta_z + 2.0 * Q2_val * Q_r_vec_i[2]);
+                E_quad_x = (Q__rr * (Q1_val * delta_x) + Q_r_vec[0] * (2.0 * Q2_val)) * 0.5;
+                E_quad_y = (Q__rr * (Q1_val * delta_y) + Q_r_vec[1] * (2.0 * Q2_val)) * 0.5;
+                E_quad_z = (Q__rr * (Q1_val * delta_z) + Q_r_vec[2] * (2.0 * Q2_val)) * 0.5;
             }
 
-            double E_tot_x_r = E_dip_x_r - E_quad_x_r;
-            double E_tot_x_i = E_dip_x_i - E_quad_x_i;
-            double E_tot_y_r = E_dip_y_r - E_quad_y_r;
-            double E_tot_y_i = E_dip_y_i - E_quad_y_i;
-            double E_tot_z_r = E_dip_z_r - E_quad_z_r;
-            double E_tot_z_i = E_dip_z_i - E_quad_z_i;
+            double2 E_tot_x = E_dip_x - E_quad_x;
+            double2 E_tot_y = E_dip_y - E_quad_y;
+            double2 E_tot_z = E_dip_z - E_quad_z;
 
             if (k_x != 0.0 || k_y != 0.0) {
                 double phase = - (k_x * rx + k_y * ry);
-                double c = cos(phase);
-                double s = sin(phase);
-                double t_r, t_i;
+                double2 phase_factor = make_double2(cos(phase), sin(phase));
 
-                t_r = E_tot_x_r * c - E_tot_x_i * s;
-                t_i = E_tot_x_r * s + E_tot_x_i * c;
-                E_tot_x_r = t_r; E_tot_x_i = t_i;
-
-                t_r = E_tot_y_r * c - E_tot_y_i * s;
-                t_i = E_tot_y_r * s + E_tot_y_i * c;
-                E_tot_y_r = t_r; E_tot_y_i = t_i;
-
-                t_r = E_tot_z_r * c - E_tot_z_i * s;
-                t_i = E_tot_z_r * s + E_tot_z_i * c;
-                E_tot_z_r = t_r; E_tot_z_i = t_i;
+                E_tot_x = E_tot_x * phase_factor;
+                E_tot_y = E_tot_y * phase_factor;
+                E_tot_z = E_tot_z * phase_factor;
             }
 
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 0], sign * E_tot_x_r);
-            atomicAdd(&E_point[(j * 3 + 0) * 2 + 1], sign * E_tot_x_i);
+            E_tot_x = E_tot_x * sign;
+            E_tot_y = E_tot_y * sign;
+            E_tot_z = E_tot_z * sign;
 
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 0], sign * E_tot_y_r);
-            atomicAdd(&E_point[(j * 3 + 1) * 2 + 1], sign * E_tot_y_i);
+            atomicAdd(&E_point[j * 3 + 0].x, E_tot_x.x);
+            atomicAdd(&E_point[j * 3 + 0].y, E_tot_x.y);
 
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 0], sign * E_tot_z_r);
-            atomicAdd(&E_point[(j * 3 + 2) * 2 + 1], sign * E_tot_z_i);
+            atomicAdd(&E_point[j * 3 + 1].x, E_tot_y.x);
+            atomicAdd(&E_point[j * 3 + 1].y, E_tot_y.y);
+
+            atomicAdd(&E_point[j * 3 + 2].x, E_tot_z.x);
+            atomicAdd(&E_point[j * 3 + 2].y, E_tot_z.y);
 
             // 2. Contributions to G
             if (solve_quadrupoles) {
@@ -1555,29 +1366,19 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
                     double Q2_val = para_Q[start_idx + k];
                     double Q3_val = Q3[start_idx + k];
 
-                    double Pr_rP_r[5];
-                    Pr_rP_r[0] = 2.0 * px_r * delta_x;
-                    Pr_rP_r[1] = px_r * delta_y + py_r * delta_x;
-                    Pr_rP_r[2] = px_r * delta_z + pz_r * delta_x;
-                    Pr_rP_r[3] = 2.0 * py_r * delta_y;
-                    Pr_rP_r[4] = py_r * delta_z + pz_r * delta_y;
+                    double2 Pr_rP[5];
+                    Pr_rP[0] = dip_x * (2.0 * delta_x);
+                    Pr_rP[1] = dip_x * delta_y + dip_y * delta_x;
+                    Pr_rP[2] = dip_x * delta_z + dip_z * delta_x;
+                    Pr_rP[3] = dip_y * (2.0 * delta_y);
+                    Pr_rP[4] = dip_y * delta_z + dip_z * delta_y;
 
-                    double Pr_rP_i[5];
-                    Pr_rP_i[0] = 2.0 * px_i * delta_x;
-                    Pr_rP_i[1] = px_i * delta_y + py_i * delta_x;
-                    Pr_rP_i[2] = px_i * delta_z + pz_i * delta_x;
-                    Pr_rP_i[3] = 2.0 * py_i * delta_y;
-                    Pr_rP_i[4] = py_i * delta_z + pz_i * delta_y;
-
-                    double G_dip_r[5];
-                    double G_dip_i[5];
+                    double2 G_dip[5];
                     for (int c = 0; c < 5; ++c) {
-                        G_dip_r[c] = (Q1_val * rr_std[c] * r_P_r + Q2_val * Pr_rP_r[c] + (Q2_val + Q3_val) * I_arr[c] * r_P_r);
-                        G_dip_i[c] = (Q1_val * rr_std[c] * r_P_i + Q2_val * Pr_rP_i[c] + (Q2_val + Q3_val) * I_arr[c] * r_P_i);
+                        G_dip[c] = r_P * (Q1_val * rr_std[c] + (Q2_val + Q3_val) * I_arr[c]) + Pr_rP[c] * Q2_val;
                     }
 
-                    double G_quad_r[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
-                    double G_quad_i[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+                    double2 G_quad[5] = {zero, zero, zero, zero, zero};
 
                     if (q_src >= 0) {
                         double G1_val = G1[start_idx + k];
@@ -1585,57 +1386,40 @@ __global__ void real_space_neighbor_kernel_polydisperse_joint(
                         double G3_val = G3[start_idx + k];
                         double G4_val = G4[start_idx + k];
 
-                        double Q_r_vec_r[3];
-                        Q_r_vec_r[0] = q0_r * delta_x + q1_r * delta_y + q2_r * delta_z;
-                        Q_r_vec_r[1] = q1_r * delta_x + q3_r * delta_y + q4_r * delta_z;
-                        Q_r_vec_r[2] = q2_r * delta_x + q4_r * delta_y - (q0_r + q3_r) * delta_z;
+                        double2 Q_vec[3] = {
+                            q0 * delta_x + q1 * delta_y + q2 * delta_z,
+                            q1 * delta_x + q3 * delta_y + q4 * delta_z,
+                            q2 * delta_x + q4 * delta_y - (q0 + q3) * delta_z
+                        };
 
-                        double Q_r_vec_i[3];
-                        Q_r_vec_i[0] = q0_i * delta_x + q1_i * delta_y + q2_i * delta_z;
-                        Q_r_vec_i[1] = q1_i * delta_x + q3_i * delta_y + q4_i * delta_z;
-                        Q_r_vec_i[2] = q2_i * delta_x + q4_i * delta_y - (q0_i + q3_i) * delta_z;
+                        double2 Q__rr = Q_vec[0] * delta_x + Q_vec[1] * delta_y + Q_vec[2] * delta_z;
 
-                        double Q__rr_r = q0_r * __rr[0] + q1_r * __rr[1] + q2_r * __rr[2] + q3_r * __rr[3] + q4_r * __rr[4];
-                        double Q__rr_i = q0_i * __rr[0] + q1_i * __rr[1] + q2_i * __rr[2] + q3_i * __rr[3] + q4_i * __rr[4];
+                        double2 Q_rr_rr_Q[5];
+                        Q_rr_rr_Q[0] = Q_vec[0] * (2.0 * delta_x);
+                        Q_rr_rr_Q[1] = Q_vec[0] * delta_y + Q_vec[1] * delta_x;
+                        Q_rr_rr_Q[2] = Q_vec[0] * delta_z + Q_vec[2] * delta_x;
+                        Q_rr_rr_Q[3] = Q_vec[1] * (2.0 * delta_y);
+                        Q_rr_rr_Q[4] = Q_vec[1] * delta_z + Q_vec[2] * delta_y;
 
-                        double Q_rr_rr_Q_r[5];
-                        Q_rr_rr_Q_r[0] = 2.0 * Q_r_vec_r[0] * delta_x;
-                        Q_rr_rr_Q_r[1] = Q_r_vec_r[0] * delta_y + Q_r_vec_r[1] * delta_x;
-                        Q_rr_rr_Q_r[2] = Q_r_vec_r[0] * delta_z + Q_r_vec_r[2] * delta_x;
-                        Q_rr_rr_Q_r[3] = 2.0 * Q_r_vec_r[1] * delta_y;
-                        Q_rr_rr_Q_r[4] = Q_r_vec_r[1] * delta_z + Q_r_vec_r[2] * delta_y;
-
-                        double Q_rr_rr_Q_i[5];
-                        Q_rr_rr_Q_i[0] = 2.0 * Q_r_vec_i[0] * delta_x;
-                        Q_rr_rr_Q_i[1] = Q_r_vec_i[0] * delta_y + Q_r_vec_i[1] * delta_x;
-                        Q_rr_rr_Q_i[2] = Q_r_vec_i[0] * delta_z + Q_r_vec_i[2] * delta_x;
-                        Q_rr_rr_Q_i[3] = 2.0 * Q_r_vec_i[1] * delta_y;
-                        Q_rr_rr_Q_i[4] = Q_r_vec_i[1] * delta_z + Q_r_vec_i[2] * delta_y;
-
-                        double q_val_r[5] = {q0_r, q1_r, q2_r, q3_r, q4_r};
-                        double q_val_i[5] = {q0_i, q1_i, q2_i, q3_i, q4_i};
+                        double2 q_val[5] = {q0, q1, q2, q3, q4};
 
                         for (int c = 0; c < 5; ++c) {
-                            G_quad_r[c] = 0.5 * (G1_val * I_arr[c] * Q__rr_r + G2_val * q_val_r[c] + G3_val * (I_arr[c] * Q__rr_r + 2.0 * Q_rr_rr_Q_r[c]) + G4_val * rr_std[c] * Q__rr_r);
-                            G_quad_i[c] = 0.5 * (G1_val * I_arr[c] * Q__rr_i + G2_val * q_val_i[c] + G3_val * (I_arr[c] * Q__rr_i + 2.0 * Q_rr_rr_Q_i[c]) + G4_val * rr_std[c] * Q__rr_i);
+                            G_quad[c] = (Q__rr * (G1_val * I_arr[c] + G3_val * I_arr[c] + G4_val * rr_std[c]) + q_val[c] * G2_val + Q_rr_rr_Q[c] * (2.0 * G3_val)) * 0.5;
                         }
                     }
 
                     for (int c = 0; c < 5; ++c) {
-                        double G_tot_r = G_dip_r[c] + G_quad_r[c];
-                        double G_tot_i = G_dip_i[c] + G_quad_i[c];
+                        double2 total_G = G_dip[c] + G_quad[c];
 
                         if (k_x != 0.0 || k_y != 0.0) {
                             double phase = - (k_x * rx + k_y * ry);
-                            double c = cos(phase);
-                            double s = sin(phase);
-                            double t_r = G_tot_r * c - G_tot_i * s;
-                            double t_i = G_tot_r * s + G_tot_i * c;
-                            G_tot_r = t_r; G_tot_i = t_i;
+                            double2 phase_factor = make_double2(cos(phase), sin(phase));
+                            total_G = total_G * phase_factor;
                         }
 
-                        atomicAdd(&G_point[(q_field * 5 + c) * 2 + 0], sign * G_tot_r);
-                        atomicAdd(&G_point[(q_field * 5 + c) * 2 + 1], sign * G_tot_i);
+                        total_G = total_G * sign;
+                        atomicAdd(&G_point[q_field * 5 + c].x, total_G.x);
+                        atomicAdd(&G_point[q_field * 5 + c].y, total_G.y);
                     }
                 }
             }
@@ -2429,8 +2213,8 @@ void Polydisperse_Ewald_Electric_Field::contractPrecalcs() {
     CUDA_CHECK(cudaMalloc(&d_particle_index, size_idx_bytes));
 
     if (solve_quadrupoles) {
-        CUDA_CHECK(cudaMalloc(&d_G_point, num_field_points * 5 * 2 * sizeof(double)));
-        CUDA_CHECK(cudaMemset(d_G_point, 0, num_field_points * 5 * 2 * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_G_point, num_field_points * 5 * sizeof(double2)));
+        CUDA_CHECK(cudaMemset(d_G_point, 0, num_field_points * 5 * sizeof(double2)));
         CUDA_CHECK(cudaMalloc(&d_contract_coef_Q, num_contract * element_size));
     }
 
@@ -2564,10 +2348,23 @@ void Polydisperse_Ewald_Electric_Field::spread(void* d_fE_grid_in) {
     int blocksPerGrid = (num_spread + threadsPerBlock - 1) / threadsPerBlock;
 
     if (use_recip_fp32) {
+        size_t total_dip_elements = (num_particles * 3 + num_quads * 5) * 2;
+        if (d_float_dipoles == nullptr) {
+            CUDA_CHECK(cudaMalloc(&d_float_dipoles, total_dip_elements * sizeof(float)));
+        }
+        int cast_threads = 256;
+        int cast_blocks = (total_dip_elements + cast_threads - 1) / cast_threads;
+        cast_double_to_float_kernel<<<cast_blocks, cast_threads>>>(
+            reinterpret_cast<const double*>(d_dipoles),
+            reinterpret_cast<float*>(d_float_dipoles),
+            total_dip_elements
+        );
+        CUDA_CHECK(cudaGetLastError());
+
         spread_kernel_polydisperse<float><<<blocksPerGrid, threadsPerBlock, 8192>>>(
-            d_dipoles,
+            reinterpret_cast<const float2*>(d_float_dipoles),
             static_cast<const float*>(d_spread_coef), d_spread_idxs,
-            static_cast<float*>(d_fE_grid_in),
+            static_cast<float2*>(d_fE_grid_in),
             num_spread, num_offsets,
             num_grid[0], num_grid[1], num_grid[2]
         );
@@ -2575,7 +2372,7 @@ void Polydisperse_Ewald_Electric_Field::spread(void* d_fE_grid_in) {
         spread_kernel_polydisperse<double><<<blocksPerGrid, threadsPerBlock, 8192>>>(
             d_dipoles,
             static_cast<const double*>(d_spread_coef), d_spread_idxs,
-            static_cast<double*>(d_fE_grid_in),
+            static_cast<double2*>(d_fE_grid_in),
             num_spread, num_offsets,
             num_grid[0], num_grid[1], num_grid[2]
         );
@@ -2596,8 +2393,8 @@ void Polydisperse_Ewald_Electric_Field::scale(void* d_fE_grid_in) {
     if (use_recip_fp32) {
         if (solve_quadrupoles) {
             scale_kernel_joint_polydisperse<float><<<blocksPerGrid, threadsPerBlock>>>(
-                static_cast<float*>(d_fE_grid_in),
-                static_cast<float*>(d_fG_grid),
+                static_cast<float2*>(d_fE_grid_in),
+                static_cast<float2*>(d_fG_grid),
                 static_cast<const float*>(d_scale_coef),
                 static_cast<const float*>(d_scale_coef_Q_imag),
                 static_cast<const float*>(d_scale_coef_GP_imag),
@@ -2608,7 +2405,7 @@ void Polydisperse_Ewald_Electric_Field::scale(void* d_fE_grid_in) {
             );
         } else {
             scale_kernel_polydisperse<float><<<blocksPerGrid, threadsPerBlock>>>(
-                static_cast<float*>(d_fE_grid_in),
+                static_cast<float2*>(d_fE_grid_in),
                 static_cast<const float*>(d_scale_coef),
                 grid_voxels
             );
@@ -2616,8 +2413,8 @@ void Polydisperse_Ewald_Electric_Field::scale(void* d_fE_grid_in) {
     } else {
         if (solve_quadrupoles) {
             scale_kernel_joint_polydisperse<double><<<blocksPerGrid, threadsPerBlock>>>(
-                static_cast<double*>(d_fE_grid_in),
-                static_cast<double*>(d_fG_grid),
+                static_cast<double2*>(d_fE_grid_in),
+                static_cast<double2*>(d_fG_grid),
                 static_cast<const double*>(d_scale_coef),
                 static_cast<const double*>(d_scale_coef_Q_imag),
                 static_cast<const double*>(d_scale_coef_GP_imag),
@@ -2628,7 +2425,7 @@ void Polydisperse_Ewald_Electric_Field::scale(void* d_fE_grid_in) {
             );
         } else {
             scale_kernel_polydisperse<double><<<blocksPerGrid, threadsPerBlock>>>(
-                static_cast<double*>(d_fE_grid_in),
+                static_cast<double2*>(d_fE_grid_in),
                 static_cast<const double*>(d_scale_coef),
                 grid_voxels
             );
@@ -2638,7 +2435,7 @@ void Polydisperse_Ewald_Electric_Field::scale(void* d_fE_grid_in) {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Polydisperse_Ewald_Electric_Field::contract(double* d_E_point, const void* d_Es_grid_in) {
+void Polydisperse_Ewald_Electric_Field::contract(double2* d_E_point, const void* d_Es_grid_in) {
     if (num_contract == 0 || d_contract_coef == nullptr || d_contract_idxs == nullptr || d_particle_index == nullptr || d_E_point == nullptr || d_Es_grid_in == nullptr) {
         throw std::runtime_error("contract: Buffers/Precalcs are not allocated.");
     }
@@ -2650,7 +2447,7 @@ void Polydisperse_Ewald_Electric_Field::contract(double* d_E_point, const void* 
 
     if (use_recip_fp32) {
         contract_kernel_polydisperse<float><<<blocksPerGrid, threadsPerBlock>>>(
-            static_cast<const float*>(d_Es_grid_in),
+            static_cast<const float2*>(d_Es_grid_in),
             static_cast<const float*>(d_contract_coef), d_contract_idxs,
             d_E_point,
             num_field_points, num_offsets,
@@ -2659,7 +2456,7 @@ void Polydisperse_Ewald_Electric_Field::contract(double* d_E_point, const void* 
         );
     } else {
         contract_kernel_polydisperse<double><<<blocksPerGrid, threadsPerBlock>>>(
-            static_cast<const double*>(d_Es_grid_in),
+            static_cast<const double2*>(d_Es_grid_in),
             static_cast<const double*>(d_contract_coef), d_contract_idxs,
             d_E_point,
             num_field_points, num_offsets,
@@ -2671,7 +2468,7 @@ void Polydisperse_Ewald_Electric_Field::contract(double* d_E_point, const void* 
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Polydisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
+void Polydisperse_Ewald_Electric_Field::realSpace(double2* d_E_point) {
     if (num_particles == 0 || d_E_point == nullptr) return;
 
     int threadsPerBlock = 256;
@@ -2680,7 +2477,7 @@ void Polydisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
     if (mode == FieldCalcMode::SOLVER_AX) {
         if (solve_quadrupoles) {
             real_space_self_kernel_polydisperse_joint<<<blocksPerGrid, threadsPerBlock>>>(
-                d_dipoles, d_self_coef_r, d_self_coef_i,
+                d_dipoles, d_self_coef,
                 d_radius_idx, d_self_perp_uniq,
                 d_quad_idxs, d_quad_map,
                 d_self_G2_uniq,
@@ -2692,7 +2489,7 @@ void Polydisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
             );
         } else {
             real_space_self_kernel_polydisperse<<<blocksPerGrid, threadsPerBlock>>>(
-                d_dipoles, d_self_coef_r, d_self_coef_i,
+                d_dipoles, d_self_coef,
                 d_radius_idx, d_self_perp_uniq,
                 d_E_point,
                 num_particles,
@@ -2745,10 +2542,11 @@ void Polydisperse_Ewald_Electric_Field::realSpace(double* d_E_point) {
     }
 }
 
-__global__ void negate_vector_kernel_poly(double* vec, size_t size) {
+__global__ void negate_vector_kernel_poly(double2* vec, size_t size) {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
-        vec[idx] = -vec[idx];
+        vec[idx].x = -vec[idx].x;
+        vec[idx].y = -vec[idx].y;
     }
 }
 
@@ -2767,10 +2565,10 @@ void Polydisperse_Ewald_Electric_Field::electricField() {
 
         if (use_recip_fp32) {
             spread_quadrupoles_kernel_polydisperse<float><<<blocksPerGrid, threadsPerBlock, 24576>>>(
-                d_dipoles,
+                reinterpret_cast<const float2*>(d_float_dipoles),
                 d_quad_idxs,
                 static_cast<const float*>(d_spread_coef_Q), d_spread_idxs,
-                static_cast<float*>(d_fG_grid),
+                static_cast<float2*>(d_fG_grid),
                 num_quads, num_particles, num_offsets,
                 num_grid[0], num_grid[1], num_grid[2]
             );
@@ -2788,7 +2586,7 @@ void Polydisperse_Ewald_Electric_Field::electricField() {
                 d_dipoles,
                 d_quad_idxs,
                 static_cast<const double*>(d_spread_coef_Q), d_spread_idxs,
-                static_cast<double*>(d_fG_grid),
+                static_cast<double2*>(d_fG_grid),
                 num_quads, num_particles, num_offsets,
                 num_grid[0], num_grid[1], num_grid[2]
             );
@@ -2873,13 +2671,13 @@ void Polydisperse_Ewald_Electric_Field::electricField() {
     contract(d_E_point, d_fE_grid);
 
     if (solve_quadrupoles && num_quads > 0 && d_G_point != nullptr) {
-        CUDA_CHECK(cudaMemset(d_G_point, 0, num_field_points * 5 * 2 * sizeof(double)));
+        CUDA_CHECK(cudaMemset(d_G_point, 0, num_field_points * 5 * sizeof(double2)));
 
         int contract_threads = 256;
         int contract_blocks = (num_field_points + contract_threads - 1) / contract_threads;
         if (use_recip_fp32) {
             contract_kernel_G_polydisperse<float><<<contract_blocks, contract_threads>>>(
-                static_cast<const float*>(d_fG_grid),
+                static_cast<const float2*>(d_fG_grid),
                 d_contract_idxs,
                 static_cast<const float*>(d_contract_coef_Q),
                 d_G_point,
@@ -2890,7 +2688,7 @@ void Polydisperse_Ewald_Electric_Field::electricField() {
             );
         } else {
             contract_kernel_G_polydisperse<double><<<contract_blocks, contract_threads>>>(
-                static_cast<const double*>(d_fG_grid),
+                static_cast<const double2*>(d_fG_grid),
                 d_contract_idxs,
                 static_cast<const double*>(d_contract_coef_Q),
                 d_G_point,
@@ -2918,11 +2716,11 @@ void Polydisperse_Ewald_Electric_Field::electricField() {
 
     if (mode == FieldCalcMode::INTERACTION_FIELD) {
         size_t num_targets = (num_field_points > 0) ? num_field_points : num_particles;
-        size_t num_doubles_E = (num_targets * 3 + num_quads * 5) * 2;
-        if (num_doubles_E > 0) {
+        size_t num_complex_E = num_targets * 3 + num_quads * 5;
+        if (num_complex_E > 0) {
             int threads = 256;
-            int blocks = (num_doubles_E + threads - 1) / threads;
-            negate_vector_kernel_poly<<<blocks, threads>>>(d_E_point, num_doubles_E);
+            int blocks = (num_complex_E + threads - 1) / threads;
+            negate_vector_kernel_poly<<<blocks, threads>>>(d_E_point, num_complex_E);
             CUDA_CHECK(cudaGetLastError());
             CUDA_CHECK(cudaDeviceSynchronize());
         }

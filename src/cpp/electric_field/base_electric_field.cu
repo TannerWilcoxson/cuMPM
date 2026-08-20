@@ -28,8 +28,7 @@ Base_Electric_Field::~Base_Electric_Field() {
     if (d_y_part)      { cudaFree(d_y_part);      d_y_part      = nullptr; }
     if (d_z_part)      { cudaFree(d_z_part);      d_z_part      = nullptr; }
     if (d_dipoles)     { cudaFree(d_dipoles);     d_dipoles     = nullptr; }
-    if (d_self_coef_r) { cudaFree(d_self_coef_r); d_self_coef_r = nullptr; }
-    if (d_self_coef_i) { cudaFree(d_self_coef_i); d_self_coef_i = nullptr; }
+    if (d_self_coef)   { cudaFree(d_self_coef);   d_self_coef   = nullptr; }
     if (d_x_field)     { cudaFree(d_x_field);     d_x_field     = nullptr; }
     if (d_y_field)     { cudaFree(d_y_field);     d_y_field     = nullptr; }
     if (d_z_field)     { cudaFree(d_z_field);     d_z_field     = nullptr; }
@@ -82,8 +81,7 @@ void Base_Electric_Field::updateParticleCoordinates(
         if (d_y_part)      { cudaFree(d_y_part);      d_y_part      = nullptr; }
         if (d_z_part)      { cudaFree(d_z_part);      d_z_part      = nullptr; }
         if (d_dipoles)     { cudaFree(d_dipoles);     d_dipoles     = nullptr; }
-        if (d_self_coef_r) { cudaFree(d_self_coef_r); d_self_coef_r = nullptr; }
-        if (d_self_coef_i) { cudaFree(d_self_coef_i); d_self_coef_i = nullptr; }
+        if (d_self_coef)   { cudaFree(d_self_coef);   d_self_coef   = nullptr; }
         if (d_E_point)     { cudaFree(d_E_point);     d_E_point     = nullptr; }
 
         num_particles = N;
@@ -91,16 +89,14 @@ void Base_Electric_Field::updateParticleCoordinates(
             CUDA_CHECK(cudaMalloc(&d_x_part, N * sizeof(double)));
             CUDA_CHECK(cudaMalloc(&d_y_part, N * sizeof(double)));
             CUDA_CHECK(cudaMalloc(&d_z_part, N * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_dipoles, (N * 3 + num_quads * 5) * 2 * sizeof(double)));
-            CUDA_CHECK(cudaMemset(d_dipoles, 0, (N * 3 + num_quads * 5) * 2 * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_self_coef_r, N * sizeof(double)));
-            CUDA_CHECK(cudaMalloc(&d_self_coef_i, N * sizeof(double)));
-            CUDA_CHECK(cudaMemset(d_self_coef_r, 0, N * sizeof(double)));
-            CUDA_CHECK(cudaMemset(d_self_coef_i, 0, N * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_dipoles, (N * 3 + num_quads * 5) * sizeof(double2)));
+            CUDA_CHECK(cudaMemset(d_dipoles, 0, (N * 3 + num_quads * 5) * sizeof(double2)));
+            CUDA_CHECK(cudaMalloc(&d_self_coef, N * sizeof(double2)));
+            CUDA_CHECK(cudaMemset(d_self_coef, 0, N * sizeof(double2)));
 
             size_t num_targets = num_field_points > 0 ? num_field_points : N;
-            CUDA_CHECK(cudaMalloc(&d_E_point, (num_targets * 3 + num_quads * 5) * 2 * sizeof(double)));
-            CUDA_CHECK(cudaMemset(d_E_point, 0, (num_targets * 3 + num_quads * 5) * 2 * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_E_point, (num_targets * 3 + num_quads * 5) * sizeof(double2)));
+            CUDA_CHECK(cudaMemset(d_E_point, 0, (num_targets * 3 + num_quads * 5) * sizeof(double2)));
         }
     }
 
@@ -142,8 +138,8 @@ void Base_Electric_Field::updateFieldCoordinates(
         field_points_updated = false;
         
         if (num_particles > 0) {
-            CUDA_CHECK(cudaMalloc(&d_E_point, (num_particles * 3 + num_quads * 5) * 2 * sizeof(double)));
-            CUDA_CHECK(cudaMemset(d_E_point, 0, (num_particles * 3 + num_quads * 5) * 2 * sizeof(double)));
+            CUDA_CHECK(cudaMalloc(&d_E_point, (num_particles * 3 + num_quads * 5) * sizeof(double2)));
+            CUDA_CHECK(cudaMemset(d_E_point, 0, (num_particles * 3 + num_quads * 5) * sizeof(double2)));
         }
         return;
     }
@@ -158,8 +154,8 @@ void Base_Electric_Field::updateFieldCoordinates(
         CUDA_CHECK(cudaMalloc(&d_x_field, M * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_y_field, M * sizeof(double)));
         CUDA_CHECK(cudaMalloc(&d_z_field, M * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_E_point, (M * 3 + num_quads * 5) * 2 * sizeof(double)));
-        CUDA_CHECK(cudaMemset(d_E_point, 0, (M * 3 + num_quads * 5) * 2 * sizeof(double)));
+        CUDA_CHECK(cudaMalloc(&d_E_point, (M * 3 + num_quads * 5) * sizeof(double2)));
+        CUDA_CHECK(cudaMemset(d_E_point, 0, (M * 3 + num_quads * 5) * sizeof(double2)));
     }
 
     CUDA_CHECK(cudaMemcpy(d_x_field, x_field.data(), M * sizeof(double), cudaMemcpyHostToDevice));
@@ -241,7 +237,7 @@ void Base_Electric_Field::updateQuadrupoles(
         host_quads[(q * 5 + 4) * 2 + 0] = quad_5[q];
     }
 
-    size_t offset = num_particles * 3 * 2;
+    size_t offset = num_particles * 3;
     size_t size_quads_bytes = num_quads * 5 * 2 * sizeof(double);
     CUDA_CHECK(cudaMemcpy(d_dipoles + offset, host_quads.data(), size_quads_bytes, cudaMemcpyHostToDevice));
 
@@ -279,7 +275,7 @@ void Base_Electric_Field::updateQuadrupolesComplex(
         host_quads[(q * 5 + 4) * 2 + 1] = quad_5i[q];
     }
 
-    size_t offset = num_particles * 3 * 2;
+    size_t offset = num_particles * 3;
     size_t size_quads_bytes = num_quads * 5 * 2 * sizeof(double);
     CUDA_CHECK(cudaMemcpy(d_dipoles + offset, host_quads.data(), size_quads_bytes, cudaMemcpyHostToDevice));
 
@@ -339,6 +335,18 @@ void Base_Electric_Field::getDipolesComplexHost(
     }
 }
 
+void Base_Electric_Field::setSelfCoef(const std::vector<std::complex<double>>& self_coef) {
+    if (self_coef.size() != num_particles) {
+        throw std::invalid_argument("Base_Electric_Field: self_coef size must equal num_particles.");
+    }
+    if (d_self_coef == nullptr && num_particles > 0) {
+        CUDA_CHECK(cudaMalloc(&d_self_coef, num_particles * sizeof(double2)));
+    }
+    if (num_particles > 0) {
+        CUDA_CHECK(cudaMemcpy(d_self_coef, self_coef.data(), num_particles * sizeof(double2), cudaMemcpyHostToDevice));
+    }
+}
+
 void Base_Electric_Field::setSelfCoef(
     const std::vector<double>& self_coef_r,
     const std::vector<double>& self_coef_i)
@@ -346,23 +354,16 @@ void Base_Electric_Field::setSelfCoef(
     if (self_coef_r.size() != num_particles || self_coef_i.size() != num_particles) {
         throw std::invalid_argument("Base_Electric_Field: self_coef size must equal num_particles.");
     }
-    if (d_self_coef_r == nullptr) {
-        CUDA_CHECK(cudaMalloc(&d_self_coef_r, num_particles * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_self_coef_i, num_particles * sizeof(double)));
+    std::vector<std::complex<double>> sc(num_particles);
+    for (size_t i = 0; i < num_particles; ++i) {
+        sc[i] = std::complex<double>(self_coef_r[i], self_coef_i[i]);
     }
-    CUDA_CHECK(cudaMemcpy(d_self_coef_r, self_coef_r.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_self_coef_i, self_coef_i.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
+    setSelfCoef(sc);
 }
 
 void Base_Electric_Field::setSelfCoef(double val_r, double val_i) {
-    if (d_self_coef_r == nullptr) {
-        CUDA_CHECK(cudaMalloc(&d_self_coef_r, num_particles * sizeof(double)));
-        CUDA_CHECK(cudaMalloc(&d_self_coef_i, num_particles * sizeof(double)));
-    }
-    std::vector<double> host_sc_r(num_particles, val_r);
-    std::vector<double> host_sc_i(num_particles, val_i);
-    CUDA_CHECK(cudaMemcpy(d_self_coef_r, host_sc_r.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_self_coef_i, host_sc_i.data(), num_particles * sizeof(double), cudaMemcpyHostToDevice));
+    std::vector<std::complex<double>> sc(num_particles, std::complex<double>(val_r, val_i));
+    setSelfCoef(sc);
 }
 
 std::vector<std::complex<double>> Base_Electric_Field::getEPointHost() const {

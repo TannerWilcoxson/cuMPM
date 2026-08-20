@@ -450,18 +450,15 @@ std::vector<Complex> Dipole_Solver::compute_spectrum(const std::vector<Complex>&
         print(progress);
 
         // Calculate complex particle-dependent Ewald self coefficients
-        std::vector<double> self_coef_r(num_particles);
-        std::vector<double> self_coef_i(num_particles);
+        std::vector<Complex> self_coef(num_particles);
         for (size_t p = 0; p < num_particles; ++p) {
             Complex diff = 1.0 - eps_p[wavevec_idx][p];
             if (std::abs(diff) < 1e-12) {
                 diff = 1e-12;
             }
-            Complex sc = -3.0 / (4.0 * M_PI * diff) / std::pow(radius[p], 3.0);
-            self_coef_r[p] = sc.real();
-            self_coef_i[p] = sc.imag();
+            self_coef[p] = -3.0 / (4.0 * M_PI * diff) / std::pow(radius[p], 3.0);
         }
-        EF->setSelfCoef(self_coef_r, self_coef_i);
+        EF->setSelfCoef(self_coef);
 
         // Calculate guess dipoles
         if (wavevec_idx == 0) {
@@ -542,9 +539,9 @@ void Dipole_Solver::compute(const std::vector<double>& x_part,
             }
 
             if (use_polydisperse) {
-                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius, solve_quadrupoles, quad_idxs);
+                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius, solve_quadrupoles, quad_idxs, precision);
             } else {
-                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, 1.0, solve_quadrupoles, quad_idxs);
+                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, 1.0, solve_quadrupoles, quad_idxs, precision);
             }
         }
     } else if (num_particles != num_p) {

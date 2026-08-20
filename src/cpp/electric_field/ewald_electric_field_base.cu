@@ -71,6 +71,7 @@ Ewald_Electric_Field_Base::~Ewald_Electric_Field_Base() {
     if (d_Qfactor) { cudaFree(d_Qfactor); d_Qfactor = nullptr; }
     if (d_Qfactor_dot) { cudaFree(d_Qfactor_dot); d_Qfactor_dot = nullptr; }
     if (d_G_point) { cudaFree(d_G_point); d_G_point = nullptr; }
+    if (d_float_dipoles) { cudaFree(d_float_dipoles); d_float_dipoles = nullptr; }
     if (stream_real) { cudaStreamDestroy(stream_real); stream_real = nullptr; }
     if (stream_recip) { cudaStreamDestroy(stream_recip); stream_recip = nullptr; }
     if (event_recip_done) { cudaEventDestroy(event_recip_done); event_recip_done = nullptr; }

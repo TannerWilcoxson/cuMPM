@@ -5,15 +5,15 @@
 
 class BiCGSTAB_Solver : public Numerical_Solver {
 private:
-    double* d_x = nullptr;
-    double* d_b = nullptr;
-    double* d_r0tilde = nullptr;
-    double* d_r = nullptr;
-    double* d_p = nullptr;
-    double* d_v = nullptr;
-    double* d_s = nullptr;
-    double* d_t = nullptr;
-    double* d_tmp = nullptr;
+    double2* d_x = nullptr;
+    double2* d_b = nullptr;
+    double2* d_r0tilde = nullptr;
+    double2* d_r = nullptr;
+    double2* d_p = nullptr;
+    double2* d_v = nullptr;
+    double2* d_s = nullptr;
+    double2* d_t = nullptr;
+    double2* d_tmp = nullptr;
     double* d_reduce_buf = nullptr;
     size_t allocated_vec_size = 0;
     size_t maxiter = 1000;

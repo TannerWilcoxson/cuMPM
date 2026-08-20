@@ -430,9 +430,9 @@ void EELS_Solver::compute(const std::vector<double>& epos,
             }
 
             if (use_polydisperse) {
-                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius, solve_quadrupoles, quad_idxs);
+                EF = std::make_unique<Polydisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius, solve_quadrupoles, quad_idxs, precision);
             } else {
-                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius[0], solve_quadrupoles, quad_idxs);
+                EF = std::make_unique<Monodisperse_Ewald_Electric_Field>(box[0], box[1], box[2], tol, xi, FieldCalcMode::SOLVER_AX, radius[0], solve_quadrupoles, quad_idxs, precision);
             }
         }
     } else if (num_particles != num_p) {
@@ -649,14 +649,11 @@ void EELS_Solver::compute(const std::vector<double>& epos,
         }
 
         // 2. Set self coefs on EF
-        std::vector<double> self_coef_r(num_particles);
-        std::vector<double> self_coef_i(num_particles);
+        std::vector<Complex> self_coef(num_particles);
         for (size_t p = 0; p < num_particles; ++p) {
-            Complex sc = -3.0 / (4.0 * M_PI * (1.0 - eps_p[wavevec_idx][p]));
-            self_coef_r[p] = sc.real();
-            self_coef_i[p] = sc.imag();
+            self_coef[p] = -3.0 / (4.0 * M_PI * (1.0 - eps_p[wavevec_idx][p]));
         }
-        EF->setSelfCoef(self_coef_r, self_coef_i);
+        EF->setSelfCoef(self_coef);
 
         // 3. Normalize incident field for numerical stability
         double Enorm = 0.0;

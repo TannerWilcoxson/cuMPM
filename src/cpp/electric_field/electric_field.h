@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <complex>
+#include <cuda_runtime.h>
 
 enum class FieldCalcMode {
     SOLVER_AX,
@@ -13,12 +14,13 @@ class Electric_Field {
 public:
     virtual ~Electric_Field() = default;
 
-    virtual double* getDevDipoles() const = 0;
-    virtual double* getDevEPoint() const = 0;
+    virtual double2* getDevDipoles() const = 0;
+    virtual double2* getDevEPoint() const = 0;
     virtual void calculate() = 0;
     virtual void updateParticleCoordinates(const std::vector<double>& x_part,
                                            const std::vector<double>& y_part,
                                            const std::vector<double>& z_part) = 0;
+    virtual void setSelfCoef(const std::vector<std::complex<double>>& self_coef) = 0;
     virtual void setSelfCoef(const std::vector<double>& self_coef_r,
                              const std::vector<double>& self_coef_i) = 0;
 };
@@ -31,11 +33,10 @@ protected:
     double* d_y_part = nullptr;
     double* d_z_part = nullptr;
 
-    double* d_dipoles = nullptr;
-    double* d_E_point = nullptr;
+    double2* d_dipoles = nullptr;
+    double2* d_E_point = nullptr;
 
-    double* d_self_coef_r = nullptr;
-    double* d_self_coef_i = nullptr;
+    double2* d_self_coef = nullptr;
 
     double* d_x_field = nullptr;
     double* d_y_field = nullptr;
@@ -81,13 +82,12 @@ public:
     void clearParticlesUpdated() { particles_updated = false; }
     void clearFieldPointsUpdated() { field_points_updated = false; }
 
-    double* getDevDipoles() const override { return d_dipoles; }
-    double* getDevSelfCoefReal() const { return d_self_coef_r; }
-    double* getDevSelfCoefImag() const { return d_self_coef_i; }
+    double2* getDevDipoles() const override { return d_dipoles; }
+    double2* getDevSelfCoef() const { return d_self_coef; }
     bool getDipolesUpdated() const { return dipoles_updated; }
     void clearDipolesUpdated() { dipoles_updated = false; }
 
-    double* getDevEPoint() const override { return d_E_point; }
+    double2* getDevEPoint() const override { return d_E_point; }
 
     bool getSolveQuadrupoles() const { return solve_quadrupoles; }
     size_t getNumQuads() const { return num_quads; }
@@ -124,6 +124,7 @@ public:
                                   const std::vector<double>& quad_5r, const std::vector<double>& quad_5i);
 
     // Self coefficients
+    void setSelfCoef(const std::vector<std::complex<double>>& self_coef) override;
     void setSelfCoef(const std::vector<double>& self_coef_r,
                      const std::vector<double>& self_coef_i) override;
     void setSelfCoef(double val_r, double val_i = 0.0);

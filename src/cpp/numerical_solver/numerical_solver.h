@@ -10,15 +10,15 @@ using Complex = std::complex<double>;
 class Numerical_Solver {
 protected:
     // Shared GPU vector operation helpers (implemented in numerical_solver.cu)
-    void gpu_vector_add(double* d_y, const double* d_x, Complex alpha, size_t size);
-    void gpu_vector_scale(double* d_y, Complex alpha, size_t size);
-    void gpu_vector_sub(double* d_y, const double* d_x, const double* d_z, size_t size);
-    Complex gpu_dot_product(const double* d_a, const double* d_b, size_t size, double* d_reduce_buf);
-    Complex gpu_dot_product_unconjugated(const double* d_a, const double* d_b, size_t size, double* d_reduce_buf);
-    double gpu_norm(const double* d_a, size_t size, double* d_reduce_buf);
-    void gpu_vector_jacobi_precond(double* d_dst, const double* d_src, const Electric_Field* EF, size_t vec_size);
-    void compute_Ax(double* d_x, double* d_Ax, Electric_Field* EF, size_t vec_size);
-    void compute_Ax_preconditioned(double* d_x, double* d_Ax, double* d_tmp, Electric_Field* EF, size_t vec_size);
+    void gpu_vector_add(double2* d_y, const double2* d_x, Complex alpha, size_t size);
+    void gpu_vector_scale(double2* d_y, Complex alpha, size_t size);
+    void gpu_vector_sub(double2* d_y, const double2* d_x, const double2* d_z, size_t size);
+    Complex gpu_dot_product(const double2* d_a, const double2* d_b, size_t size, double* d_reduce_buf);
+    Complex gpu_dot_product_unconjugated(const double2* d_a, const double2* d_b, size_t size, double* d_reduce_buf);
+    double gpu_norm(const double2* d_a, size_t size, double* d_reduce_buf);
+    void gpu_vector_jacobi_precond(double2* d_dst, const double2* d_src, const Electric_Field* EF, size_t vec_size);
+    void compute_Ax(double2* d_x, double2* d_Ax, Electric_Field* EF, size_t vec_size);
+    void compute_Ax_preconditioned(double2* d_x, double2* d_Ax, double2* d_tmp, Electric_Field* EF, size_t vec_size);
 
 protected:
     bool use_jacobi_precond = true;
